@@ -91,6 +91,7 @@
       </aside>
       <div class="mainpane">
         <div class="bar"><div class="hint" id="a-hint">Виберіть етап зліва або додайте знімки.</div>
+          <button type="button" class="primary" id="a-gen" title="Вбудувати техніку в знімок і зберегти як новий етап">Генератор</button>
           <button type="button" id="a-heat">Теплова карта</button>
           <button type="button" onclick="location.hash='';location.reload()">До гри</button></div>
         <div class="view-wrap"><div id="a-view" class="view-host"></div>
@@ -116,6 +117,7 @@
       $("a-tdel").onclick = () => this.deleteTarget(this.tsel);
       $("a-tdesel").onclick = () => this.selectTarget(null);
       $("a-heat").onclick = () => this.toggleHeat();
+      $("a-gen").onclick = async () => { await this.flushSave(); this.heatOn = false; Gen.open(this); };
       $("a-settings-btn").onclick = () => this.settings();
       document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("s-admin").hidden) this.selectTarget(null); });
       window.addEventListener("beforeunload", (e) => { if (this.saveT) { e.preventDefault(); e.returnValue = ""; } });
@@ -313,6 +315,7 @@
       const json = files.find((f) => f.name.toLowerCase() === "targets.json") || files.find((f) => f.name.toLowerCase().endsWith(".json") && /data/i.test(f.webkitRelativePath || ""));
       if (!json) { st.textContent = "У вибраній папці немає data/targets.json. Виберіть папку локальної гри (poshuk_local)."; st.className = "status no"; return; }
       files = files.filter((f) => /^image\//.test(f.type) || /\.(png|jpe?g|webp|bmp)$/i.test(f.name));
+      const objFiles = files.filter((f) => /(^|\/)objects\//i.test(f.webkitRelativePath || "") && /\.png$/i.test(f.name));
       let data;
       try { data = JSON.parse(await json.text()); } catch (e) { st.textContent = "targets.json пошкоджений"; st.className = "status no"; return; }
       const byName = new Map(files.map((f) => [f.name, f]));
@@ -323,7 +326,10 @@
         st.textContent = `Імпорт ${i + 1}/${items.length}: ${it.title}…`; st.className = "status";
         try { await this.uploadOne(byName.get(it.file), it.title, it.targets || []); } catch (e) { st.textContent = e.message; st.className = "status no"; return; }
       }
-      st.textContent = `Імпортовано етапів: ${items.length}.` + (missing ? ` Без знімка пропущено: ${missing} (виберіть і файли з папки images).` : "");
+      if (objFiles.length) { st.textContent = "Імпорт техніки для генератора…"; st.className = "status"; }
+      let nObj = 0;
+      try { nObj = await Gen.importObjects(objFiles, this.pw); } catch (e) { /* техніку можна додати й у генераторі */ }
+      st.textContent = `Імпортовано етапів: ${items.length}.` + (nObj ? ` Техніки в бібліотеку генератора: ${nObj}.` : "") + (missing ? ` Без знімка пропущено: ${missing} (виберіть і файли з папки images).` : "");
       st.className = "status ok";
       this.$("a-imp-file").value = "";
       this.renderList();
