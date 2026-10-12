@@ -31,7 +31,7 @@ button:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); color: #141814; border-color: var(--accent); font-weight: 600; }
 button.primary:hover { filter: brightness(1.08); }
 button.danger { border-color: #6b2e25; color: #f2a597; }
-button.link { background: none; border: none; color: var(--muted); padding: .3rem 0; text-decoration: underline; }
+button.link, a.link { background: none; border: none; color: var(--muted); padding: .3rem 0; text-decoration: underline; }
 button:disabled { opacity: .5; cursor: default; }
 
 .screen { height: 100%; }
@@ -125,3 +125,6 @@ td.num, th.num { text-align: center; }
   .debrief { left: 8px; right: 8px; max-width: none; bottom: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .timebar i { transition: none; } }
+
+a.link { display: inline-block; text-align: center; font-size: .9rem; }
+.links { display: flex; justify-content: space-between; align-items: center; }
