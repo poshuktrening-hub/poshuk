@@ -128,3 +128,7 @@ td.num, th.num { text-align: center; }
 
 a.link { display: inline-block; text-align: center; font-size: .9rem; }
 .links { display: flex; justify-content: space-between; align-items: center; }
+.sliders { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.sliders label { display: flex; flex-direction: column; gap: 2px; margin: 0; font-weight: 400; font-size: .78rem; color: var(--muted); }
+.sliders label b { color: var(--fg, #e4e8dc); font: 500 .78rem var(--mono); }
+.sliders input[type=range] { width: 100%; padding: 0; accent-color: var(--accent); }
