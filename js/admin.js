@@ -30,6 +30,7 @@
       root.querySelector("#a-login").onsubmit = async (e) => {
         e.preventDefault();
         this.pw = root.querySelector("#a-pass").value;
+        const b = root.querySelector("button.primary"); b.disabled = true; b.textContent = "Перевіряю…";
         try { await this.load(); SS.set("poshuk_admin_pw", this.pw); this.render(); } catch (er) { this.loginScreen(er.message); }
       };
       root.querySelector("#a-pass").focus();

@@ -74,7 +74,8 @@
       show("s-start");
       const n = Math.min(this.cfg.rounds_per_game, this.stages.length);
       $("start-info").textContent = n ? `${n} етап(ів) по ${this.cfg.time_limit_sec} с. Знайдіть усю техніку на кожному знімку.`
-        : "Поки немає жодного етапу. Попросіть адміністратора додати знімки.";
+        : "Поки немає жодного етапу. Адміністратору: відкрийте адмінку й імпортуйте знімки.";
+      $("start-info").insertAdjacentHTML("beforeend", n ? "" : ' <a href="#admin">Відкрити адмінку →</a>');
       $("start-btn").disabled = !n;
       $("callsign").value = LS.get("poshuk_callsign", "");
       $("start-err").textContent = "";
