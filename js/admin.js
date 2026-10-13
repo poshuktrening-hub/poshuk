@@ -342,7 +342,6 @@
     /* Перенесення з Google-скрипта: етапи (знімок + цілі + увімкнено) і бібліотека техніки. Дублікати за назвою пропускаються. */
     async migrate() {
       const gas = window.POSHUK_CONFIG.gas, st = this.$("a-up-status");
-      if (!confirm("Скопіювати всі етапи й техніку з Google-таблиці сюди? Етапи з такою самою назвою буде пропущено.")) return;
       const G = async (action, data = {}) => {
         const r = await fetch(gas, {method: "POST", body: JSON.stringify(Object.assign({action, p: this.pw}, data)), redirect: "follow"});
         const j = await r.json(); if (!j.ok) throw new Error(j.error || "Помилка Google-скрипта"); return j;
