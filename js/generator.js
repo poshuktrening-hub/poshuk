@@ -16,6 +16,7 @@
     ["Тінь: щільність, %", "shadow_op", 0, 90, 5, 55],
     ["Злиття з фоном, %", "blend", 0, 50, 1, 10],
     ["Затемнення, %", "darken", 0, 50, 1, 10],
+    ["Насиченість кольору, %", "sat", 0, 150, 5, 70],
     ["Варіант крон", "seed", 1, 30, 1, 1],
   ];
 
@@ -201,7 +202,7 @@
     params() {
       return {size: this.val("size"), angle: this.val("angle"), hide: this.val("hide") / 100, hide_dir: this.val("hide_dir"),
         shadow_dir: this.val("shadow_dir"), shadow_len: this.val("shadow_len"), shadow_op: this.val("shadow_op") / 100,
-        blend: this.val("blend") / 100, darken: this.val("darken") / 100, seed: this.val("seed")};
+        blend: this.val("blend") / 100, darken: this.val("darken") / 100, sat: this.val("sat") / 100, seed: this.val("seed")};
     },
 
     schedule() { clearTimeout(this.job); this.job = setTimeout(() => this.render(), 60); },
