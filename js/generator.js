@@ -9,15 +9,14 @@
   const SLIDERS = [
     ["Розмір на знімку, пкс", "size", 3, 120, 0.5, 16],
     ["Куди дивиться (компас), °", "angle", 0, 359, 1, 0],
-    ["Сховано під кронами, %", "hide", 0, 90, 5, 30],
-    ["З якого боку крони, °", "hide_dir", 0, 359, 5, 0],
+    ["Сховано під кронами, %", "hide", 0, 95, 5, 0],
     ["Тінь: куди падає, °", "shadow_dir", 0, 359, 5, 135],
     ["Тінь: довжина, пкс", "shadow_len", 0, 8, 0.5, 2],
     ["Тінь: щільність, %", "shadow_op", 0, 90, 5, 55],
     ["Злиття з фоном, %", "blend", 0, 50, 1, 10],
     ["Затемнення, %", "darken", 0, 50, 1, 10],
     ["Насиченість кольору, %", "sat", 0, 150, 5, 70],
-    ["Варіант крон", "seed", 1, 30, 1, 1],
+    ["Різкість техніки, %", "sharp", 0, 150, 10, 70],
   ];
 
   function fileToDataURL(blob) {
@@ -74,7 +73,7 @@
             <button type="button" data-v="135">↘</button><button type="button" data-v="180">↓</button><button type="button" data-v="270">←</button>
             <button type="button" data-v="rnd">🎲</button></div></div>
           <div class="seg-row"><span>Маскування</span><div class="seg" id="gp-hide">
-            <button type="button" data-v="0">Відкрито</button><button type="button" data-v="35">Частково</button><button type="button" data-v="65">Під кронами</button></div></div>
+            <button type="button" data-v="0">Відкрито</button><button type="button" data-v="35">Частково</button><button type="button" data-v="70">Під кронами</button></div></div>
           <div class="seg-row"><span>Тінь</span><div class="seg" id="gp-shadow">
             <button type="button" data-v="0">Немає</button><button type="button" data-v="1">Слабка</button><button type="button" data-v="2">Сильна</button></div></div>
           <div class="seg-row"><span>Вигляд</span><div class="seg" id="gp-look">
@@ -99,7 +98,7 @@
       $("gq-size-r").oninput = () => { this.setVal("size", $("gq-size-r").value); this.syncQuick(); this.schedule(); };
       const presets = {
         "gp-angle": (v) => this.setVal("angle", v === "rnd" ? Math.floor(Math.random() * 360) : v),
-        "gp-hide": (v) => { this.setVal("hide", v); this.setVal("hide_dir", Math.floor(Math.random() * 72) * 5); this.setVal("seed", 1 + Math.floor(Math.random() * 30)); },
+        "gp-hide": (v) => this.setVal("hide", v),
         "gp-shadow": (v) => { const sz = this.val("size"); this.setVal("shadow_op", [0, 40, 60][v]); this.setVal("shadow_len", [0, Math.max(1, Math.round(sz * 0.08 * 2) / 2), Math.max(1.5, Math.round(sz * 0.15 * 2) / 2)][v]); },
         "gp-look": (v) => { const L = {bright: [5, 0, 100], mid: [12, 12, 70], dim: [25, 22, 50]}[v]; this.setVal("blend", L[0]); this.setVal("darken", L[1]); this.setVal("sat", L[2]); },
       };
@@ -107,7 +106,8 @@
         $(id).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
         presets[id](b.dataset.v); this.syncQuick(); this.schedule();
       })));
-      ["gp-hide", "gp-shadow", "gp-look"].forEach((id, k) => $(id).querySelectorAll("button")[1].classList.add("on"));
+      $("gp-hide").querySelectorAll("button")[0].classList.add("on");
+      ["gp-shadow", "gp-look"].forEach((id) => $(id).querySelectorAll("button")[1].classList.add("on"));
       this.syncQuick();
       $("g-back").onclick = () => this.close();
       $("g-from-stage").onclick = () => this.baseFromStage();
@@ -265,9 +265,9 @@
 
     // ---------- рендер
     params() {
-      return {size: this.val("size"), angle: this.val("angle"), hide: this.val("hide") / 100, hide_dir: this.val("hide_dir"),
+      return {size: this.val("size"), angle: this.val("angle"), hide: this.val("hide") / 100, sharp: this.val("sharp") / 100,
         shadow_dir: this.val("shadow_dir"), shadow_len: this.val("shadow_len"), shadow_op: this.val("shadow_op") / 100,
-        blend: this.val("blend") / 100, darken: this.val("darken") / 100, sat: this.val("sat") / 100, seed: this.val("seed")};
+        blend: this.val("blend") / 100, darken: this.val("darken") / 100, sat: this.val("sat") / 100};
     },
 
     schedule() { clearTimeout(this.job); this.job = setTimeout(() => this.render(), 60); },
@@ -322,7 +322,6 @@
       }
       this.placed.push(this.target());
       this.point = null; this.rect = null;
-      this.setVal("seed", this.val("seed") % 30 + 1);
       this.hint(`Закріплено обʼєктів: ${this.placed.length}. Можна ставити наступний або зберегти етап.`);
       this.renderMarks();
     },

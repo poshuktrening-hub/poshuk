@@ -166,26 +166,30 @@
     if (!ln) return null;
     lr /= ln; lg /= ln; lb /= ln;
 
-    // видимість (крони)
+    // видимість (крони): техніка ховається там, де на самому знімку рослинність (крони, кущі).
+    // Чим більший hide, тим слабша зелень уже вкриває техніку. На відкритому місці нічого не обрізається.
     const Av = new Float32Array(Wp * Hp);
-    const hide = Math.min(0.9, p.hide || 0);
-    let noise = null;
+    const hide = Math.min(0.95, p.hide || 0);
+    let veg = null;
     if (hide > 0) {
-      const R = rng(p.seed || 1), nc = canvas(7, 7), nctx = nc.getContext("2d"), nd = nctx.createImageData(7, 7);
-      for (let i = 0; i < 49; i++) { const v = R() * 255; nd.data[i * 4] = nd.data[i * 4 + 1] = nd.data[i * 4 + 2] = v; nd.data[i * 4 + 3] = 255; }
-      nctx.putImageData(nd, 0, 0);
-      const big = canvas(Wp, Hp), bctx = big.getContext("2d");
-      bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = "high";
-      bctx.drawImage(nc, 0.5, 0.5, 6, 6, 0, 0, Wp, Hp);
-      noise = bctx.getImageData(0, 0, Wp, Hp).data;
-    }
-    const [hdx, hdy] = compass(p.hide_dir || 0), half = Math.max(tw, th) / 2, t = 1.2 - 2.4 * hide;
-    for (let y = 0, i = 0; y < Hp; y++) for (let x = 0; x < Wp; x++, i++) {
-      let a = spx[i * 4 + 3] / 255;
-      if (a && noise) {
-        const pp = ((x - Wp / 2) * hdx + (y - Hp / 2) * hdy) / half;
-        a *= Math.max(0, Math.min(1, (t - pp) * 4 + (noise[i * 4] / 255 - 0.5) * 0.8));
+      const vc = canvas(mw, mh), vx = vc.getContext("2d"), vd = vx.createImageData(mw, mh);
+      const thr = 1 - hide;
+      for (let i = 0; i < mw * mh; i++) {
+        const r = rpx[i * 4], g = rpx[i * 4 + 1], b = rpx[i * 4 + 2];
+        const exg = (2 * g - r - b) / 90;                       // надлишок зеленого
+        const score = Math.max(0, Math.min(1, exg));
+        const c = Math.max(0, Math.min(1, (score - thr) / 0.18 + 0.5));
+        vd.data[i * 4] = vd.data[i * 4 + 1] = vd.data[i * 4 + 2] = 255; vd.data[i * 4 + 3] = c * 255;
       }
+      vx.putImageData(vd, 0, 0);
+      const big = canvas(Wp, Hp), bx = big.getContext("2d");
+      bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = "high";
+      bx.filter = `blur(${SS * 0.6}px)`; bx.drawImage(vc, 0, 0, Wp, Hp); bx.filter = "none";
+      veg = bx.getImageData(0, 0, Wp, Hp).data;
+    }
+    for (let i = 0; i < Wp * Hp; i++) {
+      let a = spx[i * 4 + 3] / 255;
+      if (a && veg) a *= 1 - veg[i * 4 + 3] / 255;
       Av[i] = a;
     }
 
@@ -221,6 +225,25 @@
         sr += r; sg += g; sb += b;
       }
       o[j] = sr / n; o[j + 1] = sg / n; o[j + 2] = sb / n; o[j + 3] = rpx[j + 3] ? 255 : 0;
+    }
+    // підвищення різкості техніки (unsharp mask), лише там, де вона є
+    const shp = p.sharp === undefined ? 0.7 : p.sharp;
+    if (shp > 0) {
+      const cov = new Float32Array(mw * mh);
+      for (let my = 0; my < mh; my++) for (let mx = 0; mx < mw; mx++) {
+        let s = 0;
+        for (let yy = my * SS; yy < my * SS + SS; yy += 2) for (let xx = mx * SS; xx < mx * SS + SS; xx += 2) s += Av[yy * Wp + xx];
+        cov[my * mw + mx] = s / (SS * SS / 4);
+      }
+      const src = new Uint8ClampedArray(o);
+      for (let my = 1; my < mh - 1; my++) for (let mx = 1; mx < mw - 1; mx++) {
+        const k = cov[my * mw + mx]; if (k < 0.05) continue;
+        const j = (my * mw + mx) * 4;
+        for (let c = 0; c < 3; c++) {
+          const bl = (src[j - 4 + c] + src[j + 4 + c] + src[j - mw * 4 + c] + src[j + mw * 4 + c] + src[j + c] * 4) / 8;
+          o[j + c] = src[j + c] + (src[j + c] - bl) * shp * 1.6 * Math.min(1, k * 1.5);
+        }
+      }
     }
     // пікселі поза знімком не чіпаємо: putImageData сам обріже по межах полотна
     dst.getContext("2d").putImageData(out, x0, y0);
