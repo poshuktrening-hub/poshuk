@@ -162,7 +162,7 @@ function rowToStage(r) {
   try { targets = JSON.parse(r.targets || "[]"); } catch (e) { targets = []; }
   let meta = {};
   try { meta = JSON.parse(r.meta || "{}"); } catch (e) { meta = {}; }
-  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, unit: meta.unit || "", task: meta.task || ""};
+  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, unit: meta.unit || "", task: meta.task || "", direction: meta.direction || "", season: meta.season || ""};
 }
 
 async function stages(env, all) {
@@ -219,7 +219,11 @@ async function action(env, ctx, req, origin) {
       if (req.title !== undefined) { sets.push("title=?"); vals.push(String(req.title).slice(0, 120)); }
       if (req.enabled !== undefined) { sets.push("enabled=?"); vals.push(req.enabled ? 1 : 0); }
       if (req.targets !== undefined) { sets.push("targets=?"); vals.push(JSON.stringify(req.targets)); }
-      if (req.unit !== undefined || req.task !== undefined) { sets.push("meta=?"); vals.push(JSON.stringify({unit: String(req.unit || "").slice(0, 80), task: String(req.task || "").slice(0, 400)})); }
+      if (req.unit !== undefined || req.task !== undefined || req.direction !== undefined || req.season !== undefined) {
+        sets.push("meta=?");
+        vals.push(JSON.stringify({unit: String(req.unit || "").slice(0, 80), task: String(req.task || "").slice(0, 400),
+          direction: String(req.direction || "").slice(0, 40), season: String(req.season || "").slice(0, 10)}));
+      }
       if (sets.length) await env.DB.prepare(`UPDATE stages SET ${sets.join(",")} WHERE id=?`).bind(...vals, String(req.id)).run();
       return {ok: true};
     }
