@@ -427,7 +427,7 @@
       if (!o || o.builtin) return;
       o.ttx = this.$("a-ttx").value.trim();
       o.name = this.$("a-mname").value.trim() || o.name;
-      try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx}, this.pw); st.textContent = "Збережено ✓"; st.className = "status ok"; this.loadObjects(); }
+      try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx}, this.pw); await this.loadObjects(); st.textContent = "Збережено ✓"; st.className = "status ok"; }
       catch (e) { st.textContent = e.message; st.className = "status no"; }
     },
 
