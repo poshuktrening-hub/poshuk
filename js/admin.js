@@ -2,7 +2,7 @@
 (function () {
   const {LS, SS} = API;
   const esc = (s) => UI.esc(s);
-  const C = {hit: "#5fd38a", accent: "#c9d64a"};
+  const C = {hit: "#3ddc97", accent: "#ffb23e"};
 
   const Admin = {
     pw: null, stages: [], sel: null, tsel: null, img: null, heatOn: false, saveT: null,
@@ -227,7 +227,7 @@
         : `Редагується ціль №${this.tsel + 1}: клік по знімку переносить її, поля змінюють одразу.`;
       $("a-thint").className = "status" + (this.tsel === null ? "" : " ok");
       ["a-tdel", "a-tdesel"].forEach((id) => ($(id).disabled = this.tsel === null));
-      const marks = s.targets.map((t, i) => ({x: t.x, y: t.y, r: t.r || 14, color: i === this.tsel ? C.accent : t.decoy ? "#f0a64a" : C.hit, dashed: i === this.tsel || !!t.decoy, label: (t.decoy ? "муляж: " : "") + (t.type || "")}));
+      const marks = s.targets.map((t, i) => ({x: t.x, y: t.y, r: t.r || 14, color: i === this.tsel ? C.accent : t.decoy ? "#b48cff" : C.hit, dashed: i === this.tsel || !!t.decoy, label: (t.decoy ? "муляж: " : "") + (t.type || "")}));
       this.viewer.setMarks(marks);
     },
 
@@ -590,10 +590,10 @@
     }
     ctx.putImageData(id, 0, 0);
     for (const [x, y, hit] of clicks) {
-      if (hit) { ctx.fillStyle = "#5fd38a"; ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 7); ctx.fill(); }
+      if (hit) { ctx.fillStyle = "#3ddc97"; ctx.beginPath(); ctx.arc(x, y, 2.5, 0, 7); ctx.fill(); }
       else { ctx.strokeStyle = "#ff5a46"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - 2, y - 2); ctx.lineTo(x + 2, y + 2); ctx.moveTo(x - 2, y + 2); ctx.lineTo(x + 2, y - 2); ctx.stroke(); }
     }
-    ctx.strokeStyle = "#c9d64a"; ctx.lineWidth = 2;
+    ctx.strokeStyle = "#ffb23e"; ctx.lineWidth = 2;
     for (const t of targets) { ctx.beginPath(); ctx.arc(t.x, t.y, t.r || 14, 0, 7); ctx.stroke(); }
     return cv;
   }

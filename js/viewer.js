@@ -268,14 +268,14 @@
       for (let i = 0; i < cols; i++) {
         const x = this.tx + (i + 0.5) * cell * s;
         if (x < 0 || x > this.W) continue;
-        ctx.fillStyle = "rgba(20,24,20,.85)"; ctx.fillRect(x - 12, top, 24, 18);
-        ctx.fillStyle = "#c9d64a"; ctx.fillText(letterOf(i), x, top + 9);
+        ctx.fillStyle = "rgba(12,15,18,.78)"; ctx.fillRect(x - 12, top, 24, 18);
+        ctx.fillStyle = "#ffb23e"; ctx.fillText(letterOf(i), x, top + 9);
       }
       for (let j = 0; j < rows; j++) {
         const y = this.ty + (j + 0.5) * cell * s;
         if (y < 0 || y > this.H) continue;
-        ctx.fillStyle = "rgba(20,24,20,.85)"; ctx.fillRect(left, y - 9, 24, 18);
-        ctx.fillStyle = "#c9d64a"; ctx.fillText(String(j + 1), left + 12, y);
+        ctx.fillStyle = "rgba(12,15,18,.78)"; ctx.fillRect(left, y - 9, 24, 18);
+        ctx.fillStyle = "#ffb23e"; ctx.fillText(String(j + 1), left + 12, y);
       }
       ctx.restore();
     }
@@ -305,7 +305,7 @@
       if (m.rect) {
         const [rx, ry, rw, rh] = m.rect;
         ctx.lineWidth = 2.5;
-        ctx.fillStyle = "rgba(201,214,74,.12)";
+        ctx.fillStyle = "rgba(255,178,62,.12)";
         ctx.fillRect(this.tx + rx * this.s, this.ty + ry * this.s, rw * this.s, rh * this.s);
         ctx.strokeRect(this.tx + rx * this.s, this.ty + ry * this.s, rw * this.s, rh * this.s);
         ctx.restore();
