@@ -175,7 +175,7 @@
         let pic = "";
         if (o && o.builtin) pic = `<img src="${Models.sprite(o.id).toDataURL()}" alt="">`;
         else if (o) { const u = await API.objUrl(o.id, this.password).catch(() => null); if (u) pic = `<img src="${u}" alt="">`; }
-        const ttx = Logic.ttxFor(o, t.type);
+        const ttx = Logic.ttxFor(o, t.type, !!t.decoy);
         const len = o && o.length_m ? `<p class="len">Довжина ≈ ${o.length_m} м</p>` : "";
         const name = o && o.name ? o.name.replace(/\s*\(вбудована\)$/, "") : (t.type || "ціль");
         const sub = o && o.name && t.type && norm(o.name) !== norm(t.type) ? `<p class="len">${esc(t.type)}</p>` : "";

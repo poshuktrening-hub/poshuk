@@ -143,6 +143,10 @@
         this.fieldChanged(); this.showModel();
       };
       $("a-ttx-save").onclick = () => this.saveTtx();
+      $("a-mname").oninput = () => {
+        const o = this.objById($("a-obj").value), box = $("a-ttx");
+        if (o && Logic.isAutoTtx(box.value)) box.value = Logic.ttxFor(null, Logic.typeOf($("a-mname").value.replace(/^муляж\s+/i, "")), !!o.decoy);
+      };
       this.loadObjects();
       $("a-signs").onchange = () => this.fieldChanged();
       $("a-tdel").onclick = () => this.deleteTarget(this.tsel);
@@ -462,7 +466,7 @@
       const $ = this.$, o = this.objById($("a-obj").value);
       $("a-model-box").hidden = !o;
       if (!o) return;
-      $("a-model-meta").textContent = `тип: ${Logic.typeOf(o.name)} · ≈${o.length_m} м`;
+      $("a-model-meta").textContent = `тип: ${Logic.typeOf(o.name.replace(/^муляж\s+/i, ""))}${o.decoy ? " · муляж" : ""} · ≈${o.length_m} м`;
       $("a-ttx").value = Logic.ttxFor(o, o.type);
       $("a-mname").value = o.name;
       $("a-ttx").disabled = $("a-ttx-save").disabled = $("a-mname").disabled = !!o.builtin;
@@ -474,10 +478,10 @@
     async saveTtx() {
       const o = this.objById(this.$("a-obj").value), st = this.$("a-ttx-st");
       if (!o || o.builtin) return;
-      o.ttx = this.$("a-ttx").value.trim();
+      o.ttx = Logic.cleanTtx(this.$("a-ttx").value);
       o.name = this.$("a-mname").value.trim() || o.name;
-      o.type = Logic.typeOf(o.name);
-      try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx}, this.pw); await this.loadObjects(); st.textContent = "Збережено ✓"; st.className = "status ok"; }
+      o.type = Logic.typeOf(o.name.replace(/^муляж\s+/i, ""));
+      try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx, decoy: o.decoy ? 1 : 0}, this.pw); await this.loadObjects(); st.textContent = "Збережено ✓"; st.className = "status ok"; }
       catch (e) { st.textContent = e.message; st.className = "status no"; }
     },
 

@@ -119,7 +119,12 @@
       $("g-obj-del").onclick = () => this.deleteObject();
       $("g-cage").onchange = () => this.schedule();
       $("g-ttx-save").onclick = () => this.saveMeta();
-      $("g-decoy").onchange = () => this.renderMarks();
+      $("g-decoy").onchange = () => { this.refreshTtx(); this.renderMarks(); };
+      $("g-name").oninput = () => {
+        const d = /^муляж/i.test($("g-name").value);
+        if (d !== this.decoyName) { $("g-decoy").checked = d; this.decoyName = d; }
+        this.refreshTtx();
+      };
       $("g-inflate").onclick = () => this.makeDecoy();
       $("g-gsd").value = LS.get("poshuk_gen_gsd", "");
       $("g-gsd").oninput = () => { LS.set("poshuk_gen_gsd", $("g-gsd").value); this.autoSize(); };
@@ -160,9 +165,17 @@
       this.$("g-decoy").checked = !!o.decoy;
       this.$("g-inflate").disabled = !!o.decoy;
       this.$("g-obj-del").disabled = !!o.builtin;
-      this.$("g-ttx").value = Logic.ttxFor(o, Logic.typeOf(this.$("g-name").value));
+      this.decoyName = /^муляж/i.test(this.$("g-name").value);
+      this.$("g-ttx").value = Logic.ttxFor(o, this.nameType());
       this.$("g-ttx-save").disabled = !!o.builtin;
       this.autoSize();
+    },
+
+    nameType() { return Logic.typeOf(this.$("g-name").value.replace(/^муляж\s+/i, "")); },
+    /* Якщо в полі ТТХ автотекст — підставити актуальний для нового типу / позначки «муляж». */
+    refreshTtx() {
+      const box = this.$("g-ttx");
+      if (Logic.isAutoTtx(box.value)) box.value = Logic.ttxFor(null, this.nameType(), this.$("g-decoy").checked);
     },
 
     async sprite() {
@@ -187,7 +200,7 @@
         const spr = Compose.prepareObject(await loadImg(await fileToDataURL(file)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
         const name = file.name.replace(/\.[^.]+$/, "").slice(0, 40);
-        const j = await API.call("object_upload", {name, data, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: this.$("g-ttx").value.trim(), decoy: this.$("g-decoy").checked || /^муляж/i.test(name) ? 1 : 0}, this.pw);
+        const j = await API.call("object_upload", {name, data, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: Logic.cleanTtx(this.$("g-ttx").value), decoy: this.$("g-decoy").checked || /^муляж/i.test(name) ? 1 : 0}, this.pw);
         this.sprites.set(j.object.id, spr);
         await this.loadObjects(j.object.id);
         st.textContent = `Додано «${name}». Перевірте довжину й тип.`; st.className = "status ok";
@@ -216,7 +229,7 @@
       const o = this.obj(), st = this.$("g-obj-status");
       if (o.builtin) return;
       const nm = this.$("g-name").value.trim() || o.name;
-      Object.assign(o, {name: nm, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(nm), ttx: this.$("g-ttx").value.trim()});
+      Object.assign(o, {name: nm, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(nm.replace(/^муляж\s+/i, "")), ttx: Logic.cleanTtx(this.$("g-ttx").value)});
       o.decoy = this.$("g-decoy").checked ? 1 : 0;
       try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx, decoy: o.decoy}, this.pw); await this.loadObjects(o.id); st.textContent = `Збережено ✓ (тип: ${o.type})`; st.className = "status ok"; }
       catch (e) { st.textContent = e.message; st.className = "status no"; }
