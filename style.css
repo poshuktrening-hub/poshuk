@@ -360,3 +360,37 @@ tr:hover td { background: rgba(255,255,255,.025); }
   .center { place-items: start center; padding-top: calc(24px + env(safe-area-inset-top, 0px)); padding-bottom: 40vh; }
 }
 .brief .b-sp { flex: 1; }
+
+/* ---- гра: панелі над і під мапою (нічого не лежить поверх техніки, без чорних смуг) ---- */
+.game .bar.top { position: relative; height: auto; min-height: 42px; background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; border-bottom: 0; }
+.game .timebar { position: relative; top: auto; }
+.game .bar.bottom {
+  position: relative; display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; pointer-events: auto;
+  background: var(--panel); border-top: 1px solid var(--line); padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+}
+.game .bar.bottom > button { grid-row: auto; }
+.game .bar.bottom button:not(.primary) { background: var(--panel2); border-color: var(--line); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.foot-tools { margin-left: auto; display: flex; }
+.game .foot-tools .rail { position: static; flex-direction: row; align-items: center; gap: 6px; }
+.game .foot-tools .rail button { width: 40px; height: 36px; background: var(--panel2); border-color: var(--line); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.game .foot-tools .rail button.on { background: var(--accent); }
+.game .foot-tools .zoom-lbl { padding: 4px 8px; background: transparent; border-color: var(--line); }
+.game .hud-tl, .game .hud-tc { top: 12px; }
+.game .hud-bl, .game .hud-br { bottom: 12px; }
+.game .hud-br { right: 14px; }
+/* повідомлення — коротко, поверх низу мапи; під час розбору його не видно */
+.game #g-msg { position: absolute; left: 10px; bottom: 10px; z-index: 3; max-width: calc(100% - 20px); padding: 5px 11px; border-radius: 10px;
+  background: var(--glass); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: #eef2e4; font-size: .84rem; pointer-events: none; }
+.game #g-msg.ok { color: var(--hit); } .game #g-msg.no { color: #ff8a78; }
+.game #g-msg:empty, .game #g-debrief:not([hidden]) ~ #g-msg { display: none; }
+.game .debrief { bottom: 10px; }
+@media (max-width: 760px) {
+  .game .bar.bottom { padding: 5px 8px calc(5px + env(safe-area-inset-bottom, 0px)); gap: 5px; }
+  .game .bar.bottom > button { padding: 6px 10px; }
+  #g-hint .lbl { display: none; }
+  .game .hud-bl, .game .hud-br { display: none; }
+  .game .debrief { bottom: 8px; }
+}
+@media (pointer: coarse) {
+  .game .foot-tools .rail button[title="Наблизити"], .game .foot-tools .rail button[title="Віддалити"], .game .foot-tools .zoom-lbl { display: none; }
+}
