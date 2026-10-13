@@ -376,9 +376,10 @@
         if (have.includes(name)) continue;
         const spr = Compose.prepareObject(await loadImg(await fileToDataURL(f)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
-        const isTank = /tank|танк/i.test(name), isCat = /katap|катап|lancet|ланцет/i.test(name);
-        await API.call("object_upload", {name, data, length_m: isTank ? 7 : isCat ? 6.2 : 7,
-          type: isTank ? "танк" : isCat ? "катапульта з БпЛА" : ""}, pw);
+        const decoy = /^муляж/i.test(name), base = name.replace(/^муляж\s+/i, "");
+        const LEN = [[/красух/i, 12], [/бук/i, 9.3], [/град|бм-21/i, 7.4], [/бмп/i, 7.2], [/бтр/i, 7.6], [/сау|мста|гвоздик/i, 7.2], [/katap|катап|lancet|ланцет/i, 6.2], [/tank|танк|т-\d/i, 7]];
+        const len = (LEN.find(([re]) => re.test(base)) || [0, 7])[1];
+        await API.call("object_upload", {name, data, length_m: len, type: Logic.typeOf(base), decoy: decoy ? 1 : 0}, pw);
         n++;
       }
       return n;
