@@ -15,7 +15,7 @@ const CHUNK = 1_500_000; // < 2 МБ — ліміт рядка D1
 const TOKEN_HOURS = 12;
 const DEFAULTS = {
   player_password: "змініть-мене-курсант", admin_password: "змініть-мене-адмін",
-  rounds_per_game: "5", time_limit_sec: "60", misses_allowed: "1", grid_cols: "8", zoom_click: "5", report: "TRUE",
+  rounds_per_game: "5", time_limit_sec: "180", misses_allowed: "1", grid_cols: "8", zoom_click: "5", report: "TRUE",
 };
 
 const SCHEMA = [

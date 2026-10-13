@@ -266,7 +266,15 @@
       const cx = this.tx + m.x * this.s, cy = this.ty + m.y * this.s;
       ctx.save();
       ctx.strokeStyle = m.color; ctx.fillStyle = m.color; ctx.lineWidth = 2;
-      if (m.cross) {
+      if (m.rect) {
+        const [rx, ry, rw, rh] = m.rect;
+        ctx.setLineDash([8, 5]); ctx.lineWidth = 3;
+        ctx.fillStyle = "rgba(201,214,74,.12)";
+        ctx.fillRect(this.tx + rx * this.s, this.ty + ry * this.s, rw * this.s, rh * this.s);
+        ctx.strokeRect(this.tx + rx * this.s, this.ty + ry * this.s, rw * this.s, rh * this.s);
+        ctx.restore();
+        return;
+      } else if (m.cross) {
         const k = 6;
         ctx.beginPath();
         ctx.moveTo(cx - k, cy - k); ctx.lineTo(cx + k, cy + k);
