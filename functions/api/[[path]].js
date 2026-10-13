@@ -160,6 +160,14 @@ async function action(env, ctx, req, origin) {
   const a = req.action;
   switch (a) {
     case "ping": return {ok: true, version: VERSION};
+    case "diag": {
+      if (!env.SHEETS_URL) return {ok: true, gas: "no SHEETS_URL"};
+      try {
+        const r = await fetch(env.SHEETS_URL, {method: "POST", body: JSON.stringify({action: "ping"}), redirect: "follow"});
+        const t = await r.text();
+        return {ok: true, status: r.status, type: r.headers.get("content-type"), url: r.url.slice(0, 60), body: t.slice(0, 160), secret: !!env.SHEETS_SECRET};
+      } catch (e) { return {ok: true, error: String(e)}; }
+    }
     case "login": { const role = await auth(env, req, "player"); return {ok: true, role, token: await makeToken(env, role)}; }
     case "config": {
       const role = await auth(env, req, "player");
