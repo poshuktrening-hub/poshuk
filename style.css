@@ -333,3 +333,25 @@ tr:hover td { background: rgba(255,255,255,.025); }
   background: var(--glass); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); text-shadow: none; font-size: .82rem; }
 .game .bar.bottom .msg:empty { display: none; }
 @media (max-width: 760px) { #sum-table th, #sum-table td { padding: 6px 5px; font-size: .8rem; } }
+
+/* ---- головне меню: режим, напрямок, пора року ---- */
+.pick { margin-top: 14px; }
+.pick-h { font-weight: 500; font-size: .9rem; color: #c9d1d6; margin-bottom: 6px; }
+.modes { display: grid; gap: 6px; }
+.mode { display: grid; grid-template-columns: 18px 1fr; column-gap: 10px; align-items: start; text-align: left; white-space: normal;
+  padding: 10px 12px; border-radius: 12px; background: rgba(8,11,14,.45); border: 1px solid var(--line); }
+.mode::before { content: ""; grid-row: span 2; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; border: 2px solid var(--muted); box-sizing: border-box; }
+.mode b { font: 600 .95rem var(--body); color: var(--fg); }
+.mode span { grid-column: 2; font-size: .8rem; color: var(--muted); line-height: 1.35; }
+.mode.on { border-color: var(--accent); background: rgba(255,178,62,.08); }
+.mode.on::before { border-color: var(--accent); background: radial-gradient(circle, var(--accent) 0 3px, transparent 4px); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px 6px 8px; border-radius: 999px; background: rgba(8,11,14,.45); border: 1px solid var(--line); font-size: .88rem; }
+.chip i { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--muted); font: 700 .7rem/1 var(--body); font-style: normal; color: var(--ink); }
+.chip small { font: 500 .72rem var(--mono); color: var(--muted); }
+.chip.on { border-color: rgba(255,178,62,.6); }
+.chip.on i { background: var(--accent); border-color: var(--accent); }
+#start-info { margin: 12px 0 0; }
+.chips { display: grid; grid-template-columns: 1fr 1fr; }
+.chip small { margin-left: auto; }
+#start-info { margin: 14px 0 0; font-size: .9rem; }

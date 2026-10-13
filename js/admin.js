@@ -65,7 +65,7 @@
           <label for="a-title" style="margin:0">Назва етапу</label>
           <input id="a-title">
           <div class="kv">
-            <label for="a-dir">Напрямок</label><input id="a-dir" list="a-dirs" maxlength="40" placeholder="Сумський">
+            <label for="a-dir">Напрямок</label><select id="a-dir"><option value="">—</option>${Logic.REGIONS.map((r) => `<option>${r}</option>`).join("")}</select>
             <label for="a-season">Пора року</label><select id="a-season"><option value="">—</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select>
           </div>
           <datalist id="a-dirs"></datalist>
@@ -130,7 +130,7 @@
       $("a-imp-file").onchange = (e) => this.importLocal([...e.target.files]);
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
       $("a-unit").oninput = () => { this.stage().unit = $("a-unit").value; this.dirty(true); };
-      $("a-dir").oninput = () => { this.stage().direction = $("a-dir").value.trim(); this.dirty(true); this.renderList(); };
+      $("a-dir").onchange = () => { this.stage().direction = $("a-dir").value; this.dirty(true); this.renderList(); };
       $("a-season").onchange = () => { this.stage().season = $("a-season").value; this.dirty(true); this.renderList(); };
       $("a-filter-dir").onchange = $("a-filter-season").onchange = () => this.renderList();
       $("a-task").oninput = () => { this.stage().task = $("a-task").value; this.dirty(true); };
@@ -166,15 +166,14 @@
 
     renderList() {
       const $ = this.$;
-      const dirs = [...new Set(this.stages.map((s) => s.direction).filter(Boolean))].sort();
       const fd = $("a-filter-dir"), keep = fd.value;
-      fd.innerHTML = `<option value="">Усі напрямки</option>` + dirs.map((d) => `<option>${esc(d)}</option>`).join("");
-      fd.value = dirs.includes(keep) ? keep : "";
-      $("a-dirs").innerHTML = dirs.map((d) => `<option value="${esc(d)}">`).join("");
+      fd.innerHTML = `<option value="">Усі напрямки</option>` + Logic.REGIONS.map((d) => `<option>${d}</option>`).join("") + `<option value="-">Без напрямку</option>`;
+      fd.value = keep;
       const fs = $("a-filter-season").value;
-      const list = this.stages.filter((s) => (!fd.value || s.direction === fd.value) && (!fs || s.season === fs));
+      const reg = (s) => Logic.region(s) || "-";
+      const list = this.stages.filter((s) => (!fd.value || reg(s) === fd.value) && (!fs || s.season === fs));
       $("a-stages").innerHTML = list.map((s) =>
-        `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}${s.direction || s.season ? `<small class="tag">${esc([s.direction, s.season].filter(Boolean).join(" · "))}</small>` : ""}</span><span class="cnt">${s.targets.length}</span></li>`
+        `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}${Logic.region(s) || s.season ? `<small class="tag">${esc([Logic.region(s), s.season].filter(Boolean).join(" · "))}</small>` : ""}</span><span class="cnt">${s.targets.length}</span></li>`
       ).join("") || `<li class="muted">${this.stages.length ? "Нічого за фільтром" : "Етапів ще немає"}</li>`;
       $("a-stages").querySelectorAll("li[data-id]").forEach((li) => (li.onclick = () => this.select(li.dataset.id)));
       const types = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))].sort();
@@ -207,7 +206,7 @@
       if (!s) return;
       $("a-title").value = s.title;
       $("a-unit").value = s.unit || "";
-      $("a-dir").value = s.direction || "";
+      $("a-dir").value = Logic.region(s);
       $("a-season").value = s.season || "";
       $("a-task").value = s.task || "";
       $("a-toggle").textContent = s.enabled ? "Вимкнути етап" : "Увімкнути етап";
@@ -362,7 +361,8 @@
           const season = parts.find((x) => /^(зима|весна|літо|осінь)$/i.test(x));
           if (season) {
             last.season = season[0].toUpperCase() + season.slice(1).toLowerCase();
-            last.direction = parts.find((x) => x && x !== season && !/^\d+$/.test(x)) || "";
+            const d = parts.find((x) => x && x !== season && !/^\d+$/.test(x)) || "";
+            last.direction = Logic.regionOf(d) || d;
             await API.call("save_stage", {id: last.id, unit: "", task: "", direction: last.direction, season: last.season}, this.pw);
           }
         } catch (e) { st.textContent = e.message; st.className = "status no"; return; }

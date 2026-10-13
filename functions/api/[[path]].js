@@ -45,6 +45,7 @@ async function db(env) {
     try { await env.DB.prepare("ALTER TABLE objects ADD COLUMN ttx TEXT").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE objects ADD COLUMN decoy INTEGER DEFAULT 0").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE stages ADD COLUMN meta TEXT").run(); } catch (e) { /* колонка вже є */ }
+    try { await env.DB.prepare("ALTER TABLE results ADD COLUMN mode TEXT").run(); } catch (e) { /* колонка вже є */ }
     schemaReady = true;
   }
   return env.DB;
@@ -271,8 +272,8 @@ async function submit(env, ctx, req) {
   const total = scores.reduce((a, b) => a + b, 0);
   const max = Number(req.max) || scores.length * 10;
   const pct = max ? Math.round(100 * total / max) : 0;
-  const st = [env.DB.prepare("INSERT INTO results (ts,callsign,total,max,pct,conclusion,scores) VALUES (?,?,?,?,?,?,?)")
-    .bind(when, cs, total, max, pct, String(req.conclusion || ""), JSON.stringify(scores))];
+  const st = [env.DB.prepare("INSERT INTO results (ts,callsign,total,max,pct,conclusion,scores,mode) VALUES (?,?,?,?,?,?,?,?)")
+    .bind(when, cs, total, max, pct, String(req.conclusion || "").slice(0, 120), JSON.stringify(scores), String(req.mode || "game").slice(0, 10))];
   const who = (await hmac(env, "who." + cs)).slice(0, 10); // позивний у кліках не зберігаємо
   (req.clicks || []).slice(0, 500).forEach((c) => st.push(env.DB.prepare("INSERT INTO clicks (stage,x,y,hit,ts,who) VALUES (?,?,?,?,?,?)")
     .bind(String(c[0]), Math.round(c[1]), Math.round(c[2]), c[3] ? 1 : 0, when, who)));
