@@ -67,10 +67,9 @@
           <div class="kv">
             <label for="a-dir">Напрямок</label><select id="a-dir"><option value="">—</option>${Logic.REGIONS.map((r) => `<option>${r}</option>`).join("")}</select>
             <label for="a-season">Пора року</label><select id="a-season"><option value="">—</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select>
+            <label for="a-gsd" title="Скільки метрів на місцевості в одному пікселі знімка — для розміру техніки в генераторах">Масштаб, м/пкс</label><input id="a-gsd" type="number" min="0" max="10" step="0.01" placeholder="0.25">
           </div>
           <datalist id="a-dirs"></datalist>
-          <label for="a-unit" style="margin:0">Завдання від (підрозділ)</label>
-          <input id="a-unit" maxlength="80" placeholder="3-й батальйон 92 ОШБр">
           <label for="a-task" style="margin:0">Текст завдання для брифінгу</label>
           <textarea id="a-task" rows="2" maxlength="400" placeholder="Виявити РСЗВ у районі лісосмуги північніше села та позначити для ураження."></textarea>
           <div class="row">
@@ -82,7 +81,7 @@
           <ul class="list" id="a-targets" style="font-family:var(--mono);font-size:.82rem"></ul>
           <div id="a-tedit">
             <div class="kv">
-              <label for="a-obj">Модель</label><select id="a-obj"></select>
+              <label for="a-type" title="Що за техніка в цій точці. Модель з картинкою додається лише генератором.">Техніка</label><select id="a-type"></select>
               <label for="a-decoy">Муляж (обманка)</label><input id="a-decoy" type="checkbox">
             </div>
             <div id="a-model-box" class="model-box" hidden>
@@ -111,6 +110,7 @@
       </aside>
       <div class="mainpane">
         <div class="bar"><div class="hint" id="a-hint">Новий етап: «Генератор» (вставити техніку в знімок) або «Додати знімки…» і клік по техніці на знімку.</div>
+          <button type="button" class="primary" id="a-auto" title="Сам розставляє техніку на чистих картах і створює багато етапів">Автогенератор</button>
           <button type="button" class="primary" id="a-gen" title="Вбудувати техніку в знімок і зберегти як новий етап">Генератор</button>
           <button type="button" id="a-heat">Теплова карта</button>
           <button type="button" onclick="location.hash='';location.reload()">До гри</button></div>
@@ -129,22 +129,18 @@
       $("a-import").onclick = () => $("a-imp-file").click();
       $("a-imp-file").onchange = (e) => this.importLocal([...e.target.files]);
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
-      $("a-unit").oninput = () => { this.stage().unit = $("a-unit").value; this.dirty(true); };
       $("a-dir").onchange = () => { this.stage().direction = $("a-dir").value; this.dirty(true); this.renderList(); };
+      $("a-gsd").oninput = () => { this.stage().gsd = Number($("a-gsd").value) || 0; this.dirty(true); };
       $("a-season").onchange = () => { this.stage().season = $("a-season").value; this.dirty(true); this.renderList(); };
       $("a-filter-dir").onchange = $("a-filter-season").onchange = () => this.renderList();
       $("a-task").oninput = () => { this.stage().task = $("a-task").value; this.dirty(true); };
       $("a-toggle").onclick = () => { const s = this.stage(); s.enabled = !s.enabled; this.dirty(true); this.renderStage(); };
       $("a-del").onclick = () => this.deleteStage();
       ["a-r", "a-note", "a-decoy"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
-      $("a-obj").onchange = () => {
-        const om = this.objById($("a-obj").value);
-        if (om) $("a-decoy").checked = !!om.decoy;
-        this.fieldChanged(); this.showModel();
-      };
+      $("a-type").onchange = () => this.fieldChanged();
       $("a-ttx-save").onclick = () => this.saveTtx();
       $("a-mname").oninput = () => {
-        const o = this.objById($("a-obj").value), box = $("a-ttx");
+        const o = this.objById(this.modelId), box = $("a-ttx");
         if (o && Logic.isAutoTtx(box.value)) box.value = Logic.ttxFor(null, Logic.typeOf($("a-mname").value.replace(/^муляж\s+/i, "")), !!o.decoy);
       };
       this.loadObjects();
@@ -154,6 +150,7 @@
       $("a-heat").onclick = () => this.toggleHeat();
       $("a-migrate").hidden = !(API.isCF && window.POSHUK_CONFIG.gas);
       $("a-migrate").onclick = () => this.migrate();
+      $("a-auto").onclick = () => { this.heatOn = false; AutoGen.open(this); };
       $("a-gen").onclick = async () => { await this.flushSave(); this.heatOn = false; Gen.open(this); };
       $("a-settings-btn").onclick = () => this.settings();
       document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("s-admin").hidden) this.selectTarget(null); });
@@ -205,9 +202,9 @@
       $("a-settings").hidden = true;
       if (!s) return;
       $("a-title").value = s.title;
-      $("a-unit").value = s.unit || "";
       $("a-dir").value = Logic.region(s);
       $("a-season").value = s.season || "";
+      $("a-gsd").value = s.gsd || "";
       $("a-task").value = s.task || "";
       $("a-toggle").textContent = s.enabled ? "Вимкнути етап" : "Увімкнути етап";
       this.renderTargets();
@@ -218,7 +215,7 @@
       if (!s) return;
       if (this.tsel !== null && this.tsel >= s.targets.length) this.tsel = null;
       $("a-targets").innerHTML = s.targets.map((t, i) =>
-        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length ? "•" : " "}${t.decoy ? "◇ " : ""}${i + 1}. ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль") + " (модель не вибрана)"}${t.decoy ? " — муляж" : ""}</li>`
+        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length ? "•" : " "}${t.decoy ? "◇ " : ""}${i + 1}. ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль")}${t.decoy ? " — муляж" : ""}</li>`
       ).join("") || `<li class="muted">Клікніть по знімку, щоб додати ціль</li>`;
       $("a-targets").querySelectorAll("li[data-i]").forEach((li) => (li.onclick = () => this.selectTarget(Number(li.dataset.i), true)));
       $("a-thint").textContent = this.tsel === null
@@ -238,25 +235,27 @@
         this.filling = true;
         $("a-r").value = t.r || 14;
         $("a-note").value = t.note || "";
-        $("a-obj").value = t.obj || "";
+        this.typeOptions(t.type);
+        $("a-type").value = t.type || "ціль";
+        $("a-type").disabled = !!(t.obj && this.objById(t.obj));   // ціль з генератора: тип — від її моделі
         $("a-decoy").checked = !!t.decoy;
+        this.modelId = t.obj || null;
         this.showModel();
         $("a-signs").querySelectorAll("input").forEach((cb) => (cb.checked = (t.signs || []).includes(cb.dataset.sign)));
         this.filling = false;
         if (zoom) this.viewer.zoomTo(6, t.x, t.y);
-      }
+      } else { $("a-type").disabled = false; this.modelId = null; this.showModel(); }
       this.renderTargets();
     },
 
     fieldChanged() {
       if (this.filling || this.tsel === null) return;
       const t = this.stage().targets[this.tsel], $ = this.$;
-      const mo = this.objById($("a-obj").value);
-      if (mo) t.type = Logic.typeOf(mo.name);
+      const mo = this.objById(t.obj);
+      t.type = mo ? Logic.typeOf(mo.name.replace(/^муляж\s+/i, "")) : ($("a-type").value || "ціль");
       t.r = Math.max(3, Number($("a-r").value) || 14);
       delete t.landmark;
       const note = $("a-note").value.trim(); if (note) t.note = note; else delete t.note;
-      const ob = $("a-obj").value; if (ob) t.obj = ob; else delete t.obj;
       if ($("a-decoy").checked) t.decoy = true; else delete t.decoy;
       const signs = [...$("a-signs").querySelectorAll("input:checked")].map((cb) => cb.dataset.sign);
       if (signs.length) t.signs = signs; else delete t.signs;
@@ -272,10 +271,8 @@
       if (this.tsel !== null) {
         Object.assign(s.targets[this.tsel], {x: Math.round(x), y: Math.round(y)});
       } else {
-        const t = {x: Math.round(x), y: Math.round(y), r: Math.max(3, Number(this.$("a-r").value) || 14), type: this.objById(this.$("a-obj").value) ? Logic.typeOf(this.objById(this.$("a-obj").value).name) : "ціль"};
-        if (this.$("a-obj").value) t.obj = this.$("a-obj").value;
-        const om = this.objById(this.$("a-obj").value);
-        if (this.$("a-decoy").checked || (om && om.decoy)) t.decoy = true;
+        const t = {x: Math.round(x), y: Math.round(y), r: Math.max(3, Number(this.$("a-r").value) || 14), type: this.$("a-type").value || "ціль"};
+        if (this.$("a-decoy").checked) t.decoy = true;
         s.targets.push(t);
       }
       this.dirty(true);
@@ -314,7 +311,7 @@
       if (!s) return;
       this.status("Зберігаю…", "");
       try {
-        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, unit: s.unit || "", task: s.task || "", direction: s.direction || "", season: s.season || ""}, this.pw);
+        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, task: s.task || "", direction: s.direction || "", season: s.season || "", gsd: s.gsd || 0}, this.pw);
         this.status("Збережено ✓", "ok");
       } catch (e) {
         this.status("Не збережено: " + e.message, "no");
@@ -363,7 +360,7 @@
             last.season = season[0].toUpperCase() + season.slice(1).toLowerCase();
             const d = parts.find((x) => x && x !== season && !/^\d+$/.test(x)) || "";
             last.direction = Logic.regionOf(d) || d;
-            await API.call("save_stage", {id: last.id, unit: "", task: "", direction: last.direction, season: last.season}, this.pw);
+            await API.call("save_stage", {id: last.id, direction: last.direction, season: last.season}, this.pw);
           }
         } catch (e) { st.textContent = e.message; st.className = "status no"; return; }
       }
@@ -453,20 +450,27 @@
     async loadObjects() {
       try { this.objects = (await API.call("objects", {}, this.pw)).objects; } catch (e) { this.objects = []; }
       this.objects.push(...Models.LIST);
-      const sel = this.$("a-obj"), keep = sel.value;
-      sel.innerHTML = `<option value="">— не вибрано —</option>` + this.objects.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
-      sel.value = keep || (this.objects[0] ? this.objects[0].id : "");
+      this.typeOptions(this.$("a-type").value);
       this.showModel();
       if (this.stage()) this.renderTargets();
+    },
+
+    /* Список «Техніка»: типові типи + типи моделей з бібліотеки. */
+    typeOptions(keep) {
+      const sel = this.$("a-type"), cur = keep || sel.value;
+      const types = [...new Set([...Logic.TYPES, ...(this.objects || []).filter((o) => !o.decoy).map((o) => Logic.typeOf(o.name)), ...(this.stages || []).flatMap((s) => s.targets.map((t) => t.type)), cur].filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "uk"));
+      sel.innerHTML = types.map((t) => `<option>${esc(t)}</option>`).join("");
+      sel.value = cur && types.includes(cur) ? cur : types[0];
     },
 
     objById(id) { return (this.objects || []).find((o) => o.id === id) || null; },
 
     async showModel() {
-      const $ = this.$, o = this.objById($("a-obj").value);
+      const $ = this.$, o = this.tsel === null ? null : this.objById(this.modelId);
       $("a-model-box").hidden = !o;
       if (!o) return;
-      $("a-model-meta").textContent = `тип: ${Logic.typeOf(o.name.replace(/^муляж\s+/i, ""))}${o.decoy ? " · муляж" : ""} · ≈${o.length_m} м`;
+      $("a-model-meta").textContent = `модель з генератора · тип: ${Logic.typeOf(o.name.replace(/^муляж\s+/i, ""))}${o.decoy ? " · муляж" : ""} · ≈${o.length_m} м`;
       $("a-ttx").value = Logic.ttxFor(o, o.type);
       $("a-mname").value = o.name;
       $("a-ttx").disabled = $("a-ttx-save").disabled = $("a-mname").disabled = !!o.builtin;
@@ -476,7 +480,7 @@
     },
 
     async saveTtx() {
-      const o = this.objById(this.$("a-obj").value), st = this.$("a-ttx-st");
+      const o = this.objById(this.modelId), st = this.$("a-ttx-st");
       if (!o || o.builtin) return;
       o.ttx = Logic.cleanTtx(this.$("a-ttx").value);
       o.name = this.$("a-mname").value.trim() || o.name;
