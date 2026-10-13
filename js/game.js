@@ -81,7 +81,7 @@
     showStart() {
       show("s-start");
       const n = Math.min(this.cfg.rounds_per_game, this.stages.length);
-      $("start-info").textContent = n ? `${n} етап(ів) по ${this.cfg.time_limit_sec} с. Знайдіть усю техніку на кожному знімку.`
+      $("start-info").textContent = n ? `Етапів у грі: ${n}. Знайдіть усю техніку на кожному знімку.`
         : "Поки немає жодного етапу. Адміністратору: відкрийте адмінку й імпортуйте знімки.";
       $("start-info").insertAdjacentHTML("beforeend", n ? "" : ' <a href="#admin">Відкрити адмінку →</a>');
       $("start-btn").disabled = !n;
@@ -125,7 +125,7 @@
       const st = this.cur = this.rounds[this.idx];
       this.targets = st.targets.filter((t) => !t.decoy);
       this.decoys = st.targets.filter((t) => t.decoy);
-      this.found = new Set(); this.foundOrder = []; this.misses = 0; this.marks = []; this.clicks = []; this.reports = {};
+      this.found = new Set(); this.foundOrder = []; this.misses = 0; this.marks = []; this.clicks = [];
       this.over = true;
       $("g-next").hidden = true; $("g-skip").hidden = false; $("g-hint").hidden = false; $("g-hint").disabled = false;
       this.hintUsed = false;
@@ -288,71 +288,10 @@
       this.stats();
       $("g-skip").hidden = true;
       this.outroT = setTimeout(() => this.viewer.fit(true, OUTRO_MS), OUTRO_DELAY);
-      if (false) { // доповідь вимкнено
-        this.queue = this.foundOrder.slice();
-        this.msg(`${reason} +${score} балів. Доповідь: що це за техніка?`, "ok");
-        this.askReport();
-      } else this.debrief();
+      this.debrief();
     },
 
     sq(t) { return this.viewer.gridCell ? squareName(t.x, t.y, this.viewer.gridCell) : ""; },
-
-    askReport() {
-      const i = this.queue[0];
-      const n = this.foundOrder.length - this.queue.length + 1;
-      $("r-title").textContent = `Доповідь ${n}/${this.foundOrder.length}:`;
-      const t = this.targets[i], sq = this.sq(t);
-      this.choice = {};
-      const fill = (id, opts) => {
-        $(id).innerHTML = opts.map((o) => `<button type="button" data-v="${esc(o)}">${esc(o)}</button>`).join("");
-        $(id).querySelectorAll("button").forEach((b) => (b.onclick = () => {
-          $(id).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-          this.choice[id] = b.dataset.v;
-          $("r-send").disabled = !this.reportReady();
-        }));
-      };
-      fill("r-type", Logic.options(t.type || "ціль", this.typePool));
-      $("r-lm-row").hidden = !t.landmark;
-      if (t.landmark) fill("r-landmark", Logic.options(t.landmark, Logic.LANDMARKS.filter((l) => l !== "інше")));
-      $("r-send").disabled = true;
-      $("g-report").hidden = false;
-      const marks = this.marks.filter((m) => m.cross);
-      this.foundOrder.forEach((j) => {
-        const t = this.targets[j], cur = j === i;
-        marks.push({x: t.x, y: t.y, r: (t.r || 14) + (cur ? 4 : 0), color: cur ? COLORS.accent : COLORS.hit, dashed: cur, label: cur ? "доповідь" : ""});
-      });
-      this.viewer.setMarks(marks);
-    },
-
-    reportReady() {
-      const t = this.targets[this.queue[0]];
-      return this.choice["r-type"] && (!t.landmark || this.choice["r-landmark"]);
-    },
-
-    /* Сусідні квадрати навколо цілі — правдоподібні неправильні варіанти. */
-    neighbors(t) {
-      const c = this.viewer.gridCell, img = this.viewer.img;
-      if (!c || !img) return [];
-      const col = Math.floor(t.x / c), row = Math.floor(t.y / c), cols = Math.ceil(img.width / c), rows = Math.ceil(img.height / c), out = [];
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const x = col + dx, y = row + dy;
-        if ((dx || dy) && x >= 0 && y >= 0 && x < cols && y < rows) out.push(squareName((x + 0.5) * c, (y + 0.5) * c, c));
-      }
-      return out;
-    },
-
-    submitReport() {
-      if (!this.reportReady()) return;
-      const i = this.queue.shift();
-      const t = this.targets[i];
-      const rep = {type: this.choice["r-type"], landmark: this.choice["r-landmark"] || ""};
-      this.reports[i] = {rep, ev: Logic.evalReport(t, this.sq(t), rep)};
-      if (this.queue.length) return this.askReport();
-      $("g-report").hidden = true;
-      const vals = Object.values(this.reports);
-      this.result.report = `${vals.reduce((a, r) => a + r.ev.ok, 0)}/${vals.reduce((a, r) => a + r.ev.total, 0)}`;
-      this.debrief();
-    },
 
     debrief() {
       const missed = this.targets.map((_, i) => i).filter((i) => !this.found.has(i));
@@ -369,17 +308,10 @@
       const h = [`<h2>РОЗБІР ЕТАПУ</h2>`];
       this.targets.forEach((t, i) => {
         const ok = this.found.has(i), sq = this.sq(t);
-        const where = [sq && "квадрат " + sq, t.landmark].filter(Boolean).join(", ");
+        const where = sq ? "квадрат " + sq : "";
         h.push(`<p class="${ok ? "t-ok" : "t-no"}">${i + 1}. ${esc(t.type || "ціль")} — ${esc(where)} (${ok ? "знайдено" : "не знайдено"})</p>`);
         if (t.signs && t.signs.length) h.push(`<p class="sub">Ознаки: ${esc(t.signs.join(", "))}</p>`);
         if (t.note) h.push(`<p class="sub muted">${esc(t.note)}</p>`);
-        const r = this.reports[i];
-        if (r) {
-          const said = [r.rep.type, r.rep.square && "квадрат " + r.rep.square, r.rep.landmark].filter(Boolean).join(", ");
-          h.push(`<p class="sub">Доповідь: «${esc(said || "—")}»</p>`);
-          const parts = r.ev.checks.map(([name, good, right]) => good ? `${name} ✓` : `${name} ✗ (правильно: ${esc(right)})`);
-          h.push(`<p class="sub ${r.ev.ok === r.ev.total ? "t-ok" : "t-no"}">${parts.join(" · ")}</p>`);
-        }
       });
       this.decoys.forEach((t) => {
         const sq = this.sq(t);
