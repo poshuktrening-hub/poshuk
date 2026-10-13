@@ -4,7 +4,9 @@
     "у населеному пункті", "біля водойми", "у промзоні", "інше"];
   const SIGNS = ["тінь", "«мангал»", "колія / сліди", "нетиповий силует", "маскувальна сітка",
     "колір / відблиск", "укриття під кронами", "позиція / окоп"];
-  const LAT2CYR = {A: "А", B: "В", C: "С", E: "Е", H: "Н", K: "К", M: "М", O: "О", P: "Р", T: "Т", X: "Х", I: "І"};
+  const CYR2LAT = {А: "A", В: "B", С: "C", Е: "E", Н: "H", К: "K", М: "M", Р: "P", Т: "T", Х: "X"};
+  const TYPES = ["танк", "БМП", "БТР", "САУ", "РСЗВ", "буксирувана гармата", "міномет", "ЗРК", "РЕБ", "РЛС",
+    "катапульта з БпЛА", "вантажівка", "легковик", "бліндаж / укриття"];
 
   function pickRounds(stages, n) {
     const pool = stages.filter((s) => s.targets && s.targets.length).slice();
@@ -35,7 +37,15 @@
     return "Незадовільно";
   }
 
-  const normSquare = (s) => (s || "").toUpperCase().replace(/[\s.\-]/g, "").replace(/[ABCEHKMOPTXI]/g, (c) => LAT2CYR[c]);
+  const normSquare = (s) => (s || "").toUpperCase().replace(/[\s.\-]/g, "").replace(/[АВСЕНКМРТХ]/g, (c) => CYR2LAT[c]);
+
+  function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+  /* Варіанти відповіді: правильна + до n-1 інших (без повторів), у випадковому порядку. */
+  function options(right, pool, n = 4) {
+    const others = shuffle([...new Set(pool.filter((v) => v && normText(v) !== normText(right)))]).slice(0, n - 1);
+    return shuffle([right, ...others]);
+  }
   const normText = (s) => (s || "").toLowerCase().replace(/[«»"]/g, "").replace(/\s+/g, " ").trim();
 
   function evalReport(t, squareTrue, rep) {
@@ -45,5 +55,5 @@
     return {ok: checks.filter((c) => c[1]).length, total: checks.length, checks};
   }
 
-  window.Logic = {LANDMARKS, SIGNS, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
+  window.Logic = {LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
 })();

@@ -69,8 +69,12 @@ button:disabled { opacity: .5; cursor: default; }
 .msg.ok { color: var(--hit); } .msg.no { color: var(--miss); }
 .report { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; background: var(--line); }
 .report label { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 400; color: var(--muted); }
-.report input, .report select { width: auto; min-width: 0; }
-.report #r-type { width: 13rem; }
+.report .ch-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.report .ch-row > span { color: var(--muted); font-size: .88rem; min-width: 4.5rem; }
+.choices { display: flex; gap: 6px; flex-wrap: wrap; }
+.choices button { padding: 6px 12px; font-size: .9rem; background: var(--bg); }
+.choices button.on { background: var(--accent); color: #141814; border-color: var(--accent); }
+#r-send:disabled { opacity: .45; }
 .report b { color: var(--accent); font-family: var(--display); letter-spacing: .03em; }
 .debrief {
   position: absolute; left: 16px; bottom: 16px; z-index: 2; max-width: min(460px, calc(100% - 96px));
@@ -121,7 +125,7 @@ td.num, th.num { text-align: center; }
   .admin { grid-template-columns: 1fr; grid-template-rows: auto 70vh; height: auto; }
   .side { border-right: none; border-bottom: 1px solid var(--line); }
   .stats { font-size: .8rem; gap: 4px 12px; }
-  .report #r-type { width: 100%; }
+  .report .ch-row > span { min-width: 100%; }
   .debrief { left: 8px; right: 8px; max-width: none; bottom: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { .timebar i { transition: none; } }
@@ -132,3 +136,12 @@ a.link { display: inline-block; text-align: center; font-size: .9rem; }
 .sliders label { display: flex; flex-direction: column; gap: 2px; margin: 0; font-weight: 400; font-size: .78rem; color: var(--muted); }
 .sliders label b { color: var(--fg, #e4e8dc); font: 500 .78rem var(--mono); }
 .sliders input[type=range] { width: 100%; padding: 0; accent-color: var(--accent); }
+.seg-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .85rem; }
+.seg-row > span { color: var(--muted); min-width: 6rem; }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { padding: 4px 9px; font-size: .82rem; background: var(--bg); }
+.seg button.on { background: var(--accent); color: #141814; border-color: var(--accent); }
+label.slim { display: flex; flex-direction: column; gap: 2px; margin: 0; font-weight: 400; font-size: .85rem; color: var(--muted); }
+label.slim b { color: var(--fg); font: 500 .8rem var(--mono); }
+label.slim input { width: 100%; padding: 0; accent-color: var(--accent); }
+details.adv summary { cursor: pointer; color: var(--muted); font-size: .85rem; margin: 4px 0; }
