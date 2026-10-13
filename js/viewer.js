@@ -215,7 +215,8 @@
       const s = this.s;
       ctx.imageSmoothingEnabled = !(this.pixel || s / this.minS >= 6);
       ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(this.img, this.tx, this.ty, this.img.width * s, this.img.height * s);
+      if (this.img.drawTo) { this.img.onTile = () => this.draw(); this.img.drawTo(ctx, this.tx, this.ty, s, this.W, this.H); }
+      else ctx.drawImage(this.img, this.tx, this.ty, this.img.width * s, this.img.height * s);
       if (this.showGrid && this.gridCell) this._grid();
       for (const m of this.marks) this._mark(m);
       this.zoomLbl.textContent = "×" + (this.s / this.minS).toFixed(1);

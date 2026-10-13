@@ -170,10 +170,11 @@
     },
 
     // ---------- знімок
-    setBase(img, name) {
-      const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    async setBase(img, name) {
+      const src = await Tiles.toCanvas(img);
+      const w = src.width, h = src.height;
       this.base = Compose.canvas(w, h);
-      this.base.getContext("2d").drawImage(img, 0, 0);
+      this.base.getContext("2d").drawImage(src, 0, 0);
       this.work = Compose.canvas(w, h);
       this.work.getContext("2d").drawImage(this.base, 0, 0);
       this.baseName = name; this.placed = []; this.undo = []; this.point = null; this.rect = null;
@@ -187,12 +188,12 @@
       const a = this.admin, s = a.stage();
       if (!s) { this.hint("В адмінці не вибрано етап — відкрийте знімок кнопкою «Файл…»."); return; }
       this.loading("Завантажую знімок…");
-      try { this.setBase(await API.loadImage(s.id, this.pw), s.title); } catch (e) { this.hint(e.message); }
+      try { await this.setBase(await API.loadImage(s.id, this.pw), s.title); } catch (e) { this.hint(e.message); }
       this.loading(null);
     },
 
     async baseFromFile(file) {
-      try { this.setBase(await loadImg(await fileToDataURL(file)), file.name.replace(/\.[^.]+$/, "")); } catch (e) { this.hint(e.message); }
+      try { await this.setBase(await loadImg(await fileToDataURL(file)), file.name.replace(/\.[^.]+$/, "")); } catch (e) { this.hint(e.message); }
       this.$("g-base-file").value = "";
     },
 
@@ -283,18 +284,14 @@
       if (!targets.length) { this.hint("На знімку ще немає техніки."); return; }
       this.loading("Зберігаю етап…");
       try {
-        let blob = await toBlob(this.work, "image/png"), ext = "png";
-        if (blob.size > 15 * 1024 * 1024) { blob = await toBlob(this.work, "image/jpeg", 0.95); ext = "jpg"; }
-        const data = (await fileToDataURL(blob)).split(",")[1];
         const d = new Date(), pad = (n) => String(n).padStart(2, "0");
-        const name = `gen_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`;
+        const name = `gen_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
         const title = `${this.baseName} · ${[...new Set(targets.map((t) => t.type))].sort().join(", ")}`;
-        const j = await API.call("upload", {name, mime: blob.type, data, title, w: this.work.width, h: this.work.height, targets}, this.pw);
         const cv = Compose.canvas(this.work.width, this.work.height);
         cv.getContext("2d").drawImage(this.work, 0, 0);
-        API.imgCache.set(j.stage.id, Promise.resolve(cv));
-        this.admin.stages.push(j.stage);
-        this.admin.sel = j.stage.id;
+        const stage = await API.uploadStage(cv, {title, targets, name}, this.pw, (m) => this.loading("Зберігаю етап… " + m));
+        this.admin.stages.push(stage);
+        this.admin.sel = stage.id;
         this.loading(null);
         UI.toast(`Етап «${title}» збережено: цілей ${targets.length}.`);
         this.close();

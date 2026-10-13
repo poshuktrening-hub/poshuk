@@ -101,7 +101,7 @@
       }
       this.viewer.toggleGrid(true);
       this.gridBtn.classList.add("on");
-      this.preload(0); this.preload(1);
+      this.rounds.forEach((_, i) => this.preload(i));
       this.nextRound();
     },
 
