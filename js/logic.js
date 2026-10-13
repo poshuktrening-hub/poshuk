@@ -56,6 +56,25 @@
 
   const roundScore = (total, found) => (total && found === total ? 10 : 0);
 
+  /* Звання за відсотком балів гри */
+  const RANKS = [
+    {min: 0, name: "Курсант"}, {min: 40, name: "Спостерігач"}, {min: 60, name: "Оператор розвідки"},
+    {min: 75, name: "Старший оператор розвідки"}, {min: 90, name: "Аналітик аеророзвідки"}, {min: 100, name: "Майстер повітряної розвідки"},
+  ];
+  function rank(pct) {
+    let level = 0;
+    RANKS.forEach((r, i) => { if (pct >= r.min) level = i; });
+    return {level, name: RANKS[level].name, next: RANKS[level + 1] || null};
+  }
+  /* Бейдж: щит з шевронами (1–5) або зірка для найвищого */
+  function rankBadge(level) {
+    const col = ["#7d8a6a", "#9fb06a", "#c9d64a", "#d9c24a", "#e8a84a", "#f0d060"][level];
+    let inner = "";
+    if (level === 5) inner = `<path d="M40 22l5.3 10.8 11.9 1.7-8.6 8.4 2 11.8L40 49.1l-10.6 5.6 2-11.8-8.6-8.4 11.9-1.7z" fill="${col}"/>`;
+    else for (let i = 0; i <= level; i++) inner += `<path d="M24 ${58 - i * 9}l16-9 16 9" fill="none" stroke="${col}" stroke-width="5" stroke-linejoin="round"/>`;
+    return `<svg class="rk-badge" viewBox="0 0 80 88" width="72" height="80" aria-hidden="true"><path d="M40 4l32 10v28c0 20-14 34-32 42C22 76 8 62 8 42V14z" fill="#141814" stroke="${col}" stroke-width="3"/>${inner}</svg>`;
+  }
+
   function conclusion(total, max) {
     const pct = max ? 100 * total / max : 0;
     if (pct >= 80) return "Відмінно";
@@ -82,5 +101,5 @@
     return {ok: checks.filter((c) => c[1]).length, total: checks.length, checks};
   }
 
-  window.Logic = {TTX_DEFAULT, ttxFor, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
+  window.Logic = {rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
 })();

@@ -35,6 +35,9 @@
       $("logout-btn").onclick = () => { LS.del("poshuk_pw"); this.password = null; this.showLogin(); };
       $("g-skip").onclick = () => this.skip();
       $("g-hint").onclick = () => this.hint();
+      $("g-sound").textContent = SFX.on ? "🔊" : "🔇";
+      $("g-sound").onclick = () => { $("g-sound").textContent = SFX.toggle() ? "🔊" : "🔇"; };
+      this.noiseLoop();
       $("g-next").onclick = () => this.nextRound();
       $("g-quit").onclick = () => { if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
       $("sum-again").onclick = () => this.showStart();
@@ -97,13 +100,14 @@
       const cs = $("callsign").value.trim();
       if (!cs) { $("start-err").textContent = "Введіть позивний"; return; }
       LS.set("poshuk_callsign", cs);
+      SFX.unlock();
       this.callsign = cs;
       this.rounds = Logic.pickRounds(this.stages, this.cfg.rounds_per_game);
       this.results = [];
       this.idx = -1;
       show("s-game");
       if (!this.viewer) {
-        this.viewer = new Viewer($("g-view"), {onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y)});
+        this.viewer = new Viewer($("g-view"), {onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
         const g = this.viewer.addButton("#", "Сітка квадратів", () => { this.viewer.toggleGrid(); g.classList.toggle("on", this.viewer.showGrid); });
         this.gridBtn = g;
       }
@@ -150,7 +154,8 @@
       if (this.cur !== st) return;
       this.over = false;
       this.msg("Лівий клік — наблизити. Ще один лівий клік — позначити ціль. Правий клік — віддалити. «#» — сітка.");
-      this.t0 = performance.now();
+      this.t0 = performance.now(); this.lastTick = null;
+      this.hudSeed(st); this.hud();
       this.stats();
       this.tick();
     },
@@ -178,14 +183,54 @@
         return `<div class="b-card">${pic ? `<div class="b-pic">${pic}</div>` : ""}<div class="b-txt"><h3>${esc(name)}</h3>${sub}${len}${ttx ? `<p>${esc(ttx).replace(/\n/g, "<br>")}</p>` : ""}</div></div>`;
       }));
       const n = st.targets.filter((x) => !x.decoy).length;
-      box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЗНАЙТИ ${n > 1 ? n + " ЦІЛІ" : "ЦІЛЬ"}</div>${cards.join("")}
+      const types = [...new Set(st.targets.filter((x) => !x.decoy).map((x) => x.type).filter(Boolean))].join(", ");
+      const unit = (st.unit || "").trim(), task = (st.task || "").trim() || `Виявити ${types || "техніку противника"} у районі «${st.title.split("·")[0].trim()}» та позначити для ураження.`;
+      box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЗНАЙТИ ${n > 1 ? n + " ЦІЛІ" : "ЦІЛЬ"}</div>
+        <div class="b-task"><div class="b-from">📡 ЗАВДАННЯ${unit ? " ВІД: " + esc(unit.toUpperCase()) : ""}</div><p>${esc(task)}</p></div>${cards.join("")}
         <p class="b-warn">⚠ На знімку можуть бути муляжі — клік по обманці рахується як промах.</p>
         <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Почати зараз</button></div></div>`;
       box.hidden = false;
+      SFX.radio();
       const bar = box.querySelector(".b-bar i");
       requestAnimationFrame(() => { bar.style.transition = `transform ${BRIEF_MS}ms linear`; bar.style.transform = "scaleX(0)"; });
       await new Promise((res) => { const t = setTimeout(res, BRIEF_MS); box.querySelector("#b-go").onclick = () => { clearTimeout(t); res(); }; });
       box.hidden = true;
+    },
+
+    // ---------- вигляд камери дрона
+    hudSeed(st) {
+      let h = 0; for (const ch of String(st.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      const r = (k) => ((h >>> k) & 1023) / 1023;
+      this.hudBase = {lat: 46.45 + r(0) * 1.1, lon: 31.4 + r(10) * 3.2, hdg: Math.round(r(5) * 359), gsd: 0.5};
+    },
+    hud() {
+      const v = this.viewer, b = this.hudBase;
+      if (!v || !v.img || !b) return;
+      const [cx, cy] = v.toImage(v.W / 2, v.H / 2), z = v.zoomRel();
+      const dn = (v.img.height / 2 - cy) * b.gsd, de = (cx - v.img.width / 2) * b.gsd;
+      const lat = b.lat + dn / 111320, lon = b.lon + de / (111320 * Math.cos(b.lat * Math.PI / 180));
+      const dms = (d, p, n) => { const a = Math.abs(d), D = Math.floor(a), M = Math.floor((a - D) * 60), S = ((a - D) * 60 - M) * 60; return `${D}°${String(M).padStart(2, "0")}'${S.toFixed(1).padStart(4, "0")}"${d >= 0 ? p : n}`; };
+      $("hud-tl").innerHTML = `ALT ${Math.round(620 / Math.max(1, z))} m<br>HDG ${String(b.hdg).padStart(3, "0")}°<br>SPD 0.0 m/s<br>BAT 78%`;
+      $("hud-bl").textContent = `${dms(lat, "N", "S")}  ${dms(lon, "E", "W")}`;
+      const sq = v.gridCell && v.inside(cx, cy) ? squareName(cx, cy, v.gridCell) : "—";
+      $("hud-br").innerHTML = `ZOOM ×${z.toFixed(1)}<br>SQ ${sq}`;
+    },
+    hudClock() {
+      const s = Math.floor((performance.now() - this.t0) / 1000);
+      $("hud-clock").textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    },
+    noiseLoop() {
+      const c = document.querySelector(".hud-noise"); if (!c) return;
+      const x = c.getContext("2d"), id = x.createImageData(c.width, c.height);
+      const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const draw = () => {
+        if (!$("s-game").hidden) {
+          for (let i = 0; i < id.data.length; i += 4) { const g = Math.random() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = g; id.data[i + 3] = 255; }
+          x.putImageData(id, 0, 0);
+        }
+        if (!still) setTimeout(draw, 90);
+      };
+      draw();
     },
 
     left() { return Math.max(0, this.cfg.time_limit_sec - (performance.now() - this.t0) / 1000); },
@@ -197,7 +242,10 @@
       $("g-time").classList.toggle("warn", warn);
       document.querySelector(".timebar").classList.toggle("warn", warn);
       $("g-timebar").style.transform = `scaleX(${l / this.cfg.time_limit_sec})`;
-      if (l <= 0) return this.endRound("Час вийшов!");
+      const sec = Math.ceil(l);
+      if (warn && sec !== this.lastTick && sec > 0) { this.lastTick = sec; SFX.tick(sec <= 3); }
+      this.hudClock();
+      if (l <= 0) { SFX.timeout(); return this.endRound("Час вийшов!"); }
       this.tickT = setTimeout(() => this.tick(), 200);
     },
 
@@ -214,6 +262,7 @@
       const v = this.viewer;
       if (v.zoomRel() < 2.5) {
         v.zoomAt(this.cfg.zoom_click / v.zoomRel(), cx, cy);
+        SFX.zoom();
         this.msg("Лівий клік — позначити ціль. Правий клік — віддалити.");
         return;
       }
@@ -225,6 +274,7 @@
         const dec = this.decoys.find((t) => Math.hypot(x - t.x, y - t.y) <= (t.r || 14));
         this.misses++;
         if (dec) this.clicks[this.clicks.length - 1][4] = 1;
+        if (dec) SFX.decoy(); else SFX.miss();
         if (dec) { dec.hitByPlayer = true; this.marks.push({x: dec.x, y: dec.y, r: dec.r || 14, color: COLORS.decoy, dashed: true, label: "муляж!"}); }
         else this.marks.push({x, y, cross: true, color: COLORS.miss});
         v.setMarks(this.marks);
@@ -233,10 +283,11 @@
         this.msg(`${dec ? "Це МУЛЯЖ — обманка, рахується як промах." : "Мимо!"} ${leftM === 0 ? "Наступний промах завершить етап." : "Можна ще промахнутись: " + leftM + "."} Правий клік — віддалити й шукати далі.`, "no");
       } else {
         this.found.add(hit); this.foundOrder.push(hit);
+        SFX.hit();
         const t = this.targets[hit];
         this.marks.push({x: t.x, y: t.y, r: t.r || 14, color: COLORS.hit});
         v.setMarks(this.marks);
-        if (this.found.size === this.targets.length) return this.endRound("Усі цілі знайдено!");
+        if (this.found.size === this.targets.length) { setTimeout(() => SFX.win(), 250); return this.endRound("Усі цілі знайдено!"); }
         this.msg(`Є! Лишилось цілей: ${this.targets.length - this.found.size}.`, "ok");
       }
       this.stats();
@@ -345,6 +396,8 @@
       const pct = max ? Math.round(100 * total / max) : 0, concl = Logic.conclusion(total, max);
       $("sum-title").textContent = `Підсумок · ${this.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
+      const rk = Logic.rank(pct);
+      $("sum-rank").innerHTML = `${Logic.rankBadge(rk.level)}<div><div class="rk-label">ЗВАННЯ</div><div class="rk-name">${esc(rk.name)}</div><div class="rk-next">${rk.next ? `До «${esc(rk.next.name)}» — від ${rk.next.min}%` : "Найвище звання"}</div></div>`;
       $("sum-total").style.color = pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
       $("sum-table").innerHTML = `<tr><th class="num">Етап</th><th>Знімок</th><th class="num">Цілі</th><th class="num">Промахи</th><th class="num">Час, с</th><th class="num">Бали</th></tr>` +
         res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.title)}</td><td class="num">${r.found}/${r.total}</td><td class="num">${r.misses}</td><td class="num">${r.time}</td><td class="num">${r.score}</td></tr>`).join("");
