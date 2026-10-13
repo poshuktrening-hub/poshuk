@@ -55,6 +55,7 @@
             <label class="btnlike" style="margin:0;flex:1"><button type="button" id="a-add" style="width:100%">Додати знімки…</button></label>
             <button type="button" id="a-import" title="Виберіть папку локальної версії гри (poshuk_local)">Імпорт папки…</button>
           </div>
+          <button type="button" id="a-migrate" hidden title="Скопіювати етапи й техніку з Google-таблиці">Перенести з Google…</button>
           <input type="file" id="a-file" accept="image/*" multiple hidden>
           <input type="file" id="a-imp-file" webkitdirectory directory multiple hidden>
           <p class="status" id="a-up-status"></p>
@@ -117,6 +118,8 @@
       $("a-tdel").onclick = () => this.deleteTarget(this.tsel);
       $("a-tdesel").onclick = () => this.selectTarget(null);
       $("a-heat").onclick = () => this.toggleHeat();
+      $("a-migrate").hidden = !(API.isCF && window.POSHUK_CONFIG.gas);
+      $("a-migrate").onclick = () => this.migrate();
       $("a-gen").onclick = async () => { await this.flushSave(); this.heatOn = false; Gen.open(this); };
       $("a-settings-btn").onclick = () => this.settings();
       document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("s-admin").hidden) this.selectTarget(null); });
@@ -286,12 +289,12 @@
     },
 
     async uploadOne(file, title, targets) {
-      if (file.size > 20 * 1024 * 1024) throw new Error(`«${file.name}» більший за 20 МБ`);
-      const {img, data, mime} = await this.readImage(file);
-      const j = await API.call("upload", {name: file.name, mime, data, title, w: img.width, h: img.height, targets: targets || []}, this.pw);
-      API.imgCache.set(j.stage.id, Promise.resolve(img));
-      this.stages.push(j.stage);
-      return j.stage;
+      if (file.size > (API.isCF ? 80 : 20) * 1024 * 1024) throw new Error(`«${file.name}» завеликий`);
+      const {img} = await this.readImage(file);
+      const st = this.$("a-up-status"), prefix = st.textContent;
+      const stage = await API.uploadStage(img, {title, targets, name: file.name.replace(/\.[^.]+$/, "")}, this.pw, (m) => (st.textContent = prefix + " " + m));
+      this.stages.push(stage);
+      return stage;
     },
 
     async uploadFiles(files) {
@@ -336,6 +339,43 @@
       if (items.length) this.select(this.stages[this.stages.length - 1].id);
     },
 
+    /* Перенесення з Google-скрипта: етапи (знімок + цілі + увімкнено) і бібліотека техніки. Дублікати за назвою пропускаються. */
+    async migrate() {
+      const gas = window.POSHUK_CONFIG.gas, st = this.$("a-up-status");
+      if (!confirm("Скопіювати всі етапи й техніку з Google-таблиці сюди? Етапи з такою самою назвою буде пропущено.")) return;
+      const G = async (action, data = {}) => {
+        const r = await fetch(gas, {method: "POST", body: JSON.stringify(Object.assign({action, p: this.pw}, data)), redirect: "follow"});
+        const j = await r.json(); if (!j.ok) throw new Error(j.error || "Помилка Google-скрипта"); return j;
+      };
+      const img = (j) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Не вдалось відкрити знімок")); i.src = `data:${j.mime};base64,${j.data}`; });
+      try {
+        st.className = "status"; st.textContent = "Читаю етапи з Google…";
+        const list = (await G("admin_stages")).stages;
+        const have = new Set(this.stages.map((s) => s.title));
+        let n = 0;
+        for (const s of list) {
+          if (have.has(s.title)) continue;
+          st.textContent = `Переношу ${n + 1}: ${s.title}…`;
+          const stage = await API.uploadStage(await img(await G("image", {id: s.id})), {title: s.title, targets: s.targets}, this.pw);
+          if (!s.enabled) { stage.enabled = false; await API.call("save_stage", {id: stage.id, enabled: false}, this.pw); }
+          this.stages.push(stage); n++;
+          this.renderList();
+        }
+        let m = 0;
+        try {
+          const objs = (await G("objects")).objects;
+          const haveO = new Set((await API.call("objects", {}, this.pw)).objects.map((o) => o.name));
+          for (const o of objs) {
+            if (haveO.has(o.name)) continue;
+            const d = await G("object", {id: o.id});
+            await API.call("object_upload", {name: o.name, length_m: o.length_m, type: o.type, data: d.data}, this.pw); m++;
+          }
+        } catch (e) { /* у старій версії скрипта бібліотеки техніки ще немає */ }
+        st.className = "status ok"; st.textContent = `Перенесено етапів: ${n}` + (m ? `, техніки: ${m}` : "") + ".";
+        if (n && !this.sel) this.select(this.stages[0].id);
+      } catch (e) { st.className = "status no"; st.textContent = "Перенесення зупинено: " + e.message; }
+    },
+
     async deleteStage() {
       const s = this.stage();
       if (!s || !confirm(`Видалити етап «${s.title}» разом зі знімком?`)) return;
@@ -362,7 +402,9 @@
       let j;
       try { j = await API.call("heat", {id: s.id}, this.pw); } catch (e) { this.$("a-hint").textContent = e.message; return; }
       if (!this.heatOn || this.sel !== s.id) return;
-      this.viewer.replaceImage(renderHeat(this.img, j.clicks, s.targets));
+      const src = await Tiles.toCanvas(this.img);
+      if (!this.heatOn || this.sel !== s.id) return;
+      this.viewer.replaceImage(renderHeat(src, j.clicks, s.targets));
       const miss = j.clicks.filter((c) => !c[2]).length;
       this.$("a-hint").textContent = j.clicks.length
         ? `Кліків: ${j.clicks.length} · влучань: ${j.clicks.length - miss} · промахів: ${miss} · курсантів: ${j.players}. Червона пляма — де найчастіше помилково клікають.`
