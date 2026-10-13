@@ -96,15 +96,6 @@
     },
 
     /* Головне меню: режим, напрямок, пора року (з кількістю етапів у кожному варіанті). */
-    /* Скільки мапи закривають панелі поверх неї — на стільки можна «перегорнути» край, щоб техніка не сховалась під ними. */
-    overlayInsets() {
-      const v = $("g-view").getBoundingClientRect(), top = document.querySelector("#s-game .timebar").getBoundingClientRect();
-      const rail = this.viewer && this.viewer.rail.getBoundingClientRect();
-      const btns = [...document.querySelectorAll("#s-game .bar.bottom > *:not([hidden])")].map((e) => e.getBoundingClientRect()).filter((r) => r.height);
-      const foot = btns.length ? v.bottom - Math.min(...btns.map((r) => r.top)) : 0;
-      return {t: Math.max(0, top.bottom - v.top), r: rail ? Math.max(0, v.right - rail.left) : 0, b: Math.max(0, foot + 4), l: 0};
-    },
-
     playable() { return this.stages.filter((s) => s.targets && s.targets.some((t) => !t.decoy)); },
     /* Галочки: усі вибрані = без фільтра (разом з етапами, де напрямок/пора не вказані). */
     filtered(regions = this.sel.regions, seasons = this.sel.seasons) {
@@ -150,10 +141,11 @@
       this.idx = -1;
       show("s-game");
       if (!this.viewer) {
-        this.viewer = new Viewer($("g-view"), {fill: true, insets: () => this.overlayInsets(), onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
+        this.viewer = new Viewer($("g-view"), {fill: true, onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
         const g = this.viewer.addButton("#", "Сітка квадратів", () => { this.viewer.toggleGrid(); g.classList.toggle("on", this.viewer.showGrid); });
         this.gridBtn = g;
-        this.viewer.rail.insertBefore($("g-sound"), this.viewer.zoomLbl || null); // звук — у колонку кнопок над мапою
+        this.viewer.rail.insertBefore($("g-sound"), this.viewer.zoomLbl || null);
+        $("g-tools").appendChild(this.viewer.rail);   // кнопки зуму — у нижню панель, щоб нічого не лежало поверх мапи
       }
       this.viewer.toggleGrid(false);   // сітка — за кнопкою «#» (і вмикається підказкою)
       this.gridBtn.classList.remove("on");
@@ -231,9 +223,11 @@
       const unit = (st.unit || "").trim(), task = (st.task || "").trim() || `Виявити ${types || "техніку противника"} у районі «${st.title.split("·")[0].trim()}» та позначити для ураження.`;
       if (after) {   // хардкор: картка цілі — лише після етапу
         box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЩО ВИ ШУКАЛИ</div>${cards.join("")}
-          <div class="b-foot"><span class="b-sp"></span><button type="button" class="primary" id="b-go">До розбору</button></div></div>`;
+          <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Далі</button></div></div>`;
         box.hidden = false;
-        await new Promise((res) => (box.querySelector("#b-go").onclick = res));
+        const bar = box.querySelector(".b-bar i");
+        requestAnimationFrame(() => { bar.style.transition = `transform ${BRIEF_MS}ms linear`; bar.style.transform = "scaleX(0)"; });
+        await new Promise((res) => { const t = setTimeout(res, BRIEF_MS); box.querySelector("#b-go").onclick = () => { clearTimeout(t); res(); }; });
         box.hidden = true;
         return;
       }
@@ -377,7 +371,7 @@
       }
       if (this.mode.blind) {   // спершу картка «що це було», потім розбір
         const st = this.cur;
-        setTimeout(() => this.brief(st, true).then(() => { if (this.cur === st) { this.showAllMarks(); this.debrief(); } }), 700);
+        this.brief(st, true).then(() => { if (this.cur === st) { this.showAllMarks(); this.debrief(); } });
         return;
       }
       this.outroT = setTimeout(() => this.showAllMarks(), OUTRO_DELAY);
