@@ -330,7 +330,7 @@
       if (!pts.length || !v.img) return v.fit(true, OUTRO_MS);
       const x0 = Math.min(...pts.map((p) => p[0] - p[2])), x1 = Math.max(...pts.map((p) => p[0] + p[2] + 50)); // +місце під підписи
       const y0 = Math.min(...pts.map((p) => p[1] - p[2])), y1 = Math.max(...pts.map((p) => p[1] + p[2]));
-      const rel = Math.max(1, Math.min(v.coverRel(), Math.min(v.W / (x1 - x0), (v.H - 50) / (y1 - y0)) / v.minS));
+      const rel = Math.max(v.coverRel(), Math.min(v.coverRel() * 3, Math.min(v.W / (x1 - x0), (v.H - 50) / (y1 - y0)) / v.minS));
       const s = v.minS * rel;
       v._go(s, v.W / 2 - (x0 + x1) / 2 * s, (v.H - 50) / 2 - (y0 + y1) / 2 * s, true, OUTRO_MS);
     },
