@@ -29,25 +29,47 @@
     let minA = 255;
     for (let i = 3; i < px.length; i += 4) if (px[i] < minA) minA = px[i];
     if (minA > 250) {
+      // Фон — те, що зʼєднане з краями картинки і схоже на колір кутів АБО такий самий сірий/темний
+      // (прибирає й сітку, й градієнт фону рендера; темні деталі всередині техніки лишаються).
       const k = Math.max(2, Math.floor(Math.min(w, h) / 40));
       const rs = [], gs = [], bs = [];
       const take = (x0, y0) => { for (let y = y0; y < y0 + k; y++) for (let x = x0; x < x0 + k; x++) { const j = (y * w + x) * 4; rs.push(px[j]); gs.push(px[j + 1]); bs.push(px[j + 2]); } };
       take(0, 0); take(w - k, 0); take(0, h - k); take(w - k, h - k);
       const med = (a) => a.sort((p, q) => p - q)[a.length >> 1];
       const bg = [med(rs), med(gs), med(bs)];
-      const al = new Uint8ClampedArray(w * h);
-      for (let i = 0, j = 0; i < al.length; i++, j += 4) {
-        const d = Math.hypot(px[j] - bg[0], px[j + 1] - bg[1], px[j + 2] - bg[2]);
-        al[i] = Math.max(0, Math.min(1, (d - tolerance) / (tolerance * 0.6 + 6))) * 255;
+      const bmx = Math.max(...bg), bgv = bmx / 255, bgs = bmx ? (bmx - Math.min(...bg)) / bmx : 0;
+      const cand = new Uint8Array(w * h);
+      for (let i = 0, j = 0; i < cand.length; i++, j += 4) {
+        const r = px[j], g = px[j + 1], b = px[j + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        const sat = mx ? (mx - mn) / mx : 0, val = mx / 255;
+        const d = Math.hypot(r - bg[0], g - bg[1], b - bg[2]);
+        cand[i] = d < tolerance || (Math.abs(sat - bgs) < 0.12 && Math.abs(val - bgv) < 0.22) ? 1 : 0;
       }
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { // медіана 3×3
-        const v = [];
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const isBg = new Uint8Array(w * h), stack = [];
+      const push = (i) => { if (cand[i] && !isBg[i]) { isBg[i] = 1; stack.push(i); } };
+      for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+      for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+      while (stack.length) {
+        const i = stack.pop(), x = i % w, y = (i - x) / w;
+        if (x > 0) push(i - 1); if (x < w - 1) push(i + 1); if (y > 0) push(i - w); if (y < h - 1) push(i + w);
+      }
+      // ерозія на 1 пкс (прибирає ореол фону) + легке пом'якшення краю
+      const al = new Float32Array(w * h);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let keep = 1;
+        for (let dy = -1; dy <= 1 && keep; dy++) for (let dx = -1; dx <= 1; dx++) {
           const xx = Math.min(w - 1, Math.max(0, x + dx)), yy = Math.min(h - 1, Math.max(0, y + dy));
-          v.push(al[yy * w + xx]);
+          if (isBg[yy * w + xx]) { keep = 0; break; }
         }
-        v.sort((p, q) => p - q);
-        px[(y * w + x) * 4 + 3] = v[4];
+        al[y * w + x] = keep;
+      }
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let s = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < w && yy < h) { s += al[yy * w + xx] * (dx || dy ? 1 : 4); n += dx || dy ? 1 : 4; }
+        }
+        px[(y * w + x) * 4 + 3] = Math.round(s / n * 255);
       }
     }
     let x0 = w, y0 = h, x1 = -1, y1 = -1;
@@ -179,7 +201,7 @@
     }
 
     // змішування й усереднення SS×SS
-    const bl = p.blend || 0, dk = 1 - (p.darken || 0), op = p.shadow_op || 0;
+    const bl = p.blend || 0, dk = 1 - (p.darken || 0), op = p.shadow_op || 0, sat = p.sat === undefined ? 1 : p.sat;
     const out = new ImageData(mw, mh), o = out.data, n = SS * SS;
     for (let my = 0; my < mh; my++) for (let mx = 0; mx < mw; mx++) {
       const j = (my * mw + mx) * 4;
@@ -190,9 +212,11 @@
         let r = r0 * k, g = g0 * k, b = b0 * k;
         if (a) {
           const q = i * 4;
-          r = r * (1 - a) + (spx[q] * (1 - bl) + lr * bl) * dk * a;
-          g = g * (1 - a) + (spx[q + 1] * (1 - bl) + lg * bl) * dk * a;
-          b = b * (1 - a) + (spx[q + 2] * (1 - bl) + lb * bl) * dk * a;
+          let cr = spx[q], cg = spx[q + 1], cb = spx[q + 2];
+          if (sat !== 1) { const gr = 0.299 * cr + 0.587 * cg + 0.114 * cb; cr = gr + (cr - gr) * sat; cg = gr + (cg - gr) * sat; cb = gr + (cb - gr) * sat; }
+          r = r * (1 - a) + (cr * (1 - bl) + lr * bl) * dk * a;
+          g = g * (1 - a) + (cg * (1 - bl) + lg * bl) * dk * a;
+          b = b * (1 - a) + (cb * (1 - bl) + lb * bl) * dk * a;
         }
         sr += r; sg += g; sb += b;
       }
