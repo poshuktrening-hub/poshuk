@@ -161,3 +161,12 @@ details.adv summary { cursor: pointer; color: var(--muted); font-size: .85rem; m
 .model-box { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--bg); }
 .model-box img { width: 54px; height: 80px; object-fit: contain; flex: 0 0 auto; background: #000; border-radius: 4px; }
 .model-box textarea, #g-ttx { width: 100%; font: .85rem var(--body); background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px; resize: vertical; }
+
+/* відео-фон стартових екранів */
+.bgvid { position: fixed; inset: 0; z-index: 0; overflow: hidden; background: #000; }
+.bgvid video { width: 100%; height: 100%; object-fit: cover; filter: saturate(.6) brightness(.55) contrast(1.05); }
+.bgvid::after { content: ""; position: absolute; inset: 0; background:
+  radial-gradient(ellipse at center, rgba(13,16,13,.15) 0%, rgba(13,16,13,.75) 75%),
+  repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px); }
+body.with-bg .screen { position: relative; z-index: 1; background: transparent; }
+body.with-bg .card { background: rgba(29,35,29,.82); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }

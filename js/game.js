@@ -6,8 +6,16 @@
   const OUTRO_DELAY = 450, OUTRO_MS = 1100;
   const COLORS = {hit: "#5fd38a", miss: "#e8664f", accent: "#c9d64a"};
 
+  const BG_SCREENS = ["s-login", "s-start", "s-summary"];
   function show(id) {
     document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== id));
+    const bg = $("bgvid"), on = BG_SCREENS.includes(id);
+    if (!bg) return;
+    bg.hidden = !on;
+    document.body.classList.toggle("with-bg", on);
+    const v = bg.querySelector("video");
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches || (navigator.connection && navigator.connection.saveData);
+    if (on && !still) v.play().catch(() => {}); else v.pause();
   }
   function toast(text, ms = 3500) {
     const t = $("toast");
