@@ -75,7 +75,7 @@
   }
   /* Бейдж: щит з шевронами (1–5) або зірка для найвищого */
   function rankBadge(level) {
-    const col = ["#7d8a6a", "#9fb06a", "#c9d64a", "#d9c24a", "#e8a84a", "#f0d060"][level];
+    const col = ["#6f7b85", "#9aa8b2", "#ffb23e", "#d9c24a", "#e8a84a", "#f0d060"][level];
     let inner = "";
     if (level === 5) inner = `<path d="M40 22l5.3 10.8 11.9 1.7-8.6 8.4 2 11.8L40 49.1l-10.6 5.6 2-11.8-8.6-8.4 11.9-1.7z" fill="${col}"/>`;
     else for (let i = 0; i <= level; i++) inner += `<path d="M24 ${58 - i * 9}l16-9 16 9" fill="none" stroke="${col}" stroke-width="5" stroke-linejoin="round"/>`;

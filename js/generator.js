@@ -2,7 +2,7 @@
 (function () {
   const {LS} = API;
   const esc = (s) => UI.esc(s);
-  const C = {hit: "#5fd38a", accent: "#c9d64a"};
+  const C = {hit: "#3ddc97", accent: "#ffb23e"};
   const BUILTIN = Models.LIST[0];
 
   // назва, ключ, мін, макс, крок, типове значення
@@ -308,7 +308,7 @@
     },
 
     renderMarks() {
-      this.viewer.setMarks(this.placed.map((t) => ({x: t.x, y: t.y, r: t.r, color: t.decoy ? "#f0a64a" : C.hit, dashed: !!t.decoy, label: (t.decoy ? "муляж: " : "") + t.type})));
+      this.viewer.setMarks(this.placed.map((t) => ({x: t.x, y: t.y, r: t.r, color: t.decoy ? "#b48cff" : C.hit, dashed: !!t.decoy, label: (t.decoy ? "муляж: " : "") + t.type})));
     },
 
     place(cx, cy) {

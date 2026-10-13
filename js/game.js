@@ -4,7 +4,7 @@
   const {LS, SS} = API;
   const HINT_SCORE = 5, BRIEF_MS = 5000;
   const OUTRO_DELAY = 450, OUTRO_MS = 1100;
-  const COLORS = {hit: "#5fd38a", miss: "#e8664f", accent: "#c9d64a", decoy: "#f0a64a"};
+  const COLORS = {hit: "#3ddc97", miss: "#ff5a4f", accent: "#ffb23e", decoy: "#b48cff"};
 
   const TOUCH = window.matchMedia && matchMedia("(pointer: coarse)").matches;
   const HELP = () => (TOUCH ? "Тап по цілі — позначити, двома пальцями — зум." : "Клік по цілі — позначити, колесо — зум.");
@@ -395,7 +395,7 @@
       $("sum-title").textContent = `Підсумок · ${this.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
       const rk = Logic.rank(pct);
-      $("sum-rank").innerHTML = `${Logic.rankBadge(rk.level)}<div><div class="rk-label">ЗВАННЯ</div><div class="rk-name">${esc(rk.name)}</div><div class="rk-next">${rk.next ? `До «${esc(rk.next.name)}» — від ${rk.next.min}%` : "Найвище звання"}</div></div>`;
+      $("sum-rank").innerHTML = `${Logic.rankBadge(rk.level)}<div><div class="rk-label">Звання</div><div class="rk-name">${esc(rk.name)}</div><div class="rk-next">${rk.next ? `До «${esc(rk.next.name)}» — від ${rk.next.min}%` : "Найвище звання"}</div></div>`;
       $("sum-total").style.color = pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
       $("sum-table").innerHTML = `<tr><th class="num">Етап</th><th>Знімок</th><th class="num">Цілі</th><th class="num">Промахи</th><th class="num">Час, с</th><th class="num">Бали</th></tr>` +
         res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.title)}</td><td class="num">${r.found}/${r.total}</td><td class="num">${r.misses}</td><td class="num">${r.time}</td><td class="num">${r.score}</td></tr>`).join("");
