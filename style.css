@@ -158,3 +158,6 @@ details.adv summary { cursor: pointer; color: var(--muted); font-size: .85rem; m
 .brief .b-bar { flex: 1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .brief .b-bar i { display: block; height: 100%; background: var(--accent); transform-origin: left; transform: scaleX(1); }
 @media (max-width: 760px) { .brief .b-card { flex-direction: column; text-align: center; } .brief .b-pic { width: 110px; height: 160px; } }
+.model-box { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--bg); }
+.model-box img { width: 54px; height: 80px; object-fit: contain; flex: 0 0 auto; background: #000; border-radius: 4px; }
+.model-box textarea, #g-ttx { width: 100%; font: .85rem var(--body); background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px; resize: vertical; }
