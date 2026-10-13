@@ -63,6 +63,10 @@
         <section id="a-stage-box" hidden>
           <label for="a-title" style="margin:0">Назва етапу</label>
           <input id="a-title">
+          <label for="a-unit" style="margin:0">Завдання від (підрозділ)</label>
+          <input id="a-unit" maxlength="80" placeholder="3-й батальйон 92 ОШБр">
+          <label for="a-task" style="margin:0">Текст завдання для брифінгу</label>
+          <textarea id="a-task" rows="2" maxlength="400" placeholder="Виявити РСЗВ у районі лісосмуги північніше села та позначити для ураження."></textarea>
           <div class="row">
             <button type="button" id="a-toggle"></button>
             <button type="button" class="danger" id="a-del">Видалити етап</button>
@@ -119,6 +123,8 @@
       $("a-import").onclick = () => $("a-imp-file").click();
       $("a-imp-file").onchange = (e) => this.importLocal([...e.target.files]);
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
+      $("a-unit").oninput = () => { this.stage().unit = $("a-unit").value; this.dirty(true); };
+      $("a-task").oninput = () => { this.stage().task = $("a-task").value; this.dirty(true); };
       $("a-toggle").onclick = () => { const s = this.stage(); s.enabled = !s.enabled; this.dirty(true); this.renderStage(); };
       $("a-del").onclick = () => this.deleteStage();
       ["a-r", "a-note", "a-decoy"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
@@ -180,6 +186,8 @@
       $("a-settings").hidden = true;
       if (!s) return;
       $("a-title").value = s.title;
+      $("a-unit").value = s.unit || "";
+      $("a-task").value = s.task || "";
       $("a-toggle").textContent = s.enabled ? "Вимкнути етап" : "Увімкнути етап";
       this.renderTargets();
     },
@@ -285,7 +293,7 @@
       if (!s) return;
       this.status("Зберігаю…", "");
       try {
-        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets}, this.pw);
+        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, unit: s.unit || "", task: s.task || ""}, this.pw);
         this.status("Збережено ✓", "ok");
       } catch (e) {
         this.status("Не збережено: " + e.message, "no");

@@ -44,6 +44,7 @@ async function db(env) {
     await env.DB.batch(SCHEMA.map((q) => env.DB.prepare(q)));
     try { await env.DB.prepare("ALTER TABLE objects ADD COLUMN ttx TEXT").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE objects ADD COLUMN decoy INTEGER DEFAULT 0").run(); } catch (e) { /* колонка вже є */ }
+    try { await env.DB.prepare("ALTER TABLE stages ADD COLUMN meta TEXT").run(); } catch (e) { /* колонка вже є */ }
     schemaReady = true;
   }
   return env.DB;
@@ -159,11 +160,13 @@ async function auth(env, req, need) {
 function rowToStage(r) {
   let targets = [];
   try { targets = JSON.parse(r.targets || "[]"); } catch (e) { targets = []; }
-  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets};
+  let meta = {};
+  try { meta = JSON.parse(r.meta || "{}"); } catch (e) { meta = {}; }
+  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, unit: meta.unit || "", task: meta.task || ""};
 }
 
 async function stages(env, all) {
-  const {results} = await env.DB.prepare("SELECT id,title,enabled,w,h,targets FROM stages WHERE ready=1 ORDER BY created").all();
+  const {results} = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE ready=1 ORDER BY created").all();
   return results.map(rowToStage).filter((s) => all || (s.enabled && s.targets.length));
 }
 
@@ -208,7 +211,7 @@ async function action(env, ctx, req, origin) {
       const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind(String(req.id)).first();
       if (c.n !== st.chunks) throw new HttpError(`Завантажено ${c.n} з ${st.chunks} частин — спробуйте ще раз`);
       await env.DB.prepare("UPDATE stages SET ready=1 WHERE id=?").bind(String(req.id)).run();
-      const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets FROM stages WHERE id=?").bind(String(req.id)).first();
+      const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id=?").bind(String(req.id)).first();
       return {ok: true, stage: rowToStage(r)};
     }
     case "save_stage": {
@@ -216,6 +219,7 @@ async function action(env, ctx, req, origin) {
       if (req.title !== undefined) { sets.push("title=?"); vals.push(String(req.title).slice(0, 120)); }
       if (req.enabled !== undefined) { sets.push("enabled=?"); vals.push(req.enabled ? 1 : 0); }
       if (req.targets !== undefined) { sets.push("targets=?"); vals.push(JSON.stringify(req.targets)); }
+      if (req.unit !== undefined || req.task !== undefined) { sets.push("meta=?"); vals.push(JSON.stringify({unit: String(req.unit || "").slice(0, 80), task: String(req.task || "").slice(0, 400)})); }
       if (sets.length) await env.DB.prepare(`UPDATE stages SET ${sets.join(",")} WHERE id=?`).bind(...vals, String(req.id)).run();
       return {ok: true};
     }
