@@ -2,7 +2,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const {LS, SS} = API;
-  const HINT_SCORE = 5;
+  const HINT_SCORE = 5, BRIEF_MS = 5000;
   const OUTRO_DELAY = 450, OUTRO_MS = 1100;
   const COLORS = {hit: "#5fd38a", miss: "#e8664f", accent: "#c9d64a"};
 
@@ -67,6 +67,7 @@
       const j = await API.call("config", {}, this.password);
       this.cfg = j.settings;
       this.stages = j.stages;
+      this.objects = j.objects || [];
       this.typePool = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))];
     },
 
@@ -136,11 +137,44 @@
       this.preload(this.idx + 1);
       this.viewer.setImage(img);
       this.viewer.setGrid(this.cfg.grid_cols);
+      this.msg("Брифінг: запам'ятайте, що шукаєте.");
+      await this.brief(st);
+      if (this.cur !== st) return;
       this.over = false;
       this.msg("Лівий клік — наблизити. Ще один лівий клік — позначити ціль. Правий клік — віддалити. «#» — сітка.");
       this.t0 = performance.now();
       this.stats();
       this.tick();
+    },
+
+    /* Брифінг перед етапом: 5 с чорний екран з технікою, яку шукатимуть, та її ТТХ. */
+    async brief(st) {
+      const norm = (s) => String(s || "").toLowerCase().trim();
+      const seen = new Set(), items = [];
+      for (const t of st.targets) {
+        const key = t.obj || norm(t.type);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const o = this.objects.find((x) => x.id === t.obj) || this.objects.find((x) => norm(x.type) === norm(t.type)) || null;
+        items.push({t, o, builtin: !o && (t.obj === "builtin:catapult" || /катапульт/.test(norm(t.type)))});
+      }
+      const box = $("g-brief");
+      const cards = await Promise.all(items.map(async ({t, o, builtin}) => {
+        let pic = "";
+        if (o) { const u = await API.objUrl(o.id, this.password).catch(() => null); if (u) pic = `<img src="${u}" alt="">`; }
+        else if (builtin) pic = `<img src="${Compose.catapultSprite().toDataURL()}" alt="">`;
+        const ttx = Logic.ttxFor(o, t.type);
+        const len = o && o.length_m ? `<p class="len">Довжина ≈ ${o.length_m} м</p>` : "";
+        return `<div class="b-card">${pic ? `<div class="b-pic">${pic}</div>` : ""}<div class="b-txt"><h3>${esc(t.type || "ціль")}</h3>${len}${ttx ? `<p>${esc(ttx).replace(/\n/g, "<br>")}</p>` : ""}</div></div>`;
+      }));
+      const n = st.targets.length;
+      box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЗНАЙТИ ${n > 1 ? n + " ЦІЛІ" : "ЦІЛЬ"}</div>${cards.join("")}
+        <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Почати зараз</button></div></div>`;
+      box.hidden = false;
+      const bar = box.querySelector(".b-bar i");
+      requestAnimationFrame(() => { bar.style.transition = `transform ${BRIEF_MS}ms linear`; bar.style.transform = "scaleX(0)"; });
+      await new Promise((res) => { const t = setTimeout(res, BRIEF_MS); box.querySelector("#b-go").onclick = () => { clearTimeout(t); res(); }; });
+      box.hidden = true;
     },
 
     left() { return Math.max(0, this.cfg.time_limit_sec - (performance.now() - this.t0) / 1000); },

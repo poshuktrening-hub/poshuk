@@ -40,7 +40,11 @@ const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj)
 let schemaReady = false;
 async function db(env) {
   if (!env.DB) throw new HttpError("База D1 не підключена (Settings → Functions → D1 binding: DB)");
-  if (!schemaReady) { await env.DB.batch(SCHEMA.map((q) => env.DB.prepare(q))); schemaReady = true; }
+  if (!schemaReady) {
+    await env.DB.batch(SCHEMA.map((q) => env.DB.prepare(q)));
+    try { await env.DB.prepare("ALTER TABLE objects ADD COLUMN ttx TEXT").run(); } catch (e) { /* колонка вже є */ }
+    schemaReady = true;
+  }
   return env.DB;
 }
 
@@ -180,7 +184,8 @@ async function action(env, ctx, req, origin) {
     case "login": { const role = await auth(env, req, "player"); return {ok: true, role, token: await makeToken(env, role)}; }
     case "config": {
       const role = await auth(env, req, "player");
-      return {ok: true, settings: publicSettings(await settings(env)), stages: await stages(env, false), token: await makeToken(env, role)};
+      const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx FROM objects").all();
+      return {ok: true, settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, token: await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
   }
@@ -225,7 +230,7 @@ async function action(env, ctx, req, origin) {
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
     case "set_settings": await saveSettings(env, req.settings || {}); return {ok: true};
     case "objects": {
-      const {results} = await env.DB.prepare("SELECT id,name,length_m,type FROM objects ORDER BY name").all();
+      const {results} = await env.DB.prepare("SELECT id,name,length_m,type,ttx FROM objects ORDER BY name").all();
       return {ok: true, objects: results};
     }
     case "object": {
@@ -235,10 +240,15 @@ async function action(env, ctx, req, origin) {
     }
     case "object_upload": {
       if (!req.data || req.data.length > 1_900_000) throw new HttpError("PNG техніки завеликий (до ~1,4 МБ)");
-      const o = {id: newId(), name: String(req.name || "техніка").slice(0, 40), length_m: Number(req.length_m) || 7, type: String(req.type || "")};
-      await env.DB.prepare("INSERT INTO objects (id,name,length_m,type,data,created) VALUES (?,?,?,?,?,?)")
-        .bind(o.id, o.name, o.length_m, o.type, String(req.data), new Date().toISOString()).run();
+      const o = {id: newId(), name: String(req.name || "техніка").slice(0, 40), length_m: Number(req.length_m) || 7, type: String(req.type || ""), ttx: String(req.ttx || "").slice(0, 2000)};
+      await env.DB.prepare("INSERT INTO objects (id,name,length_m,type,data,created,ttx) VALUES (?,?,?,?,?,?,?)")
+        .bind(o.id, o.name, o.length_m, o.type, String(req.data), new Date().toISOString(), o.ttx).run();
       return {ok: true, object: o};
+    }
+    case "object_update": {
+      await env.DB.prepare("UPDATE objects SET name=?, length_m=?, type=?, ttx=? WHERE id=?")
+        .bind(String(req.name || "техніка").slice(0, 40), Number(req.length_m) || 7, String(req.type || ""), String(req.ttx || "").slice(0, 2000), String(req.id)).run();
+      return {ok: true};
     }
     case "object_delete": await env.DB.prepare("DELETE FROM objects WHERE id=?").bind(String(req.id)).run(); return {ok: true};
   }
@@ -263,6 +273,24 @@ async function submit(env, ctx, req) {
     ctx.waitUntil(gas(env, body).catch(() => {}));
   }
   return {ok: true};
+}
+
+// ------------------------------------------------------------------ зображення техніки для брифінгу курсанта
+async function getObject(env, ctx, request, id, t) {
+  if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
+  const cache = caches.default, key = new Request(new URL(`/api/obj/${id}`, request.url).toString());
+  let res = await cache.match(key);
+  if (!res) {
+    const r = await env.DB.prepare("SELECT data FROM objects WHERE id=?").bind(id).first();
+    if (!r) return new Response("Не знайдено", {status: 404});
+    const bin = atob(r.data), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    res = new Response(bytes, {headers: {"Content-Type": "image/png", "Cache-Control": "public, max-age=3600"}});
+    ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
+  }
+  const out = new Response(res.body, res);
+  out.headers.set("Cache-Control", "private, max-age=3600");
+  return out;
 }
 
 // ------------------------------------------------------------------ знімки
@@ -306,6 +334,7 @@ export async function onRequest(context) {
   try {
     await db(env);
     if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], url.searchParams.get("t"));
+    if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], url.searchParams.get("t"));
     if (request.method === "PUT" && path[0] === "blob" && path[1]) return await putBlob(env, request, path[1], Number(path[2]));
     if (request.method === "GET") return json({ok: true, app: "poshuk", version: VERSION});
     if (request.method !== "POST") return json({ok: false, error: "Метод не підтримується"}, 405);

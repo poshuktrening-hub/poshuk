@@ -102,5 +102,10 @@
     return j.stage;
   }
 
-  window.API = {call, loadImage, uploadStage, url, isCF, LS, SS, imgCache};
+  async function objUrl(id, password) {
+    if (!isCF || !id) return null;
+    return `${url}/obj/${encodeURIComponent(id)}?t=${encodeURIComponent(await token(password))}`;
+  }
+
+  window.API = {call, loadImage, uploadStage, objUrl, url, isCF, LS, SS, imgCache};
 })();
