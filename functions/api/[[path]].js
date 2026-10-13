@@ -163,7 +163,7 @@ function rowToStage(r) {
   try { targets = JSON.parse(r.targets || "[]"); } catch (e) { targets = []; }
   let meta = {};
   try { meta = JSON.parse(r.meta || "{}"); } catch (e) { meta = {}; }
-  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, unit: meta.unit || "", task: meta.task || "", direction: meta.direction || "", season: meta.season || ""};
+  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, task: meta.task || "", direction: meta.direction || "", season: meta.season || "", gsd: Number(meta.gsd) || 0};
 }
 
 async function stages(env, all) {
@@ -220,10 +220,15 @@ async function action(env, ctx, req, origin) {
       if (req.title !== undefined) { sets.push("title=?"); vals.push(String(req.title).slice(0, 120)); }
       if (req.enabled !== undefined) { sets.push("enabled=?"); vals.push(req.enabled ? 1 : 0); }
       if (req.targets !== undefined) { sets.push("targets=?"); vals.push(JSON.stringify(req.targets)); }
-      if (req.unit !== undefined || req.task !== undefined || req.direction !== undefined || req.season !== undefined) {
-        sets.push("meta=?");
-        vals.push(JSON.stringify({unit: String(req.unit || "").slice(0, 80), task: String(req.task || "").slice(0, 400),
-          direction: String(req.direction || "").slice(0, 40), season: String(req.season || "").slice(0, 10)}));
+      if (["task", "direction", "season", "gsd"].some((k) => req[k] !== undefined)) {   // мета зливається: незмінені поля лишаються
+        const cur = await env.DB.prepare("SELECT meta FROM stages WHERE id=?").bind(String(req.id)).first();
+        let m = {}; try { m = JSON.parse((cur && cur.meta) || "{}"); } catch (e) { m = {}; }
+        if (req.task !== undefined) m.task = String(req.task || "").slice(0, 400);
+        if (req.direction !== undefined) m.direction = String(req.direction || "").slice(0, 40);
+        if (req.season !== undefined) m.season = String(req.season || "").slice(0, 10);
+        if (req.gsd !== undefined) m.gsd = Math.max(0, Math.min(10, Number(req.gsd) || 0));
+        delete m.unit;
+        sets.push("meta=?"); vals.push(JSON.stringify(m));
       }
       if (sets.length) await env.DB.prepare(`UPDATE stages SET ${sets.join(",")} WHERE id=?`).bind(...vals, String(req.id)).run();
       return {ok: true};
@@ -240,6 +245,7 @@ async function action(env, ctx, req, origin) {
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
     case "set_settings": await saveSettings(env, req.settings || {}); return {ok: true};
     case "objects": {
+      await dedupeObjects(env);
       const {results} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects ORDER BY name").all();
       return {ok: true, objects: results};
     }
@@ -251,6 +257,14 @@ async function action(env, ctx, req, origin) {
     case "object_upload": {
       if (!req.data || req.data.length > 1_900_000) throw new HttpError("PNG техніки завеликий (до ~1,4 МБ)");
       const o = {id: newId(), name: String(req.name || "техніка").slice(0, 40), length_m: Number(req.length_m) || 7, type: String(req.type || ""), ttx: String(req.ttx || "").slice(0, 2000), decoy: req.decoy ? 1 : 0};
+      // без дублів: модель з такою самою назвою — оновлюється (нова версія замість старої)
+      const {results: same} = await env.DB.prepare("SELECT id,name,decoy,ttx FROM objects").all();
+      const old = same.find((x) => normName(x.name) === normName(o.name) && (x.decoy ? 1 : 0) === o.decoy);
+      if (old) {
+        await env.DB.prepare("UPDATE objects SET name=?, length_m=?, type=?, data=?, created=?, ttx=? WHERE id=?")
+          .bind(o.name, o.length_m, o.type, String(req.data), new Date().toISOString(), o.ttx || old.ttx || "", old.id).run();
+        return {ok: true, replaced: true, object: Object.assign(o, {id: old.id, ttx: o.ttx || old.ttx || ""})};
+      }
       await env.DB.prepare("INSERT INTO objects (id,name,length_m,type,data,created,ttx,decoy) VALUES (?,?,?,?,?,?,?,?)")
         .bind(o.id, o.name, o.length_m, o.type, String(req.data), new Date().toISOString(), o.ttx, o.decoy).run();
       return {ok: true, object: o};
@@ -263,6 +277,34 @@ async function action(env, ctx, req, origin) {
     case "object_delete": await env.DB.prepare("DELETE FROM objects WHERE id=?").bind(String(req.id)).run(); return {ok: true};
   }
   throw new HttpError("Невідома дія");
+}
+
+/* Назва моделі для порівняння: регістр, пробіли/підкреслення, «(2)», «копія» не важать. */
+function normName(s) {
+  return String(s || "").toLowerCase().replace(/[_\s]+/g, " ").replace(/\s*\(\d+\)\s*$/, "").replace(/\s*[-–]?\s*(копія|copy)(\s*\d+)?\s*$/, "").trim();
+}
+
+/* Прибрати дублі в бібліотеці: лишається найновіша версія, цілі в етапах переводяться на неї. */
+async function dedupeObjects(env) {
+  const {results} = await env.DB.prepare("SELECT id,name,decoy,created FROM objects").all();
+  const keep = new Map(), remap = new Map();
+  results.sort((a, b) => String(b.created || "").localeCompare(String(a.created || "")));
+  for (const o of results) {
+    const k = normName(o.name) + "|" + (o.decoy ? 1 : 0);
+    if (keep.has(k)) remap.set(o.id, keep.get(k)); else keep.set(k, o.id);
+  }
+  if (!remap.size) return 0;
+  const {results: st} = await env.DB.prepare("SELECT id,targets FROM stages").all();
+  const ops = [];
+  for (const s of st) {
+    let t; try { t = JSON.parse(s.targets || "[]"); } catch (e) { continue; }
+    let ch = false;
+    t.forEach((x) => { if (x && remap.has(x.obj)) { x.obj = remap.get(x.obj); ch = true; } });
+    if (ch) ops.push(env.DB.prepare("UPDATE stages SET targets=? WHERE id=?").bind(JSON.stringify(t), s.id));
+  }
+  for (const id of remap.keys()) ops.push(env.DB.prepare("DELETE FROM objects WHERE id=?").bind(id));
+  await env.DB.batch(ops);
+  return remap.size;
 }
 
 async function submit(env, ctx, req) {

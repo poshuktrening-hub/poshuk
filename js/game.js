@@ -220,7 +220,7 @@
       }));
       const n = st.targets.filter((x) => !x.decoy).length;
       const types = [...new Set(st.targets.filter((x) => !x.decoy).map((x) => x.type).filter(Boolean))].join(", ");
-      const unit = (st.unit || "").trim(), task = (st.task || "").trim() || `Виявити ${types || "техніку противника"} у районі «${st.title.split("·")[0].trim()}» та позначити для ураження.`;
+      const task = (st.task || "").trim() || `Виявити ${types || "техніку противника"} у районі «${st.title.split("·")[0].trim()}» та позначити для ураження.`;
       if (after) {   // хардкор: картка цілі — лише після етапу
         box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЩО ВИ ШУКАЛИ</div>${cards.join("")}
           <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Далі</button></div></div>`;
@@ -232,7 +232,7 @@
         return;
       }
       box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЗНАЙТИ ${n > 1 ? n + " ЦІЛІ" : "ЦІЛЬ"}</div>
-        <div class="b-task"><div class="b-from">📡 ЗАВДАННЯ${unit ? " ВІД: " + esc(unit.toUpperCase()) : ""}</div><p>${esc(task)}</p></div>${cards.join("")}
+        <div class="b-task"><div class="b-from">📡 ЗАВДАННЯ</div><p>${esc(task)}</p></div>${cards.join("")}
         <p class="b-warn">⚠ На знімку можуть бути муляжі — клік по обманці рахується як промах.</p>
         <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Почати зараз</button></div></div>`;
       box.hidden = false;

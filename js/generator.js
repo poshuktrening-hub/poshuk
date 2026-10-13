@@ -203,7 +203,7 @@
         const j = await API.call("object_upload", {name, data, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: Logic.cleanTtx(this.$("g-ttx").value), decoy: this.$("g-decoy").checked || /^муляж/i.test(name) ? 1 : 0}, this.pw);
         this.sprites.set(j.object.id, spr);
         await this.loadObjects(j.object.id);
-        st.textContent = `Додано «${name}». Перевірте довжину й тип.`; st.className = "status ok";
+        st.textContent = j.replaced ? `«${name}» вже був — замінено новою версією.` : `Додано «${name}». Перевірте довжину й тип.`; st.className = "status ok";
       } catch (e) { st.textContent = e.message; st.className = "status no"; }
       this.$("g-obj-file").value = "";
     },
@@ -267,12 +267,16 @@
       const a = this.admin, s = a.stage();
       if (!s) { this.hint("В адмінці не вибрано етап — відкрийте знімок кнопкою «Файл…»."); return; }
       this.loading("Завантажую знімок…");
-      try { await this.setBase(await API.loadImage(s.id, this.pw), s.title); } catch (e) { this.hint(e.message); }
+      try {
+        await this.setBase(await API.loadImage(s.id, this.pw), s.title);
+        this.baseMeta = {direction: s.direction || "", season: s.season || "", gsd: s.gsd || 0};
+        if (s.gsd) { this.$("g-gsd").value = s.gsd; this.autoSize(); }
+      } catch (e) { this.hint(e.message); }
       this.loading(null);
     },
 
     async baseFromFile(file) {
-      try { await this.setBase(await loadImg(await fileToDataURL(file)), file.name.replace(/\.[^.]+$/, "")); } catch (e) { this.hint(e.message); }
+      try { await this.setBase(await loadImg(await fileToDataURL(file)), file.name.replace(/\.[^.]+$/, "")); this.baseMeta = null; } catch (e) { this.hint(e.message); }
       this.$("g-base-file").value = "";
     },
 
@@ -369,6 +373,9 @@
         const cv = Compose.canvas(this.work.width, this.work.height);
         cv.getContext("2d").drawImage(this.work, 0, 0);
         const stage = await API.uploadStage(cv, {title, targets, name}, this.pw, (m) => this.loading("Зберігаю етап… " + m));
+        const meta = Object.assign({gsd: Number(this.$("g-gsd").value) || 0}, this.baseMeta || {});
+        await API.call("save_stage", Object.assign({id: stage.id}, meta), this.pw).catch(() => {});
+        Object.assign(stage, meta);
         this.admin.stages.push(stage);
         this.admin.sel = stage.id;
         this.loading(null);
