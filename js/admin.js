@@ -341,7 +341,19 @@
       if (!files.length) return;
       const st = this.$("a-up-status");
       const json = files.find((f) => f.name.toLowerCase() === "targets.json") || files.find((f) => f.name.toLowerCase().endsWith(".json") && /data/i.test(f.webkitRelativePath || ""));
-      if (!json) { st.textContent = "У вибраній папці немає data/targets.json. Виберіть папку локальної гри (poshuk_local)."; st.className = "status no"; return; }
+      if (!json) {
+        // Папка без targets.json — це папка з моделями техніки: PNG → бібліотека генератора («Муляж…» — обманки)
+        const imgs = files.filter((f) => /\.(png|webp|jpe?g)$/i.test(f.name));
+        if (!imgs.length) { st.textContent = "У папці немає ні data/targets.json (локальна гра), ні PNG моделей."; st.className = "status no"; return; }
+        st.textContent = `Додаю моделі в бібліотеку генератора: ${imgs.length}…`; st.className = "status";
+        try {
+          const n = await Gen.importObjects(imgs, this.pw);
+          st.textContent = `Моделей додано: ${n}` + (imgs.length - n ? ` (уже були: ${imgs.length - n})` : "") + ". Вони в «Генератор» і в полі «Модель» цілі."; st.className = "status ok";
+          await this.loadObjects();
+        } catch (e) { st.textContent = "Не вдалось: " + e.message; st.className = "status no"; }
+        this.$("a-imp-file").value = "";
+        return;
+      }
       files = files.filter((f) => /^image\//.test(f.type) || /\.(png|jpe?g|webp|bmp)$/i.test(f.name));
       const objFiles = files.filter((f) => /(^|\/)objects\//i.test(f.webkitRelativePath || "") && /\.png$/i.test(f.name));
       let data;
