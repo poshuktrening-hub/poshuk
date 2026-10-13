@@ -74,7 +74,6 @@
             <div class="kv">
               <label for="a-obj">Модель</label><select id="a-obj"></select>
               <label for="a-decoy">Муляж (обманка)</label><input id="a-decoy" type="checkbox">
-              <label for="a-lm">Орієнтир</label><select id="a-lm"></select>
             </div>
             <div id="a-model-box" class="model-box" hidden>
               <div class="row"><img id="a-model-img" alt=""><div class="status" id="a-model-meta"></div></div>
@@ -113,7 +112,6 @@
       this.viewer = new Viewer($("a-view"), {onLeft: (x, y) => this.click(x, y), onRight: (x, y) => this.rclick(x, y)});
       const g = this.viewer.addButton("#", "Сітка квадратів", () => { this.viewer.toggleGrid(); g.classList.toggle("on", this.viewer.showGrid); });
 
-      $("a-lm").innerHTML = ["", ...Logic.LANDMARKS].map((l) => `<option value="${esc(l)}">${l ? esc(l) : "— не перевіряти —"}</option>`).join("");
       $("a-signs").innerHTML = Logic.SIGNS.map((s, i) => `<label><input type="checkbox" data-sign="${esc(s)}" id="a-sg${i}"> ${esc(s)}</label>`).join("");
       $("a-out").onclick = () => { SS.del("poshuk_admin_pw"); location.reload(); };
       $("a-add").onclick = () => $("a-file").click();
@@ -123,7 +121,7 @@
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
       $("a-toggle").onclick = () => { const s = this.stage(); s.enabled = !s.enabled; this.dirty(true); this.renderStage(); };
       $("a-del").onclick = () => this.deleteStage();
-      ["a-r", "a-lm", "a-note", "a-decoy"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
+      ["a-r", "a-note", "a-decoy"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
       $("a-obj").onchange = () => {
         const om = this.objById($("a-obj").value);
         if (om) $("a-decoy").checked = !!om.decoy;
@@ -191,7 +189,7 @@
       if (!s) return;
       if (this.tsel !== null && this.tsel >= s.targets.length) this.tsel = null;
       $("a-targets").innerHTML = s.targets.map((t, i) =>
-        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length || t.landmark ? "•" : " "}${t.decoy ? "◇ " : ""}${i + 1}. ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль") + " (модель не вибрана)"}${t.decoy ? " — муляж" : ""}</li>`
+        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length ? "•" : " "}${t.decoy ? "◇ " : ""}${i + 1}. ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль") + " (модель не вибрана)"}${t.decoy ? " — муляж" : ""}</li>`
       ).join("") || `<li class="muted">Клікніть по знімку, щоб додати ціль</li>`;
       $("a-targets").querySelectorAll("li[data-i]").forEach((li) => (li.onclick = () => this.selectTarget(Number(li.dataset.i), true)));
       $("a-thint").textContent = this.tsel === null
@@ -210,7 +208,6 @@
         const t = s.targets[i];
         this.filling = true;
         $("a-r").value = t.r || 14;
-        $("a-lm").value = t.landmark || "";
         $("a-note").value = t.note || "";
         $("a-obj").value = t.obj || "";
         $("a-decoy").checked = !!t.decoy;
@@ -228,7 +225,7 @@
       const mo = this.objById($("a-obj").value);
       if (mo) t.type = Logic.typeOf(mo.name);
       t.r = Math.max(3, Number($("a-r").value) || 14);
-      const lm = $("a-lm").value; if (lm) t.landmark = lm; else delete t.landmark;
+      delete t.landmark;
       const note = $("a-note").value.trim(); if (note) t.note = note; else delete t.note;
       const ob = $("a-obj").value; if (ob) t.obj = ob; else delete t.obj;
       if ($("a-decoy").checked) t.decoy = true; else delete t.decoy;
