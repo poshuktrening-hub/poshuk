@@ -67,12 +67,12 @@ function publicSettings(s) {
   };
 }
 
-async function saveSettings(env, vals) {
+async function saveSettings(env, vals, lenient = false) {
   const st = [];
   for (const k of Object.keys(DEFAULTS)) {
     if (vals[k] === undefined) continue;
     const v = String(vals[k]).trim();
-    if (/password/.test(k) && v.length < 6) throw new HttpError("Пароль має бути не коротший за 6 символів");
+    if (!lenient && /password/.test(k) && v.length < 6) throw new HttpError("Пароль має бути не коротший за 6 символів");
     st.push(env.DB.prepare("INSERT INTO settings (k,v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, v));
   }
   if (st.length) await env.DB.batch(st);
@@ -95,7 +95,7 @@ async function bootstrap(env, p) {
   if (!j || !j.ok) return (j && j.error) || "Помилка Google-скрипта";
   const vals = {};
   Object.keys(DEFAULTS).forEach((k) => { if (j.settings[k] !== undefined && j.settings[k] !== "") vals[k] = j.settings[k]; });
-  await saveSettings(env, vals);
+  await saveSettings(env, vals, true); // паролі з таблиці беремо як є, навіть короткі
   return null;
 }
 
