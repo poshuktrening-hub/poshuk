@@ -6,6 +6,8 @@
   const OUTRO_DELAY = 450, OUTRO_MS = 1100;
   const COLORS = {hit: "#5fd38a", miss: "#e8664f", accent: "#c9d64a", decoy: "#f0a64a"};
 
+  const TOUCH = window.matchMedia && matchMedia("(pointer: coarse)").matches;
+  const HELP = () => (TOUCH ? "Тап по цілі — позначити, двома пальцями — зум." : "Клік по цілі — позначити, колесо — зум.");
   const BG_SCREENS = ["s-login", "s-start", "s-summary"];
   function show(id) {
     document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== id));
@@ -44,7 +46,7 @@
         if ($("s-game").hidden || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
         if (e.key === "+" || e.key === "=") this.viewer.zoomCenter(1.6);
         else if (e.key === "-") this.viewer.zoomCenter(1 / 1.6);
-        else if (e.key === "0") this.viewer.fit(true);
+        else if (e.key === "0") this.viewer.fill(true);
         else if (e.key === "Enter" && !$("g-next").hidden) this.nextRound();
       });
       if (!this.password) return this.showLogin();
@@ -106,7 +108,7 @@
       this.idx = -1;
       show("s-game");
       if (!this.viewer) {
-        this.viewer = new Viewer($("g-view"), {onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
+        this.viewer = new Viewer($("g-view"), {fill: true, onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
         const g = this.viewer.addButton("#", "Сітка квадратів", () => { this.viewer.toggleGrid(); g.classList.toggle("on", this.viewer.showGrid); });
         this.gridBtn = g;
       }
@@ -152,7 +154,7 @@
       await this.brief(st);
       if (this.cur !== st) return;
       this.over = false;
-      this.msg("Лівий клік — наблизити. Ще один лівий клік — позначити ціль. Правий клік — віддалити. «#» — сітка.");
+      this.msg(HELP());
       this.t0 = performance.now(); this.lastTick = null;
       this.hudSeed(st); this.hud();
       this.stats();
@@ -245,12 +247,6 @@
     leftClick(cx, cy) {
       if (this.over) return;
       const v = this.viewer;
-      if (v.zoomRel() < 2.5) {
-        v.zoomAt(this.cfg.zoom_click / v.zoomRel(), cx, cy);
-        SFX.zoom();
-        this.msg("Лівий клік — позначити ціль. Правий клік — віддалити.");
-        return;
-      }
       const [x, y] = v.toImage(cx, cy);
       if (!v.inside(x, y)) return;
       const hit = Logic.hitTest(this.targets, this.found, x, y);
@@ -265,7 +261,7 @@
         v.setMarks(this.marks);
         const leftM = this.cfg.misses_allowed - this.misses;
         if (leftM < 0) return this.endRound(dec ? "Це муляж! Другий промах — етап завершено." : "Другий промах — етап завершено.");
-        this.msg(`${dec ? "Це МУЛЯЖ — обманка, рахується як промах." : "Мимо!"} ${leftM === 0 ? "Наступний промах завершить етап." : "Можна ще промахнутись: " + leftM + "."} Правий клік — віддалити й шукати далі.`, "no");
+        this.msg(`${dec ? "Це муляж — промах!" : "Мимо!"} ${leftM === 0 ? "Ще промах — кінець етапу." : "Можна ще: " + leftM + "."}`, "no");
       } else {
         this.found.add(hit); this.foundOrder.push(hit);
         SFX.hit();
@@ -273,15 +269,14 @@
         this.marks.push({x: t.x, y: t.y, r: t.r || 14, color: COLORS.hit});
         v.setMarks(this.marks);
         if (this.found.size === this.targets.length) { setTimeout(() => SFX.win(), 250); return this.endRound("Усі цілі знайдено!"); }
-        this.msg(`Є! Лишилось цілей: ${this.targets.length - this.found.size}.`, "ok");
+        this.msg(`Є! Лишилось: ${this.targets.length - this.found.size}.`, "ok");
       }
       this.stats();
     },
 
     rightClick(cx, cy) {
       const v = this.viewer;
-      if (v.zoomRel() <= this.cfg.zoom_click * 1.05) v.fit(true); else v.zoomAt(1 / 2.5, cx, cy);
-      if (!this.over) this.msg("Лівий клік — наблизити в це місце.");
+      v.zoomAt(1 / 1.6, cx, cy);
     },
 
     skip() { if (!this.over) this.endRound("Етап пропущено."); },
@@ -306,7 +301,7 @@
       const rel = Math.min(v.W / w, v.H / h) * 0.85 / v.minS;
       v.zoomTo(Math.max(1, rel), x + w / 2, y + h / 2);
       const names = [squareName(x + 1, y + 1, c), squareName(x + w - 1, y + 1, c), squareName(x + 1, y + h - 1, c), squareName(x + w - 1, y + h - 1, c)];
-      this.msg(`Підказка: ціль у квадратах ${[...new Set(names)].join(", ")}. За етап буде ${HINT_SCORE} балів замість 10.`);
+      this.msg(`Ціль у ${[...new Set(names)].join(", ")} · за етап ${HINT_SCORE} балів.`);
     },
 
     endRound(reason) {
@@ -323,8 +318,20 @@
       this.results.push(this.result);
       this.stats();
       $("g-skip").hidden = true;
-      this.outroT = setTimeout(() => this.viewer.fit(true, OUTRO_MS), OUTRO_DELAY);
+      this.outroT = setTimeout(() => this.showAllMarks(), OUTRO_DELAY);
       this.debrief();
+    },
+
+    /* Після етапу: наблизити так, щоб було видно всі цілі, муляжі й промахи (без зайвих порожніх смуг). */
+    showAllMarks() {
+      const v = this.viewer, pts = [...this.targets, ...this.decoys].map((t) => [t.x, t.y, (t.r || 14) + 30]);
+      this.clicks.forEach((c) => pts.push([c[1], c[2], 40]));
+      if (!pts.length || !v.img) return v.fit(true, OUTRO_MS);
+      const x0 = Math.min(...pts.map((p) => p[0] - p[2])), x1 = Math.max(...pts.map((p) => p[0] + p[2] + 50)); // +місце під підписи
+      const y0 = Math.min(...pts.map((p) => p[1] - p[2])), y1 = Math.max(...pts.map((p) => p[1] + p[2]));
+      const rel = Math.max(1, Math.min(v.coverRel(), Math.min(v.W / (x1 - x0), (v.H - 50) / (y1 - y0)) / v.minS));
+      const s = v.minS * rel;
+      v._go(s, v.W / 2 - (x0 + x1) / 2 * s, (v.H - 50) / 2 - (y0 + y1) / 2 * s, true, OUTRO_MS);
     },
 
     sq(t) { return this.viewer.gridCell ? squareName(t.x, t.y, this.viewer.gridCell) : ""; },
@@ -341,7 +348,7 @@
       this.decoys.forEach((t) => marks.push({x: t.x, y: t.y, r: t.r || 14, color: COLORS.decoy, dashed: true, label: "муляж"}));
       this.viewer.setMarks(marks);
 
-      const h = [`<h2>РОЗБІР ЕТАПУ</h2>`];
+      const h = [];
       this.targets.forEach((t, i) => {
         const ok = this.found.has(i), sq = this.sq(t);
         const where = sq ? "квадрат " + sq : "";
@@ -362,12 +369,17 @@
         const sq = this.viewer.gridCell ? squareName(c[1], c[2], this.viewer.gridCell) : "";
         h.push(`<p class="t-no">✗ Промах ${n}: квадрат ${sq}, ${d} пкс від цілі «${esc(near.type || "ціль")}»</p>`);
       });
-      if (!this.clicks.length) h.push(`<p class="muted">Кліків по знімку не було.</p>`);
-      h.push(`<p class="muted">Час: ${this.result.time} с · бали: +${this.result.score}${this.hintUsed ? " (з підказкою)" : ""}</p>`);
-      $("g-debrief").innerHTML = h.join("");
+      // коротко одним рядком; подробиці — по тапу
+      const line = [
+        ...this.targets.map((t, i) => `<b class="${this.found.has(i) ? "t-ok" : "t-no"}">${this.found.has(i) ? "✓" : "✗"} ${esc(t.type || "ціль")} ${esc(this.sq(t))}</b>`),
+        n ? `<b class="t-no">промахів ${n}</b>` : "",
+        this.decoys.some((t) => t.hitByPlayer) ? `<b class="t-decoy">муляж!</b>` : "",
+        `${this.result.time} с · +${this.result.score}${this.hintUsed ? " 💡" : ""}`,
+      ].filter(Boolean).join(" · ");
+      $("g-debrief").innerHTML = `<details><summary>${line}</summary>${h.join("")}</details>`;
       $("g-debrief").hidden = false;
       const last = this.idx === this.rounds.length - 1;
-      this.msg(`${this.reason} +${this.result.score} балів.${missed.length ? " Незнайдені цілі обведено жовтим пунктиром." : ""}`, missed.length ? "no" : "ok");
+      this.msg(`${this.reason} +${this.result.score} балів.`, missed.length ? "no" : "ok");
       $("g-next").textContent = last ? "Підсумок →" : "Далі →";
       $("g-next").hidden = false;
       $("g-next").focus();

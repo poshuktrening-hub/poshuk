@@ -17,6 +17,7 @@
       this.onLeft = opts.onLeft || null;
       this.onRight = opts.onRight || null;
       this.onChange = opts.onChange || null;
+      this.startFill = !!opts.fill;   // стартовий вигляд: знімок на весь екран (без порожніх смуг)
       this.MAX_ZOOM = 16;
       this.ANIM_MS = 220;
       this.img = null;
@@ -82,7 +83,22 @@
       this.img = img;
       this.marks = [];
       this.anim = null;
-      this.fit(false);
+      if (this.startFill) this.fill(false); else this.fit(false);
+    }
+
+    /* У скільки разів «на весь екран» більше за «весь знімок» (≥1). */
+    coverRel() {
+      if (!this.img) return 1;
+      const c = Math.max(this.W / this.img.width, this.H / this.img.height);
+      return Math.max(1, c / Math.min(this.W / this.img.width, this.H / this.img.height));
+    }
+
+    /* Стартовий вигляд: знімок перекриває весь екран (+ трохи зуму), від лівого верхнього кута — далі гортати. */
+    fill(animate, ms) {
+      if (!this.img) return;
+      this.minS = Math.min(this.W / this.img.width, this.H / this.img.height);
+      const s = this.minS * Math.min(this.MAX_ZOOM, this.coverRel() * (this.fillExtra || 1.25));
+      this._go(s, 0, 0, animate, ms);
     }
 
     replaceImage(img) { this.img = img; this.draw(); }
