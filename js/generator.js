@@ -9,9 +9,9 @@
   const SLIDERS = [
     ["Розмір на знімку, пкс", "size", 3, 120, 0.5, 16],
     ["Куди дивиться (компас), °", "angle", 0, 359, 1, 0],
-    ["Сховано під кронами, %", "hide", 0, 95, 5, 0],
+    ["Сховано силуету під кронами, %", "hide", 0, 85, 5, 0],
     ["Тінь: куди падає, °", "shadow_dir", 0, 359, 5, 135],
-    ["Тінь: довжина, пкс", "shadow_len", 0, 8, 0.5, 2],
+    ["Тінь: довжина, пкс", "shadow_len", 0, 40, 0.5, 4],
     ["Тінь: щільність, %", "shadow_op", 0, 90, 5, 55],
     ["Злиття з фоном, %", "blend", 0, 50, 1, 4],
     ["Затемнення, %", "darken", 0, 50, 1, 0],
@@ -73,7 +73,7 @@
             <button type="button" data-v="135">↘</button><button type="button" data-v="180">↓</button><button type="button" data-v="270">←</button>
             <button type="button" data-v="rnd">🎲</button></div></div>
           <div class="seg-row"><span>Маскування</span><div class="seg" id="gp-hide">
-            <button type="button" data-v="0">Відкрито</button><button type="button" data-v="35">Частково</button><button type="button" data-v="70">Під кронами</button></div></div>
+            <button type="button" data-v="0">Відкрито</button><button type="button" data-v="30">Частково</button><button type="button" data-v="55">Під кронами</button><button type="button" data-v="75">Хардкор</button></div> <small class="muted" id="g-hid"></small></div>
           <div class="seg-row"><span>Тінь</span><div class="seg" id="gp-shadow">
             <button type="button" data-v="0">Немає</button><button type="button" data-v="1">Слабка</button><button type="button" data-v="2">Сильна</button></div></div>
           <div class="seg-row"><span>Вигляд</span><div class="seg" id="gp-look">
@@ -83,6 +83,7 @@
       </aside>
       <div class="mainpane">
         <div class="bar"><div class="hint" id="g-hint">1) знімок → 2) техніка → 3) клік по знімку → «Зберегти як новий етап».</div>
+          <button type="button" id="g-tracks" title="Намалювати накатані сліди техніки: ведіть по знімку">✏ Сліди</button>
           <button type="button" id="g-commit">Закріпити й додати ще</button>
           <button type="button" id="g-undo">Скасувати закріплення</button>
           <button type="button" class="primary" id="g-save">Зберегти як новий етап</button></div>
@@ -99,7 +100,12 @@
       const presets = {
         "gp-angle": (v) => this.setVal("angle", v === "rnd" ? Math.floor(Math.random() * 360) : v),
         "gp-hide": (v) => this.setVal("hide", v),
-        "gp-shadow": (v) => { const sz = this.val("size"); this.setVal("shadow_op", [0, 40, 60][v]); this.setVal("shadow_len", [0, Math.max(1, Math.round(sz * 0.08 * 2) / 2), Math.max(1.5, Math.round(sz * 0.15 * 2) / 2)][v]); },
+        "gp-shadow": (v) => {
+          const gsd = Number(this.$("g-gsd").value), sz = this.val("size");
+          const len = gsd > 0 ? [0, 1.4 / gsd, 2.4 / gsd][v] : [0, sz * 0.12, sz * 0.25][v];   // висота техніки ≈2.5 м, сонце ~45°
+          this.setVal("shadow_op", [0, 45, 60][v]); this.setVal("shadow_len", Math.min(40, Math.max(v ? 1 : 0, Math.round(len * 2) / 2)));
+          if (v && this.sunDir !== undefined) this.setVal("shadow_dir", this.sunDir);
+        },
         "gp-look": (v) => { const L = {bright: [4, 0, 95], mid: [10, 6, 80], dim: [20, 15, 60]}[v]; this.setVal("blend", L[0]); this.setVal("darken", L[1]); this.setVal("sat", L[2]); },
       };
       Object.keys(presets).forEach((id) => $(id).querySelectorAll("button").forEach((b) => (b.onclick = () => {
@@ -130,6 +136,7 @@
       $("g-gsd").oninput = () => { LS.set("poshuk_gen_gsd", $("g-gsd").value); this.autoSize(); };
       $("g-len").oninput = () => this.autoSize();
       $("g-commit").onclick = () => this.commit();
+      $("g-tracks").onclick = () => this.toggleTracks();
       $("g-undo").onclick = () => this.undoCommit();
       $("g-save").onclick = () => this.save();
       await this.loadObjects();
@@ -257,6 +264,7 @@
       this.work = Compose.canvas(w, h);
       this.work.getContext("2d").drawImage(this.base, 0, 0);
       this.baseName = name; this.placed = []; this.undo = []; this.point = null; this.rect = null;
+      try { this.sunDir = Compose.shadowDir(this.base); this.setVal("shadow_dir", this.sunDir); } catch (e) { /* лишаємо як є */ }
       this.$("g-base-lbl").textContent = `${name} · ${w}×${h} пкс`;
       this.viewer.setImage(this.work);
       this.renderMarks();
@@ -287,7 +295,7 @@
 
     // ---------- рендер
     params() {
-      return {size: this.val("size"), angle: this.val("angle"), hide: this.val("hide") / 100, sharp: this.val("sharp") / 100,
+      return {size: this.val("size"), angle: this.val("angle"), hideTarget: this.val("hide") / 100, shade: 0.25, shadow_soft: 0.7, grain: 0.3, sharp: this.val("sharp") / 100,
         shadow_dir: this.val("shadow_dir"), shadow_len: this.val("shadow_len"), shadow_op: this.val("shadow_op") / 100,
         blend: this.val("blend") / 100, darken: this.val("darken") / 100, sat: this.val("sat") / 100};
     },
@@ -310,6 +318,8 @@
           const spr = await this.sprite();
           this.restoreRect();
           this.rect = Compose.compose(this.base, this.work, spr, this.point[0], this.point[1], this.params());
+          const hp = Math.round((this.rect && this.rect.hidden || 0) * 100);
+          this.$("g-hid").textContent = this.val("hide") ? `сховано ≈${hp}%${hp > 60 ? " · хардкор-етап" : ""}` : "";
         } catch (e) { this.hint("Помилка: " + e.message); }
       }
       this.viewer.replaceImage(this.work);
@@ -342,10 +352,47 @@
         this.undo.push({rect: r, data: bctx.getImageData(r.x, r.y, r.w, r.h), placed: this.placed.length});
         bctx.drawImage(this.work, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
       }
-      this.placed.push(this.target());
+      this.placed.push(Object.assign(this.target(), r && r.hidden > 0.6 ? {hidden: Math.round(r.hidden * 100) / 100} : {}));
       this.point = null; this.rect = null;
       this.hint(`Закріплено обʼєктів: ${this.placed.length}. Можна ставити наступний або зберегти етап.`);
       this.renderMarks();
+    },
+
+    /* Малювання накатів: тягнення по знімку — траса, відпустили — сліди вбудовуються в знімок (з «Скасувати»). */
+    toggleTracks(on) {
+      const v = this.viewer, b = this.$("g-tracks");
+      const en = on === undefined ? !v.sketch : on;
+      b.classList.toggle("primary", en);
+      if (!en) { v.sketch = null; this.hint("Сліди вимкнено. Клік по знімку — поставити техніку."); return; }
+      this.hint("Ведіть по знімку — малюються накатані сліди (дві колії). Відпустіть — сліди лягають у знімок. «✏ Сліди» ще раз — вимкнути.");
+      v.sketch = (ph, x, y) => {
+        if (ph === "start") { this.trk = [[x, y]]; return; }
+        if (!this.trk) return;
+        const last = this.trk[this.trk.length - 1];
+        if (ph === "move") {
+          if (Math.hypot(x - last[0], y - last[1]) * v.s > 4) this.trk.push([x, y]);
+          this.viewer.setMarks([...this.placed.map((t) => ({x: t.x, y: t.y, r: t.r, color: C.hit})), {line: this.trk, color: "#ffb23e", w: this.gauge()}]);
+          return;
+        }
+        const pts = this.trk; this.trk = null;
+        if (ph === "end" && pts.length > 1) this.applyTracks(pts);
+        else this.renderMarks();
+      };
+    },
+    gauge() { const gsd = Number(this.$("g-gsd").value); return gsd > 0 ? 2.4 / gsd : Math.max(4, this.val("size") * 0.33); },
+    applyTracks(pts) {
+      const g = this.gauge(), pad = Math.ceil(g * 2 + 8), W = this.base.width, H = this.base.height;
+      const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+      const x = Math.max(0, Math.floor(Math.min(...xs) - pad)), y = Math.max(0, Math.floor(Math.min(...ys) - pad));
+      const r = {x, y, w: Math.min(W, Math.ceil(Math.max(...xs) + pad)) - x, h: Math.min(H, Math.ceil(Math.max(...ys) + pad)) - y};
+      if (r.w <= 0 || r.h <= 0) return;
+      this.restoreRect();
+      const bctx = this.base.getContext("2d");
+      this.undo.push({rect: r, data: bctx.getImageData(r.x, r.y, r.w, r.h), placed: this.placed.length});
+      Compose.tracks(this.base, pts, {gauge: g, rut: g * 0.22, str: 0.6, seed: this.undo.length});
+      this.work.getContext("2d").drawImage(this.base, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+      this.render();
+      this.hint("Сліди додано. Можна малювати ще, «Скасувати закріплення» — прибрати останні.");
     },
 
     undoCommit() {
@@ -367,7 +414,7 @@
       clearTimeout(this.job);
       await this.render();
       const targets = this.placed.slice();
-      if (this.point) targets.push(this.target());
+      if (this.point) targets.push(Object.assign(this.target(), this.rect && this.rect.hidden > 0.6 ? {hidden: Math.round(this.rect.hidden * 100) / 100} : {}));
       if (!targets.length) { this.hint("На знімку ще немає техніки."); return; }
       if (!targets.some((t) => !t.decoy)) { this.hint("Потрібна хоча б одна справжня ціль — зараз на знімку лише муляжі."); return; }
       this.loading("Зберігаю етап…");
@@ -378,7 +425,7 @@
         const cv = Compose.canvas(this.work.width, this.work.height);
         cv.getContext("2d").drawImage(this.work, 0, 0);
         const stage = await API.uploadStage(cv, {title, targets, name}, this.pw, (m) => this.loading("Зберігаю етап… " + m));
-        const meta = Object.assign({gsd: Number(this.$("g-gsd").value) || 0}, this.baseMeta || {});
+        const meta = Object.assign({gsd: Number(this.$("g-gsd").value) || 0}, this.baseMeta || {}, {hard: targets.some((t) => t.hidden > 0.6)});
         await API.call("save_stage", Object.assign({id: stage.id}, meta), this.pw).catch(() => {});
         Object.assign(stage, meta);
         this.admin.stages.push(stage);

@@ -163,7 +163,7 @@ function rowToStage(r) {
   try { targets = JSON.parse(r.targets || "[]"); } catch (e) { targets = []; }
   let meta = {};
   try { meta = JSON.parse(r.meta || "{}"); } catch (e) { meta = {}; }
-  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, task: meta.task || "", direction: meta.direction || "", season: meta.season || "", gsd: Number(meta.gsd) || 0};
+  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, task: meta.task || "", direction: meta.direction || "", season: meta.season || "", gsd: Number(meta.gsd) || 0, hard: !!meta.hard};
 }
 
 async function stages(env, all) {
@@ -220,13 +220,14 @@ async function action(env, ctx, req, origin) {
       if (req.title !== undefined) { sets.push("title=?"); vals.push(String(req.title).slice(0, 120)); }
       if (req.enabled !== undefined) { sets.push("enabled=?"); vals.push(req.enabled ? 1 : 0); }
       if (req.targets !== undefined) { sets.push("targets=?"); vals.push(JSON.stringify(req.targets)); }
-      if (["task", "direction", "season", "gsd"].some((k) => req[k] !== undefined)) {   // мета зливається: незмінені поля лишаються
+      if (["task", "direction", "season", "gsd", "hard"].some((k) => req[k] !== undefined)) {   // мета зливається: незмінені поля лишаються
         const cur = await env.DB.prepare("SELECT meta FROM stages WHERE id=?").bind(String(req.id)).first();
         let m = {}; try { m = JSON.parse((cur && cur.meta) || "{}"); } catch (e) { m = {}; }
         if (req.task !== undefined) m.task = String(req.task || "").slice(0, 400);
         if (req.direction !== undefined) m.direction = String(req.direction || "").slice(0, 40);
         if (req.season !== undefined) m.season = String(req.season || "").slice(0, 10);
         if (req.gsd !== undefined) m.gsd = Math.max(0, Math.min(10, Number(req.gsd) || 0));
+        if (req.hard !== undefined) m.hard = !!req.hard;
         delete m.unit;
         sets.push("meta=?"); vals.push(JSON.stringify(m));
       }

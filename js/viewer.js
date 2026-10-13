@@ -285,6 +285,11 @@
 
     _mark(m) {
       const ctx = this.ctx;
+      if (m.line) {   // лінія (напр. траса слідів, що малюється)
+        ctx.save(); ctx.strokeStyle = m.color; ctx.lineWidth = Math.max(2, (m.w || 2) * this.s); ctx.lineCap = ctx.lineJoin = "round"; ctx.globalAlpha = 0.6;
+        ctx.beginPath(); m.line.forEach(([x, y], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, this.tx + x * this.s, this.ty + y * this.s)); ctx.stroke(); ctx.restore();
+        return;
+      }
       const cx = this.tx + m.x * this.s, cy = this.ty + m.y * this.s;
       ctx.save();
       ctx.strokeStyle = m.color; ctx.fillStyle = m.color; ctx.lineWidth = 2;
@@ -355,6 +360,7 @@
       this.anim = null;
       const [x, y] = this._local(e);
       this.drag = {x, y, moved: 0};
+      if (this.sketch && this.img) { this.drag.sketch = true; this.sketch("start", ...this.toImage(x, y)); }   // режим малювання: тягнення малює, а не рухає мапу
     }
 
     _move(e) {
@@ -370,6 +376,7 @@
       }
       const dr = this.drag;
       if (!dr) return;
+      if (dr.sketch) { this.sketch("move", ...this.toImage(p[0], p[1])); return; }
       const dx = p[0] - dr.x, dy = p[1] - dr.y;
       dr.moved += Math.abs(dx) + Math.abs(dy);
       if (dr.moved > 4 && this.img) {
@@ -390,6 +397,7 @@
       }
       const dr = this.drag;
       this.drag = null;
+      if (dr && dr.sketch) { this.sketch(cancel ? "cancel" : "end", ...this.toImage(...this._local(e))); return; }
       if (!cancel && dr && dr.moved <= 4 && this.onLeft && this.img) this.onLeft(...this._local(e));
     }
   }

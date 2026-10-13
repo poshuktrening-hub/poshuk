@@ -11,7 +11,12 @@
     return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Не вдалось відкрити зображення")); i.src = src; });
   }
 
-  const HIDE = {open: [0], part: [0.3], mix: [0, 0, 0.15, 0.3, 0.45]};
+  // скільки силуету ховати під кронами; звичайні етапи — не більше 60%, понад — лише хардкор
+  const LEVELS = {
+    open: {name: "Відкрито", range: [0, 0.15], veg: 0.3},
+    norm: {name: "Звичайні (сховано 20–60%)", range: [0.2, 0.6], veg: 0.6},
+    hard: {name: "Хардкор (60–85%)", range: [0.6, 0.85], veg: 0.75},
+  };
 
   const AutoGen = {
     async open(admin) {
@@ -33,7 +38,7 @@
     render() {
       const maps = this.mapList(), real = this.models(false), dec = this.models(true);
       const st = this.state = this.state || {maps: new Set(maps.map((m) => m.id)), real: new Set(real.map((o) => o.id)), dec: new Set(dec.map((o) => o.id)),
-        n: 5, tmin: 1, tmax: 2, dmin: 0, dmax: 1, hide: "mix"};
+        n: 5, tmin: 1, tmax: 2, dmin: 0, dmax: 1, level: "norm", tracks: true};
       const tag = (m) => [Logic.region(m), m.season].filter(Boolean).join(" · ");
       const opt = (a, b, v) => Array.from({length: b - a + 1}, (_, i) => a + i).map((x) => `<option${x === v ? " selected" : ""}>${x}</option>`).join("");
       $("ag").innerHTML = `<div class="m-card">
@@ -57,7 +62,9 @@
           <label>Справжніх цілей на етап</label><span class="rng"><select id="ag-tmin">${opt(1, 3, st.tmin)}</select>–<select id="ag-tmax">${opt(1, 3, st.tmax)}</select></span>
           <label>Муляжів на етап</label><span class="rng"><select id="ag-dmin">${opt(0, 3, st.dmin)}</select>–<select id="ag-dmax">${opt(0, 3, st.dmax)}</select></span>
         </div>
-        <div class="seg-row"><span>Маскування</span><div class="seg" id="ag-hide">${[["open", "Відкрито"], ["part", "Частково"], ["mix", "Різне"]].map(([k, l]) => `<button type="button" data-h="${k}" class="${st.hide === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+        <div class="seg-row"><span>Маскування</span><div class="seg" id="ag-hide">${Object.entries(LEVELS).map(([k, L]) => `<button type="button" data-h="${k}" class="${st.level === k ? "on" : ""}">${L.name}</button>`).join("")}</div></div>
+        <label class="chk"><input type="checkbox" id="ag-tracks"${st.tracks ? " checked" : ""}> Накатані сліди від дороги до техніки</label>
+        <p class="muted small">Хардкор-етапи потрапляють лише в режим «Хардкор»; в інших режимах техніка сховано не більше ніж на 60%.</p>
 
         <div class="row m-foot"><button type="button" class="primary" id="ag-go">Згенерувати</button></div>
         <p class="status" id="ag-st" role="status"></p>
@@ -73,7 +80,8 @@
         if (!m) return; m.gsd = v;
         try { await API.call("save_stage", {id: m.id, gsd: v}, this.pw); } catch (e) { this.say(e.message, "no"); }
       }));
-      box.querySelectorAll("#ag-hide [data-h]").forEach((b) => (b.onclick = () => { st.hide = b.dataset.h; this.render(); }));
+      box.querySelectorAll("#ag-hide [data-h]").forEach((b) => (b.onclick = () => { st.level = b.dataset.h; this.render(); }));
+      $("ag-tracks").onchange = () => { st.tracks = $("ag-tracks").checked; };
       ["n", "tmin", "tmax", "dmin", "dmax"].forEach((k) => ($("ag-" + k).onchange = () => { st[k] = Number($("ag-" + k).value) || 0; }));
       $("ag-add").onclick = () => $("ag-file").click();
       $("ag-file").onchange = async (e) => {
@@ -124,7 +132,23 @@
           IB[(y + 1) * (w + 1) + x + 1] = IB[y * (w + 1) + x + 1] + rb;
         }
       }
-      const d = {src, W, H, k, w, h, IV, IB};
+      let sunDir = 135; try { sunDir = Compose.shadowDir(src); } catch (e) { /* типовий */ }
+      // відстань (у клітинках) до дороги/ґрунтовки — техніку ставлять туди, куди можна заїхати
+      const DR = new Float32Array(w * h).fill(1e9), q = [];
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+        const W1 = w + 1, s9 = IB[(y + 2) * W1 + x + 2] - IB[(y - 1) * W1 + x + 2] - IB[(y + 2) * W1 + x - 1] + IB[(y - 1) * W1 + x - 1];
+        if (s9 >= 6) { DR[y * w + x] = 0; q.push(y * w + x); }
+      }
+      for (let qi = 0; qi < q.length; qi++) {
+        const i = q[qi], x = i % w;
+        for (const j of [i - 1, i + 1, i - w, i + w]) { if (j < 0 || j >= w * h || (j % w === 0 && x === w - 1) || (x === 0 && j === i - 1)) continue; if (DR[j] > DR[i] + 1) { DR[j] = DR[i] + 1; q.push(j); } }
+      }
+      // різкість знімка: середня енергія Лапласа (для підгонки різкості техніки)
+      const g2 = new Float32Array(w * h); for (let i = 0; i < w * h; i++) g2[i] = 0.3 * px[i * 4] + 0.59 * px[i * 4 + 1] + 0.11 * px[i * 4 + 2];
+      const LE = new Float32Array(w * h);
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x; LE[i] = Math.abs(4 * g2[i] - g2[i - 1] - g2[i + 1] - g2[i - w] - g2[i + w]); }
+      const ls = Array.from(LE).filter((v, i) => i % 7 === 0).sort((a, b) => a - b), leMed = ls[ls.length >> 1] || 1;
+      const d = {src, W, H, k, w, h, IV, IB, sunDir, DR, LE, leMed};
       this.maps.set(m.id, d);
       return d;
     },
@@ -138,7 +162,7 @@
     },
 
     /* Місце для техніки: край посадки/крон (частка зелені довкола ~35%), не на дорозі/даху, не впритул до інших. */
-    spot(d, size, placed) {
+    spot(d, size, placed, vegWant = 0.35) {
       const margin = Math.max(size * 1.4, 24), cand = [];
       const R = Math.max(2, 1.6 * size / d.k), r0 = Math.max(1, 0.45 * size / d.k);
       for (let i = 0; i < 700; i++) {
@@ -146,7 +170,10 @@
         if (placed.some((p) => Math.hypot(p[0] - x, p[1] - y) < Math.max(size * 3, 60))) continue;
         const gx = x / d.k, gy = y / d.k;
         const veg = this.frac(d, d.IV, gx, gy, R), bare = this.frac(d, d.IB, gx, gy, r0 * 1.6), core = this.frac(d, d.IV, gx, gy, r0);
-        let s = 1 - Math.abs(veg - 0.35) * 2 - bare * 3 - (core > 0.85 ? 0.5 : 0) + Math.random() * 0.25;
+        // під'їзд: відстань до дороги в довжинах техніки; далі ніж ~12 корпусів у суцільний ліс — не реалістично
+        const dr = d.DR[Math.round(gy) * d.w + Math.round(gx)] * d.k / size;
+        const reach = dr < 1e8 ? Math.max(0, dr - 3) / 9 : 1.5;
+        let s = 1 - Math.abs(veg - vegWant) * 2 - bare * 3 - (vegWant < 0.5 && core > 0.85 ? 0.5 : 0) - reach * 0.9 + Math.random() * 0.25;
         cand.push([s, x, y]);
       }
       if (!cand.length) return null;
@@ -154,6 +181,42 @@
       const top = cand.slice(0, Math.max(1, Math.min(8, Math.ceil(cand.length * 0.03))));
       const c = pick(top);
       return [Math.round(c[1]), Math.round(c[2])];
+    },
+
+    /* Різкість техніки під ділянку знімка: на розмитій — розмити спрайт, на різкій — легко підточити. */
+    focus(d, at, size) {
+      const gx = Math.round(at[0] / d.k), gy = Math.round(at[1] / d.k), r = Math.max(3, Math.round(size / d.k));
+      let s = 0, n = 0;
+      for (let y = Math.max(1, gy - r); y < Math.min(d.h - 1, gy + r); y++) for (let x = Math.max(1, gx - r); x < Math.min(d.w - 1, gx + r); x++) { s += d.LE[y * d.w + x]; n++; }
+      const ratio = n ? s / n / d.leMed : 1;          // < 1 — ділянка розмитіша за типову
+      const blur = Math.max(0, Math.min(1.6, (1.1 - ratio) * 1.8)) + 0.35;   // спрайт завжди трохи мʼякший за ідеальний рендер
+      return {blur, sharp: ratio > 1.05 ? 0.35 : 0};
+    },
+
+    /* Накати: від корми техніки — плавно до найближчої дороги/ґрунтовки (або просто назад, якщо дороги нема). */
+    addTracks(cv, d, at, angle, size, gsd) {
+      const [fx, fy] = [Math.sin(angle * Math.PI / 180), -Math.cos(angle * Math.PI / 180)];
+      const gx = at[0] / d.k, gy = at[1] / d.k, maxR = Math.min(d.w, d.h) * 0.45;
+      let road = null;
+      for (let R = Math.max(3, size / d.k); R < maxR && !road; R += 2) {
+        for (let a = 0; a < 360; a += 8) {
+          const x = gx + Math.cos(a * Math.PI / 180) * R, y = gy + Math.sin(a * Math.PI / 180) * R;
+          if (x < 2 || y < 2 || x > d.w - 3 || y > d.h - 3) continue;
+          if (this.frac(d, d.IB, x, y, 1.5) > 0.6) { road = [x * d.k, y * d.k]; break; }
+        }
+      }
+      const rear = [at[0] - fx * size * 0.45, at[1] - fy * size * 0.45];
+      const back = [at[0] - fx * size * 1.6, at[1] - fy * size * 1.6];
+      let end = road || [at[0] - fx * size * rnd(5, 9), at[1] - fy * size * rnd(5, 9)];
+      if (road) {   // зупинитись на узбіччі, не заходячи на саму дорогу
+        const vx = end[0] - back[0], vy = end[1] - back[1], vl = Math.hypot(vx, vy) || 1, cut = Math.min(vl * 0.5, 2.4 / gsd);
+        end = [end[0] - vx / vl * cut, end[1] - vy / vl * cut];
+      }
+      const mid = [(back[0] + end[0]) / 2, (back[1] + end[1]) / 2], L = Math.hypot(end[0] - back[0], end[1] - back[1]) || 1;
+      const nx = -(end[1] - back[1]) / L, ny = (end[0] - back[0]) / L, j = rnd(-0.18, 0.18) * L;
+      const pts = [rear, back, [mid[0] + nx * j, mid[1] + ny * j], end];
+      const g = 2.4 / gsd;
+      Compose.tracks(cv, pts, {gauge: g, rut: Math.max(1.2, 0.5 / gsd), str: 0.5, seed: Math.round(at[0] + at[1])});
     },
 
     async run() {
@@ -189,18 +252,32 @@
           const pool = real.slice().sort(() => Math.random() - 0.5);
           for (let t = 0; t < nT; t++) items.push({o: pool[t % pool.length], decoy: false});
           for (let t = 0; t < nD; t++) items.push({o: pick(dec), decoy: true});
-          const shadowDir = rnd(110, 170), placed = [], targets = [];
+          const L = LEVELS[st.level] || LEVELS.norm, placed = [], targets = [];
+          const scratch = this.scratch && this.scratch.width === d.W && this.scratch.height === d.H ? this.scratch : (this.scratch = Compose.canvas(d.W, d.H));
           for (const it of items) {
-            const size = Math.max(4, (it.o.length_m || 7) / m.gsd);
-            const at = this.spot(d, size, placed);
-            if (!at) continue;
+            const size = Math.max(4, (it.o.length_m || 7) / m.gsd), spr = await this.sprite(it.o);
+            const want = rnd(L.range[0], L.range[1]);
+            const base = {size, sharp: 0.3, shade: 0.25, shadow_dir: d.sunDir, shadow_len: Math.min(40, Math.max(2, 2.2 / m.gsd)), shadow_op: 0.55, shadow_soft: 0.7,
+              blend: 0.08, darken: 0, sat: 0.9, grain: 0.35, hideTarget: want};
+            // кілька спроб місця: потрібна частка схованого силуету має бути досяжною (є крони поруч)
+            let ok = null;
+            for (let tries = 0; tries < 6 && !ok; tries++) {
+              const at = this.spot(d, size, placed, L.veg);
+              if (!at) break;
+              const p = Object.assign({angle: Math.round(rnd(0, 359))}, base, this.focus(d, at, size));
+              const r = Compose.compose(cv, scratch, spr, at[0], at[1], p);
+              const hid = r ? r.hidden : 0;
+              const inRange = hid >= L.range[0] - 0.08 && hid <= L.range[1] + 0.03;
+              if (inRange || tries === 5) ok = {at, p, hid};
+            }
+            if (!ok) continue;
+            const {at, p, hid} = ok;
+            if (st.level !== "hard" && hid > 0.62) continue;   // правило: поза хардкором — не більше 60%
             placed.push(at);
-            const p = {size, angle: Math.round(rnd(0, 359)), hide: pick(HIDE[st.hide] || HIDE.mix), sharp: 0.7,
-              shadow_dir: shadowDir, shadow_len: Math.max(1, Math.round(size * 0.08 * 2) / 2), shadow_op: 0.45,
-              blend: 0.04, darken: 0, sat: 0.95};
-            Compose.compose(cv, cv, await this.sprite(it.o), at[0], at[1], p);
+            if (st.tracks && !it.decoy) this.addTracks(cv, d, at, p.angle, size, m.gsd);
+            Compose.compose(cv, cv, spr, at[0], at[1], p);
             const type = Logic.typeOf(it.o.name.replace(/^муляж\s+/i, "").replace(/\s*\((вбудована|надувний)\)$/i, ""));
-            targets.push(Object.assign({x: at[0], y: at[1], r: Math.max(8, Math.round(size * 0.6)), type, obj: it.o.id}, it.decoy ? {decoy: true} : {}));
+            targets.push(Object.assign({x: at[0], y: at[1], r: Math.max(8, Math.round(size * 0.6)), type, obj: it.o.id}, it.decoy ? {decoy: true} : {}, hid > 0.6 ? {hidden: Math.round(hid * 100) / 100} : {}));
           }
           if (!targets.some((t) => !t.decoy)) continue;
           const types = [...new Set(targets.filter((t) => !t.decoy).map((t) => t.type))].sort().join(", ");
@@ -208,7 +285,7 @@
           for (let k = 2; A.stages.some((s) => s.title === title); k++) title = title.replace(/ #\d+$/, "") + ` #${k}`;
           this.say(`Етап ${i + 1}/${N}: зберігаю «${title}»…`);
           const stage = await API.uploadStage(cv, {title, targets, name: `auto_${Date.now()}`}, this.pw, (msg) => this.say(`Етап ${i + 1}/${N}: ${msg}`));
-          const meta = {direction: Logic.region(m) || m.direction || "", season: m.season || "", gsd: m.gsd};
+          const meta = {direction: Logic.region(m) || m.direction || "", season: m.season || "", gsd: m.gsd, hard: st.level === "hard"};
           await API.call("save_stage", Object.assign({id: stage.id}, meta), this.pw).catch(() => {});
           A.stages.push(Object.assign(stage, meta));
           made++;
