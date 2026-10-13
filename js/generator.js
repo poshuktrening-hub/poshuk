@@ -55,12 +55,12 @@
           <input type="file" id="g-obj-file" accept="image/*" hidden>
           <div class="kv">
             <label for="g-len">Довжина техніки, м</label><input id="g-len" type="number" min="0.5" step="0.1">
-            <label for="g-type">Тип цілі</label><input id="g-type" placeholder="танк">
+            <label for="g-name" title="Перше слово — тип: «Танк Т-72Б3», «САУ 2С19»">Назва моделі</label><input id="g-name" maxlength="40" placeholder="Танк Т-72Б3">
             <label for="g-cage">«Мангал» (сітка над баштою)</label><input id="g-cage" type="checkbox">
           </div>
           <details class="adv"><summary>ТТХ для брифінгу курсанта</summary>
             <textarea id="g-ttx" rows="5" placeholder="Що це, розміри, як виглядає зверху"></textarea>
-            <div class="row"><button type="button" id="g-ttx-save">Зберегти ТТХ</button></div>
+            <div class="row"><button type="button" id="g-ttx-save">Зберегти модель</button></div>
           </details>
           <p class="status" id="g-obj-status"></p>
         </section>
@@ -152,9 +152,9 @@
       const o = this.obj();
       LS.set("poshuk_gen_obj", o.id);
       this.$("g-len").value = o.length_m;
-      this.$("g-type").value = o.type || o.name.replace(/\s*\(.*\)$/, "");
+      this.$("g-name").value = o.builtin ? "Катапульта Ланцет" : o.name;
       this.$("g-obj-del").disabled = !!o.builtin;
-      this.$("g-ttx").value = Logic.ttxFor(o, this.$("g-type").value);
+      this.$("g-ttx").value = Logic.ttxFor(o, Logic.typeOf(this.$("g-name").value));
       this.$("g-ttx-save").disabled = !!o.builtin;
       this.autoSize();
     },
@@ -181,7 +181,7 @@
         const spr = Compose.prepareObject(await loadImg(await fileToDataURL(file)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
         const name = file.name.replace(/\.[^.]+$/, "").slice(0, 40);
-        const j = await API.call("object_upload", {name, data, length_m: Number(this.$("g-len").value) || 7, type: this.$("g-type").value.trim(), ttx: this.$("g-ttx").value.trim()}, this.pw);
+        const j = await API.call("object_upload", {name, data, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(name), ttx: this.$("g-ttx").value.trim()}, this.pw);
         this.sprites.set(j.object.id, spr);
         await this.loadObjects(j.object.id);
         st.textContent = `Додано «${name}». Перевірте довжину й тип.`; st.className = "status ok";
@@ -192,8 +192,9 @@
     async saveMeta() {
       const o = this.obj(), st = this.$("g-obj-status");
       if (o.builtin) return;
-      Object.assign(o, {length_m: Number(this.$("g-len").value) || 7, type: this.$("g-type").value.trim(), ttx: this.$("g-ttx").value.trim()});
-      try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx}, this.pw); st.textContent = "ТТХ збережено ✓"; st.className = "status ok"; }
+      const nm = this.$("g-name").value.trim() || o.name;
+      Object.assign(o, {name: nm, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(nm), ttx: this.$("g-ttx").value.trim()});
+      try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx}, this.pw); await this.loadObjects(o.id); st.textContent = `Збережено ✓ (тип: ${o.type})`; st.className = "status ok"; }
       catch (e) { st.textContent = e.message; st.className = "status no"; }
     },
 
@@ -283,7 +284,7 @@
     },
 
     target() {
-      return {x: this.point[0], y: this.point[1], r: Math.max(8, Math.round(this.val("size") * 0.6)), type: this.$("g-type").value.trim() || "ціль", obj: this.obj().id};
+      return {x: this.point[0], y: this.point[1], r: Math.max(8, Math.round(this.val("size") * 0.6)), type: Logic.typeOf(this.$("g-name").value), obj: this.obj().id};
     },
 
     async commit() {
