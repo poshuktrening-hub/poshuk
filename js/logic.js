@@ -49,8 +49,8 @@
   const normText = (s) => (s || "").toLowerCase().replace(/[«»"]/g, "").replace(/\s+/g, " ").trim();
 
   function evalReport(t, squareTrue, rep) {
-    const checks = [["тип", normText(rep.type) === normText(t.type), t.type || ""],
-      ["квадрат", normSquare(rep.square) === squareTrue, squareTrue]];
+    const checks = [["тип", normText(rep.type) === normText(t.type), t.type || ""]];
+    if (rep.square !== undefined) checks.push(["квадрат", normSquare(rep.square) === squareTrue, squareTrue]);
     if (t.landmark) checks.push(["орієнтир", normText(rep.landmark) === normText(t.landmark), t.landmark]);
     return {ok: checks.filter((c) => c[1]).length, total: checks.length, checks};
   }

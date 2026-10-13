@@ -214,7 +214,7 @@
       this.outroT = setTimeout(() => this.viewer.fit(true, OUTRO_MS), OUTRO_DELAY);
       if (this.foundOrder.length && this.cfg.report) {
         this.queue = this.foundOrder.slice();
-        this.msg(`${reason} +${score} балів. Тепер доповідь: що, де і біля чого.`, "ok");
+        this.msg(`${reason} +${score} балів. Доповідь: що це за техніка?`, "ok");
         this.askReport();
       } else this.debrief();
     },
@@ -236,7 +236,6 @@
         }));
       };
       fill("r-type", Logic.options(t.type || "ціль", this.typePool));
-      fill("r-square", Logic.options(sq, this.neighbors(t)));
       $("r-lm-row").hidden = !t.landmark;
       if (t.landmark) fill("r-landmark", Logic.options(t.landmark, Logic.LANDMARKS.filter((l) => l !== "інше")));
       $("r-send").disabled = true;
@@ -251,7 +250,7 @@
 
     reportReady() {
       const t = this.targets[this.queue[0]];
-      return this.choice["r-type"] && this.choice["r-square"] && (!t.landmark || this.choice["r-landmark"]);
+      return this.choice["r-type"] && (!t.landmark || this.choice["r-landmark"]);
     },
 
     /* Сусідні квадрати навколо цілі — правдоподібні неправильні варіанти. */
@@ -270,7 +269,7 @@
       if (!this.reportReady()) return;
       const i = this.queue.shift();
       const t = this.targets[i];
-      const rep = {type: this.choice["r-type"], square: this.choice["r-square"], landmark: this.choice["r-landmark"] || ""};
+      const rep = {type: this.choice["r-type"], landmark: this.choice["r-landmark"] || ""};
       this.reports[i] = {rep, ev: Logic.evalReport(t, this.sq(t), rep)};
       if (this.queue.length) return this.askReport();
       $("g-report").hidden = true;
