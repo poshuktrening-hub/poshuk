@@ -244,9 +244,8 @@
       const iw = this.img.width, ih = this.img.height;
       const cols = Math.ceil(iw / cell), rows = Math.ceil(ih / cell);
       ctx.save();
-      ctx.strokeStyle = "rgba(242,240,216,.75)";
+      ctx.strokeStyle = "rgba(242,240,216,.38)";
       ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
       ctx.beginPath();
       for (let i = 0; i <= cols; i++) {
         const x = Math.round(this.tx + Math.min(iw, i * cell) * s) + 0.5;
@@ -301,7 +300,7 @@
       }
       if (m.rect) {
         const [rx, ry, rw, rh] = m.rect;
-        ctx.setLineDash([8, 5]); ctx.lineWidth = 3;
+        ctx.lineWidth = 2.5;
         ctx.fillStyle = "rgba(201,214,74,.12)";
         ctx.fillRect(this.tx + rx * this.s, this.ty + ry * this.s, rw * this.s, rh * this.s);
         ctx.strokeRect(this.tx + rx * this.s, this.ty + ry * this.s, rw * this.s, rh * this.s);
