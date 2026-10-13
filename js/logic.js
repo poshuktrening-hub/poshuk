@@ -33,7 +33,14 @@
     return String(name).trim().split(/\s+/)[0];
   }
   const DECOY_TTX = "Надувний / макетний муляж — обманка для розвідки.\nОзнаки зверху: згладжені округлі форми, «надуті» стволи й борти, рівний світлий колір, глянцевий відблиск, немає колії та слідів руху, тінь мʼяка, деталі (люки, сітки, гусениці) не читаються.";
-  const ttxFor = (o, type) => (o && o.ttx) || (o && o.decoy ? DECOY_TTX : "") || TTX_DEFAULT[String(type || (o && o.type) || "").toLowerCase().trim()] || "";
+  /* Автотекст (типовий або «муляж») не вважається власним описом моделі — його не зберігаємо, щоб зміна типу/муляжу оновлювала опис. */
+  const isAutoTtx = (s) => { const t = String(s || "").trim(); return !t || t === DECOY_TTX || Object.values(TTX_DEFAULT).some((v) => v.trim() === t); };
+  const ttxFor = (o, type, decoy) => {
+    const own = o && o.ttx && !isAutoTtx(o.ttx) ? o.ttx : "";
+    const d = decoy === undefined ? !!(o && o.decoy) : !!decoy;
+    return own || (d ? DECOY_TTX : "") || TTX_DEFAULT[String(type || (o && o.type) || "").toLowerCase().trim()] || "";
+  };
+  const cleanTtx = (s) => (isAutoTtx(s) ? "" : String(s).trim());
 
   function pickRounds(stages, n) {
     const pool = stages.filter((s) => s.targets && s.targets.some((t) => !t.decoy)).slice();
@@ -101,5 +108,5 @@
     return {ok: checks.filter((c) => c[1]).length, total: checks.length, checks};
   }
 
-  window.Logic = {rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
+  window.Logic = {rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
 })();

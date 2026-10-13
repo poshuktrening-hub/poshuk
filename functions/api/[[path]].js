@@ -255,8 +255,8 @@ async function action(env, ctx, req, origin) {
       return {ok: true, object: o};
     }
     case "object_update": {
-      await env.DB.prepare("UPDATE objects SET name=?, length_m=?, type=?, ttx=?, decoy=? WHERE id=?")
-        .bind(String(req.name || "техніка").slice(0, 40), Number(req.length_m) || 7, String(req.type || ""), String(req.ttx || "").slice(0, 2000), req.decoy ? 1 : 0, String(req.id)).run();
+      await env.DB.prepare("UPDATE objects SET name=?, length_m=?, type=?, ttx=?, decoy=COALESCE(?, decoy) WHERE id=?")
+        .bind(String(req.name || "техніка").slice(0, 40), Number(req.length_m) || 7, String(req.type || ""), String(req.ttx || "").slice(0, 2000), req.decoy === undefined || req.decoy === null ? null : (req.decoy ? 1 : 0), String(req.id)).run();
       return {ok: true};
     }
     case "object_delete": await env.DB.prepare("DELETE FROM objects WHERE id=?").bind(String(req.id)).run(); return {ok: true};
