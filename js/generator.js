@@ -62,11 +62,22 @@
         </section>
         <section>
           <h2>3. Клік по знімку — поставити</h2>
-          <div class="sliders" id="g-sliders"></div>
+          <label class="slim">Розмір на знімку <b id="gq-size"></b><input type="range" id="gq-size-r" min="3" max="120" step="0.5"></label>
+          <div class="seg-row"><span>Поворот</span><div class="seg" id="gp-angle">
+            <button type="button" data-v="0">↑</button><button type="button" data-v="45">↗</button><button type="button" data-v="90">→</button>
+            <button type="button" data-v="135">↘</button><button type="button" data-v="180">↓</button><button type="button" data-v="270">←</button>
+            <button type="button" data-v="rnd">🎲</button></div></div>
+          <div class="seg-row"><span>Маскування</span><div class="seg" id="gp-hide">
+            <button type="button" data-v="0">Відкрито</button><button type="button" data-v="35">Частково</button><button type="button" data-v="65">Під кронами</button></div></div>
+          <div class="seg-row"><span>Тінь</span><div class="seg" id="gp-shadow">
+            <button type="button" data-v="0">Немає</button><button type="button" data-v="1">Слабка</button><button type="button" data-v="2">Сильна</button></div></div>
+          <div class="seg-row"><span>Вигляд</span><div class="seg" id="gp-look">
+            <button type="button" data-v="bright">Помітно</button><button type="button" data-v="mid">Природно</button><button type="button" data-v="dim">Зливається</button></div></div>
+          <details class="adv"><summary>Тонке налаштування</summary><div class="sliders" id="g-sliders"></div></details>
         </section>
       </aside>
       <div class="mainpane">
-        <div class="bar"><div class="hint" id="g-hint">Виберіть знімок і техніку.</div>
+        <div class="bar"><div class="hint" id="g-hint">1) знімок → 2) техніка → 3) клік по знімку → «Зберегти як новий етап».</div>
           <button type="button" id="g-commit">Закріпити й додати ще</button>
           <button type="button" id="g-undo">Скасувати закріплення</button>
           <button type="button" class="primary" id="g-save">Зберегти як новий етап</button></div>
@@ -78,7 +89,20 @@
       this.viewer = new Viewer($("g-view"), {onLeft: (x, y) => this.place(x, y)});
       $("g-sliders").innerHTML = SLIDERS.map(([t, k, lo, hi, st, v]) =>
         `<label><span>${esc(t)} <b id="gv-${k}">${v}</b></span><input type="range" id="gs-${k}" min="${lo}" max="${hi}" step="${st}" value="${v}"></label>`).join("");
-      SLIDERS.forEach(([, k]) => ($("gs-" + k).oninput = () => { $("gv-" + k).textContent = $("gs-" + k).value; this.schedule(); }));
+      SLIDERS.forEach(([, k]) => ($("gs-" + k).oninput = () => { $("gv-" + k).textContent = $("gs-" + k).value; this.syncQuick(); this.schedule(); }));
+      $("gq-size-r").oninput = () => { this.setVal("size", $("gq-size-r").value); this.syncQuick(); this.schedule(); };
+      const presets = {
+        "gp-angle": (v) => this.setVal("angle", v === "rnd" ? Math.floor(Math.random() * 360) : v),
+        "gp-hide": (v) => { this.setVal("hide", v); this.setVal("hide_dir", Math.floor(Math.random() * 72) * 5); this.setVal("seed", 1 + Math.floor(Math.random() * 30)); },
+        "gp-shadow": (v) => { const sz = this.val("size"); this.setVal("shadow_op", [0, 40, 60][v]); this.setVal("shadow_len", [0, Math.max(1, Math.round(sz * 0.08 * 2) / 2), Math.max(1.5, Math.round(sz * 0.15 * 2) / 2)][v]); },
+        "gp-look": (v) => { const L = {bright: [5, 0, 100], mid: [12, 12, 70], dim: [25, 22, 50]}[v]; this.setVal("blend", L[0]); this.setVal("darken", L[1]); this.setVal("sat", L[2]); },
+      };
+      Object.keys(presets).forEach((id) => $(id).querySelectorAll("button").forEach((b) => (b.onclick = () => {
+        $(id).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+        presets[id](b.dataset.v); this.syncQuick(); this.schedule();
+      })));
+      ["gp-hide", "gp-shadow", "gp-look"].forEach((id, k) => $(id).querySelectorAll("button")[1].classList.add("on"));
+      this.syncQuick();
       $("g-back").onclick = () => this.close();
       $("g-from-stage").onclick = () => this.baseFromStage();
       $("g-from-file").onclick = () => $("g-base-file").click();
@@ -103,7 +127,8 @@
     hint(t) { this.$("g-hint").textContent = t; },
     loading(t) { this.$("g-loading").hidden = !t; if (t) this.$("g-loading-t").textContent = t; },
     val(k) { return Number(this.$("gs-" + k).value); },
-    setVal(k, v) { this.$("gs-" + k).value = v; this.$("gv-" + k).textContent = this.$("gs-" + k).value; },
+    setVal(k, v) { this.$("gs-" + k).value = v; this.$("gv-" + k).textContent = this.$("gs-" + k).value; if (k === "size") this.syncQuick(); },
+    syncQuick() { const v = this.$("gs-size").value; this.$("gq-size-r").value = v; this.$("gq-size").textContent = v + " пкс"; },
 
     // ---------- бібліотека техніки
     async loadObjects(select) {

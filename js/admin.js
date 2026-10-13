@@ -73,13 +73,15 @@
           <div id="a-tedit">
             <div class="kv">
               <label for="a-type">Тип</label><input id="a-type" list="a-types" placeholder="танк">
-              <label for="a-r">Радіус влучання, пкс</label><input id="a-r" type="number" min="3" max="120" value="14">
               <label for="a-lm">Орієнтир</label><select id="a-lm"></select>
             </div>
-            <label style="margin:.6rem 0 .2rem">Ознаки</label>
-            <div class="signs" id="a-signs"></div>
-            <label for="a-note" style="margin:.6rem 0 .2rem">Примітка для розбору</label>
-            <input id="a-note" placeholder="Корма під кронами, видно башту з «мангалом»">
+            <details class="adv"><summary>Для розбору (необовʼязково)</summary>
+              <div class="kv"><label for="a-r">Радіус влучання, пкс</label><input id="a-r" type="number" min="3" max="120" value="14"></div>
+              <label style="margin:.6rem 0 .2rem">Ознаки</label>
+              <div class="signs" id="a-signs"></div>
+              <label for="a-note" style="margin:.6rem 0 .2rem">Примітка</label>
+              <input id="a-note" placeholder="Корма під кронами, видно башту з «мангалом»">
+            </details>
             <div class="row" style="margin-top:8px">
               <button type="button" id="a-tdel">Видалити ціль</button>
               <button type="button" id="a-tdesel">Зняти вибір (Esc)</button>
@@ -91,7 +93,7 @@
         <section id="a-settings" hidden></section>
       </aside>
       <div class="mainpane">
-        <div class="bar"><div class="hint" id="a-hint">Виберіть етап зліва або додайте знімки.</div>
+        <div class="bar"><div class="hint" id="a-hint">Новий етап: «Генератор» (вставити техніку в знімок) або «Додати знімки…» і клік по техніці на знімку.</div>
           <button type="button" class="primary" id="a-gen" title="Вбудувати техніку в знімок і зберегти як новий етап">Генератор</button>
           <button type="button" id="a-heat">Теплова карта</button>
           <button type="button" onclick="location.hash='';location.reload()">До гри</button></div>
@@ -136,7 +138,7 @@
         `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}</span><span class="cnt">${s.targets.length}</span></li>`
       ).join("") || `<li class="muted">Етапів ще немає</li>`;
       $("a-stages").querySelectorAll("li[data-id]").forEach((li) => (li.onclick = () => this.select(li.dataset.id)));
-      const types = [...new Set(this.stages.flatMap((s) => s.targets.map((t) => t.type)).filter(Boolean))].sort();
+      const types = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))].sort();
       $("a-types").innerHTML = types.map((t) => `<option value="${esc(t)}">`).join("");
     },
 

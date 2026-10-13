@@ -1,6 +1,6 @@
 /* Полотно зі знімком: плавний зум (колесо, кнопки, pinch), перетягування, сітка квадратів, позначки. */
 (function () {
-  const LETTERS = "АБВГДЕЖИКЛМНОПРСТУФХЦЧШЩЮЯ";
+  const LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // без I та O, щоб не плутати з 1 і 0
 
   function letterOf(col) {
     if (col < LETTERS.length) return LETTERS[col];

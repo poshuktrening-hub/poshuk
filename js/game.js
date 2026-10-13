@@ -65,9 +65,7 @@
       const j = await API.call("config", {}, this.password);
       this.cfg = j.settings;
       this.stages = j.stages;
-      const types = [...new Set(this.stages.flatMap((s) => s.targets.map((t) => t.type)).filter(Boolean))].sort();
-      $("types").innerHTML = types.map((t) => `<option value="${esc(t)}">`).join("");
-      $("r-landmark").innerHTML = ["", ...Logic.LANDMARKS].map((l) => `<option value="${esc(l)}">${l ? esc(l) : "—"}</option>`).join("");
+      this.typePool = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))];
     },
 
     showStart() {
@@ -227,7 +225,21 @@
       const i = this.queue[0];
       const n = this.foundOrder.length - this.queue.length + 1;
       $("r-title").textContent = `Доповідь ${n}/${this.foundOrder.length}:`;
-      $("r-type").value = ""; $("r-square").value = ""; $("r-landmark").value = "";
+      const t = this.targets[i], sq = this.sq(t);
+      this.choice = {};
+      const fill = (id, opts) => {
+        $(id).innerHTML = opts.map((o) => `<button type="button" data-v="${esc(o)}">${esc(o)}</button>`).join("");
+        $(id).querySelectorAll("button").forEach((b) => (b.onclick = () => {
+          $(id).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
+          this.choice[id] = b.dataset.v;
+          $("r-send").disabled = !this.reportReady();
+        }));
+      };
+      fill("r-type", Logic.options(t.type || "ціль", this.typePool));
+      fill("r-square", Logic.options(sq, this.neighbors(t)));
+      $("r-lm-row").hidden = !t.landmark;
+      if (t.landmark) fill("r-landmark", Logic.options(t.landmark, Logic.LANDMARKS.filter((l) => l !== "інше")));
+      $("r-send").disabled = true;
       $("g-report").hidden = false;
       const marks = this.marks.filter((m) => m.cross);
       this.foundOrder.forEach((j) => {
@@ -235,13 +247,30 @@
         marks.push({x: t.x, y: t.y, r: (t.r || 14) + (cur ? 4 : 0), color: cur ? COLORS.accent : COLORS.hit, dashed: cur, label: cur ? "доповідь" : ""});
       });
       this.viewer.setMarks(marks);
-      setTimeout(() => $("r-type").focus(), 50);
+    },
+
+    reportReady() {
+      const t = this.targets[this.queue[0]];
+      return this.choice["r-type"] && this.choice["r-square"] && (!t.landmark || this.choice["r-landmark"]);
+    },
+
+    /* Сусідні квадрати навколо цілі — правдоподібні неправильні варіанти. */
+    neighbors(t) {
+      const c = this.viewer.gridCell, img = this.viewer.img;
+      if (!c || !img) return [];
+      const col = Math.floor(t.x / c), row = Math.floor(t.y / c), cols = Math.ceil(img.width / c), rows = Math.ceil(img.height / c), out = [];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const x = col + dx, y = row + dy;
+        if ((dx || dy) && x >= 0 && y >= 0 && x < cols && y < rows) out.push(squareName((x + 0.5) * c, (y + 0.5) * c, c));
+      }
+      return out;
     },
 
     submitReport() {
+      if (!this.reportReady()) return;
       const i = this.queue.shift();
       const t = this.targets[i];
-      const rep = {type: $("r-type").value.trim(), square: $("r-square").value.trim(), landmark: $("r-landmark").value};
+      const rep = {type: this.choice["r-type"], square: this.choice["r-square"], landmark: this.choice["r-landmark"] || ""};
       this.reports[i] = {rep, ev: Logic.evalReport(t, this.sq(t), rep)};
       if (this.queue.length) return this.askReport();
       $("g-report").hidden = true;

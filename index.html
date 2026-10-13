@@ -59,11 +59,10 @@
   </div>
   <form class="report" id="g-report" hidden>
     <b id="r-title">Доповідь</b>
-    <label>що <input id="r-type" list="types" autocomplete="off" required></label>
-    <label>квадрат <input id="r-square" size="5" autocomplete="off" required></label>
-    <label>орієнтир <select id="r-landmark"></select></label>
-    <button class="primary" type="submit">Доповісти</button>
-    <datalist id="types"></datalist>
+    <div class="ch-row"><span>Що:</span><div class="choices" id="r-type"></div></div>
+    <div class="ch-row"><span>Квадрат:</span><div class="choices" id="r-square"></div></div>
+    <div class="ch-row" id="r-lm-row"><span>Орієнтир:</span><div class="choices" id="r-landmark"></div></div>
+    <button class="primary" type="submit" id="r-send" disabled>Доповісти</button>
   </form>
   <footer class="bar bottom">
     <div class="msg" id="g-msg" role="status"></div>
