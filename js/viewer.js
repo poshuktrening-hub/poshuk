@@ -121,19 +121,23 @@
     fit(animate, ms) {
       if (!this.img) return;
       this.minS = Math.min(this.W / this.img.width, this.H / this.img.height);
-      this._go(this.minS, 0, 0, animate, ms);
+      const s = this.lowS();
+      this._go(s, (this.W - this.img.width * s) / 2, (this.H - this.img.height * s) / 2, animate, ms);
     }
+
+    /* Найменший дозволений масштаб: у грі (fill) — знімок завжди перекриває екран, без чорних смуг. */
+    lowS() { return this.startFill ? this.minS * this.coverRel() : this.minS; }
 
     zoomAt(f, cx, cy, animate = true) {
       if (!this.img) return;
       const [bs, btx, bty] = this.anim ? this.anim.to : [this.s, this.tx, this.ty];
-      const ns = Math.max(this.minS, Math.min(this.minS * this.MAX_ZOOM, bs * f));
+      const ns = Math.max(this.lowS(), Math.min(this.minS * this.MAX_ZOOM, bs * f));
       const k = ns / bs;
       this._go(ns, cx - (cx - btx) * k, cy - (cy - bty) * k, animate);
     }
 
     zoomTo(rel, ix, iy, animate = true) {
-      const s = Math.max(this.minS, Math.min(this.minS * this.MAX_ZOOM, this.minS * rel));
+      const s = Math.max(this.lowS(), Math.min(this.minS * this.MAX_ZOOM, this.minS * rel));
       this._go(s, this.W / 2 - ix * s, this.H / 2 - iy * s, animate);
     }
 
@@ -205,13 +209,13 @@
         const rel = s1 / this.minS;
         const cx = (oldW / 2 - tx1) / s1, cy = (oldH / 2 - ty1) / s1;
         this.minS = Math.min(this.W / this.img.width, this.H / this.img.height);
-        const ns = Math.max(this.minS, this.minS * rel);
+        const ns = Math.max(this.lowS(), this.minS * rel);
         this._go(ns, this.W / 2 - cx * ns, this.H / 2 - cy * ns, true, this.anim.ms);
         return;
       }
       const rel = this.zoomRel();
       this.minS = Math.min(this.W / this.img.width, this.H / this.img.height);
-      const s = Math.max(this.minS, this.minS * rel);
+      const s = Math.max(this.lowS(), this.minS * rel);
       const cx = (oldW / 2 - this.tx) / this.s, cy = (oldH / 2 - this.ty) / this.s;
       [this.s, this.tx, this.ty] = this._clamped(s, this.W / 2 - cx * s, this.H / 2 - cy * s);
       this._render();
