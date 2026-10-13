@@ -5,7 +5,7 @@ pages_build_output_dir = "."
 [[d1_databases]]
 binding = "DB"
 database_name = "poshuk"
-database_id = "REPLACE_WITH_D1_ID"
+database_id = "b7d25b58-7457-42d6-881d-7dde8471d99e"
 
 [vars]
 SHEETS_URL = "https://script.google.com/macros/s/AKfycbwQwREKkQLH18-z4cnJKse146hTkdDmNlfE83ru9OlXQjkE_bU7xctcndsNhps3Dmra3w/exec"
