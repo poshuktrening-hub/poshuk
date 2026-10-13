@@ -85,6 +85,12 @@ button:disabled { opacity: .5; cursor: default; }
 .debrief p { margin: 2px 0; }
 .debrief .t-ok { color: var(--hit); font-weight: 600; } .debrief .t-no { color: var(--miss); font-weight: 600; }
 .debrief .sub { padding-left: 14px; }
+.debrief { padding: 6px 10px; font-size: .82rem; }
+.debrief summary { cursor: pointer; list-style: none; line-height: 1.35; }
+.debrief summary::-webkit-details-marker { display: none; }
+.debrief summary::after { content: " ▾"; color: var(--muted); }
+.debrief details[open] summary { margin-bottom: 6px; }
+.debrief details[open] summary::after { content: " ▴"; }
 
 /* таблиці */
 .table-wrap { overflow-x: auto; }

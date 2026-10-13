@@ -531,7 +531,6 @@
       try { s = (await API.call("get_settings", {}, this.pw)).settings; } catch (e) { box.innerHTML = `<p class="status no">${esc(e.message)}</p>`; return; }
       const f = [["rounds_per_game", "Етапів у грі", "number"], ["time_limit_sec", "Секунд на етап", "number"],
         ["misses_allowed", "Дозволено промахів", "number"], ["grid_cols", "Квадратів по ширині", "number"],
-        ["zoom_click", "Зум першого кліку", "number"],
         ["player_password", "Пароль курсантів", "text"], ["admin_password", "Пароль адмінки", "text"]];
       box.innerHTML = `<h2>Налаштування</h2><div class="kv">` + f.map(([k, l, t]) =>
         t === "checkbox" ? `<label for="st-${k}">${l}</label><input id="st-${k}" type="checkbox" ${String(s[k]).toUpperCase() !== "FALSE" ? "checked" : ""}>`
