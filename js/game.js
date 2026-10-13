@@ -111,9 +111,10 @@
         this.viewer = new Viewer($("g-view"), {fill: true, onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
         const g = this.viewer.addButton("#", "Сітка квадратів", () => { this.viewer.toggleGrid(); g.classList.toggle("on", this.viewer.showGrid); });
         this.gridBtn = g;
+        this.viewer.rail.insertBefore($("g-sound"), this.viewer.zoomLbl || null); // звук — у колонку кнопок над мапою
       }
-      this.viewer.toggleGrid(true);
-      this.gridBtn.classList.add("on");
+      this.viewer.toggleGrid(false);   // сітка — за кнопкою «#» (і вмикається підказкою)
+      this.gridBtn.classList.remove("on");
       this.rounds.forEach((_, i) => this.preload(i));
       this.nextRound();
     },
