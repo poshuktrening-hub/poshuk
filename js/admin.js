@@ -341,6 +341,10 @@
       const {img} = await this.readImage(file);
       const st = this.$("a-up-status"), prefix = st.textContent;
       const stage = await API.uploadStage(img, {title, targets, name: file.name.replace(/\.[^.]+$/, "")}, this.pw, (m) => (st.textContent = prefix + " " + m));
+      // масштаб: з назви файлу або автоматично за шириною доріг
+      let gsd = Scale.fromName(file.name.replace(/\.[^.]+$/, "")), how = "з назви";
+      if (!gsd) { const e = Scale.estimate(img); if (e) { gsd = e.gsd; how = "авто"; } }
+      if (gsd) { stage.gsd = gsd; stage.gsdHow = how; await API.call("save_stage", {id: stage.id, gsd}, this.pw).catch(() => {}); }
       this.stages.push(stage);
       return stage;
     },
@@ -352,7 +356,8 @@
         st.textContent = `Завантажую ${i + 1}/${files.length}: ${files[i].name}…`;
         st.className = "status";
         try {
-          const title = files[i].name.replace(/\.[^.]+$/, "");
+          // число масштабу в назві («… · 0.1») — не частина назви етапу
+          const title = files[i].name.replace(/\.[^.]+$/, "").replace(/\s*[·|_-]?\s*\d+[.,]\d+\s*(м\/пкс|м|m\/px|m)?\s*$/i, "").trim() || files[i].name;
           last = await this.uploadOne(files[i], title);
           const parts = title.split(/\s*[·|_]\s*|\s+-\s+/).map((x) => x.trim());
           const season = parts.find((x) => /^(зима|весна|літо|осінь)$/i.test(x));
@@ -364,7 +369,9 @@
           }
         } catch (e) { st.textContent = e.message; st.className = "status no"; return; }
       }
-      st.textContent = files.length ? `Додано: ${files.length}. Клікніть по знімку, щоб поставити ціль.` : "";
+      const added = this.stages.slice(-files.length), noScale = added.filter((s) => !s.gsd).length;
+      const sc = added.filter((s) => s.gsd).map((s) => `${s.gsd} (${s.gsdHow})`).join(", ");
+      st.textContent = files.length ? `Додано: ${files.length}.${sc ? " Масштаб, м/пкс: " + sc + "." : ""}${noScale ? ` Для ${noScale} масштаб не визначився (немає доріг) — впишіть вручну.` : ""}` : "";
       st.className = "status ok";
       this.$("a-file").value = "";
       this.renderList();

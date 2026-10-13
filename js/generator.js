@@ -276,7 +276,12 @@
     },
 
     async baseFromFile(file) {
-      try { await this.setBase(await loadImg(await fileToDataURL(file)), file.name.replace(/\.[^.]+$/, "")); this.baseMeta = null; } catch (e) { this.hint(e.message); }
+      try {
+        const img = await loadImg(await fileToDataURL(file));
+        await this.setBase(img, file.name.replace(/\.[^.]+$/, "")); this.baseMeta = null;
+        const gsd = Scale.fromName(file.name.replace(/\.[^.]+$/, "")) || (Scale.estimate(img) || {}).gsd;
+        if (gsd) { this.$("g-gsd").value = gsd; LS.set("poshuk_gen_gsd", String(gsd)); this.autoSize(); }
+      } catch (e) { this.hint(e.message); }
       this.$("g-base-file").value = "";
     },
 
