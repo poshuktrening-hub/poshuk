@@ -85,16 +85,18 @@ async function gas(env, body) {
   return r.json();
 }
 
-/* Перший вхід: якщо налаштувань ще немає, пароль перевіряє Google-скрипт і віддає налаштування. */
+/* Перший вхід: якщо налаштувань ще немає, пароль адміна перевіряє Google-скрипт і віддає налаштування.
+   Повертає null при успіху або текст помилки. */
 async function bootstrap(env, p) {
-  if (!env.SHEETS_URL || !p) return false;
+  if (!env.SHEETS_URL) return "Не задано SHEETS_URL";
+  if (!p) return "Введіть пароль";
   let j;
-  try { j = await gas(env, {action: "get_settings", p}); } catch (e) { return false; }
-  if (!j || !j.ok) return false;
+  try { j = await gas(env, {action: "get_settings", p}); } catch (e) { return "Google-скрипт недоступний"; }
+  if (!j || !j.ok) return (j && j.error) || "Помилка Google-скрипта";
   const vals = {};
   Object.keys(DEFAULTS).forEach((k) => { if (j.settings[k] !== undefined && j.settings[k] !== "") vals[k] = j.settings[k]; });
   await saveSettings(env, vals);
-  return true;
+  return null;
 }
 
 // ------------------------------------------------------------------ доступ
@@ -131,7 +133,14 @@ async function auth(env, req, need) {
   if (until > Date.now()) throw new HttpError("Забагато невдалих спроб. Спробуйте за 15 хвилин.");
   let s = await settings(env);
   const p = String(req.p || "");
-  if (s._empty && await bootstrap(env, p)) s = await settings(env);
+  if (s._empty) {
+    const err = await bootstrap(env, p);
+    if (err) {
+      if (/спроб/i.test(err)) throw new HttpError("Google-скрипт тимчасово заблокував вхід після невдалих спроб. Спробуйте за 15 хвилин.");
+      throw new HttpError("Сайт ще не налаштований. Адміністратору: увійдіть в адмінку (кнопка «Адмінка») паролем адміна з Google-таблиці — налаштування перенесуться автоматично. (" + err + ")");
+    }
+    s = await settings(env);
+  }
   const isAdmin = !!p && p === String(s.admin_password);
   const isPlayer = isAdmin || (!!p && p === String(s.player_password));
   if (need === "admin" ? isAdmin : isPlayer) return isAdmin ? "admin" : "player";
