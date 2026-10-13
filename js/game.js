@@ -29,7 +29,6 @@
       $("g-hint").onclick = () => this.hint();
       $("g-next").onclick = () => this.nextRound();
       $("g-quit").onclick = () => { if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
-      $("g-report").onsubmit = (e) => { e.preventDefault(); this.submitReport(); };
       $("sum-again").onclick = () => this.showStart();
       document.addEventListener("keydown", (e) => {
         if ($("s-game").hidden || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
@@ -121,7 +120,7 @@
       this.over = true;
       $("g-next").hidden = true; $("g-skip").hidden = false; $("g-hint").hidden = false; $("g-hint").disabled = false;
       this.hintUsed = false;
-      $("g-report").hidden = true; $("g-debrief").hidden = true;
+      $("g-debrief").hidden = true;
       $("g-stage").textContent = `Етап ${this.idx + 1}/${this.rounds.length} · ${st.title}`;
       this.msg("Завантажую знімок…");
       $("g-loading").hidden = false;
@@ -276,7 +275,7 @@
       this.stats();
       $("g-skip").hidden = true;
       this.outroT = setTimeout(() => this.viewer.fit(true, OUTRO_MS), OUTRO_DELAY);
-      if (this.foundOrder.length && this.cfg.report) {
+      if (false) { // доповідь вимкнено
         this.queue = this.foundOrder.slice();
         this.msg(`${reason} +${score} балів. Доповідь: що це за техніка?`, "ok");
         this.askReport();
@@ -397,8 +396,8 @@
       $("sum-title").textContent = `Підсумок · ${this.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
       $("sum-total").style.color = pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
-      $("sum-table").innerHTML = `<tr><th class="num">Етап</th><th>Знімок</th><th class="num">Цілі</th><th class="num">Промахи</th><th class="num">Доповідь</th><th class="num">Час, с</th><th class="num">Бали</th></tr>` +
-        res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.title)}</td><td class="num">${r.found}/${r.total}</td><td class="num">${r.misses}</td><td class="num">${r.report || "—"}</td><td class="num">${r.time}</td><td class="num">${r.score}</td></tr>`).join("");
+      $("sum-table").innerHTML = `<tr><th class="num">Етап</th><th>Знімок</th><th class="num">Цілі</th><th class="num">Промахи</th><th class="num">Час, с</th><th class="num">Бали</th></tr>` +
+        res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.title)}</td><td class="num">${r.found}/${r.total}</td><td class="num">${r.misses}</td><td class="num">${r.time}</td><td class="num">${r.score}</td></tr>`).join("");
       const now = new Date();
       const p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: this.callsign, scores: res.map((r) => r.score), max, conclusion: concl,
