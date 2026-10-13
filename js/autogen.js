@@ -44,7 +44,7 @@
         <ul class="ag-list">${maps.map((m) => `<li><label class="chk"><input type="checkbox" data-map="${m.id}"${st.maps.has(m.id) ? " checked" : ""}> ${esc(m.title)}${tag(m) ? ` <small class="tag">${esc(tag(m))}</small>` : ""}</label>
           <span class="gsd"><input type="number" min="0.02" max="5" step="0.01" data-gsd="${m.id}" value="${m.gsd || ""}" placeholder="0.25"> м/пкс</span></li>`).join("") || `<li class="muted">Карт ще немає — додайте знімки без техніки.</li>`}</ul>
         <div class="row"><button type="button" id="ag-add">Додати карти…</button><input type="file" id="ag-file" accept="image/*" multiple hidden></div>
-        <p class="muted small">Масштаб потрібен, щоб техніка була реального розміру (Град 7,4 м при 0,25 м/пкс ≈ 30 пкс). Назва файлу «Північ · Літо · 01» одразу задає напрямок і пору року.</p>
+        <p class="muted small">Масштаб визначається сам (за шириною доріг) або з назви файлу: «Північ · Літо · 02 · 0.1». Його можна поправити тут. Назва файлу також задає напрямок і пору року.</p>
 
         <h3>Техніка</h3>
         <div class="ag-grid">${real.map((o) => `<label class="chk"><input type="checkbox" data-real="${o.id}"${st.real.has(o.id) ? " checked" : ""}> ${esc(o.name.replace(/\s*\(вбудована\)$/, ""))}</label>`).join("")}</div>
@@ -162,8 +162,14 @@
       const maps = this.mapList().filter((m) => st.maps.has(m.id));
       const real = this.models(false).filter((o) => st.real.has(o.id)), dec = this.models(true).filter((o) => st.dec.has(o.id));
       if (!maps.length) return this.say("Виберіть хоча б одну карту.", "no");
+      // карти без масштабу — визначити автоматично (за шириною доріг)
+      for (const m of maps.filter((x) => !(x.gsd > 0))) {
+        this.say(`Визначаю масштаб «${m.title}»…`);
+        const e = Scale.estimate((await this.mapData(m)).src);
+        if (e) { m.gsd = e.gsd; await API.call("save_stage", {id: m.id, gsd: e.gsd}, this.pw).catch(() => {}); }
+      }
       const noScale = maps.filter((m) => !(m.gsd > 0));
-      if (noScale.length) return this.say(`Вкажіть масштаб для: ${noScale.map((m) => m.title).join(", ")}.`, "no");
+      if (noScale.length) { this.render(); return this.say(`Не вдалось визначити масштаб (немає доріг) — впишіть вручну: ${noScale.map((m) => m.title).join(", ")}.`, "no"); }
       if (!real.length) return this.say("Виберіть хоча б одну модель техніки.", "no");
       const N = Math.max(1, Math.min(50, st.n)), tmin = Math.min(st.tmin, st.tmax), tmax = Math.max(st.tmin, st.tmax);
       const dmin = Math.min(st.dmin, st.dmax), dmax = Math.max(st.dmin, st.dmax);
