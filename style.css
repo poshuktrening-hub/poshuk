@@ -170,3 +170,7 @@ details.adv summary { cursor: pointer; color: var(--muted); font-size: .85rem; m
   repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px); }
 body.with-bg .screen { position: relative; z-index: 1; background: transparent; }
 body.with-bg .card { background: rgba(29,35,29,.82); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.brief .b-warn { margin: 0; text-align: center; color: #f0a64a; font-size: .9rem; }
+.debrief .t-decoy { color: #f0a64a; }
+label.chk { display: flex; gap: 8px; align-items: center; font-weight: 400; font-size: .88rem; margin: 2px 0; }
+label.chk input { width: auto; }
