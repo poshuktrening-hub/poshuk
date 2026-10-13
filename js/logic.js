@@ -46,7 +46,7 @@
   const MODES = {
     game: {id: "game", name: "Ігровий", desc: "Підказка, пропуск і розбір після кожного етапу.", hint: true, skip: true, grid: true, debrief: true, time: 1, misses: null},
     exam: {id: "exam", name: "Іспит", desc: "Без підказок і пропусків. Розбір — у кінці, прохідний бал 80%.", hint: false, skip: false, grid: true, debrief: false, time: 1, misses: null, pass: 80},
-    hard: {id: "hard", name: "Хардкор", desc: "Без підказок і сітки, половина часу, перший промах завершує етап.", hint: false, skip: true, grid: false, debrief: true, time: 0.5, misses: 0},
+    hard: {id: "hard", name: "Хардкор", desc: "30 секунд, без підказок і сітки, перший промах завершує етап. Що шукати — не кажуть: картка цілі лише після етапу.", hint: false, skip: true, grid: false, debrief: true, seconds: 30, misses: 0, blind: true},
   };
   const REGIONS = ["Північ", "Схід", "Південь", "Крим"];
   const SEASONS = ["Весна", "Літо", "Осінь", "Зима"];
