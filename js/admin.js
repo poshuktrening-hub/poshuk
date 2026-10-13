@@ -20,7 +20,7 @@
       const root = document.getElementById("s-admin");
       root.className = "screen center";
       root.innerHTML = `<form class="card narrow" id="a-login">
-        <h1 class="logo">Адмін<span>ка</span></h1>
+        <h1 class="logo"><svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 2v9M20 29v9M2 20h9M29 20h9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="20" cy="20" r="2.5" fill="currentColor"/></svg><span>Адмінка</span></h1>
         <p class="muted">Пошук техніки · керування етапами</p>
         <label for="a-pass">Пароль адміністратора</label>
         <input id="a-pass" type="password" autocomplete="current-password" required>
