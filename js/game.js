@@ -142,7 +142,7 @@
       SFX.unlock();
       this.callsign = cs;
       this.mode = Logic.MODES[this.sel.mode] || Logic.MODES.game;
-      this.limit = Math.round(this.cfg.time_limit_sec * this.mode.time);
+      this.limit = this.mode.seconds || Math.round(this.cfg.time_limit_sec * (this.mode.time || 1));
       this.missLimit = this.mode.misses === null ? this.cfg.misses_allowed : this.mode.misses;
       document.body.dataset.mode = this.mode.id;
       this.rounds = Logic.pickRounds(this.filtered(), this.cfg.rounds_per_game);
@@ -194,8 +194,7 @@
       this.preload(this.idx + 1);
       this.viewer.setImage(img);
       this.viewer.setGrid(this.cfg.grid_cols);
-      this.msg("Брифінг: запам'ятайте, що шукаєте.");
-      await this.brief(st);
+      if (!this.mode.blind) { this.msg("Брифінг: запам'ятайте, що шукаєте."); await this.brief(st); }
       if (this.cur !== st) return;
       this.over = false;
       this.msg("");
@@ -206,7 +205,7 @@
     },
 
     /* Брифінг перед етапом: 5 с чорний екран з технікою, яку шукатимуть, та її ТТХ. */
-    async brief(st) {
+    async brief(st, after = false) {
       const norm = (s) => String(s || "").toLowerCase().trim();
       const seen = new Set(), items = [];
       for (const t of st.targets.filter((x) => !x.decoy)) {
@@ -230,6 +229,14 @@
       const n = st.targets.filter((x) => !x.decoy).length;
       const types = [...new Set(st.targets.filter((x) => !x.decoy).map((x) => x.type).filter(Boolean))].join(", ");
       const unit = (st.unit || "").trim(), task = (st.task || "").trim() || `Виявити ${types || "техніку противника"} у районі «${st.title.split("·")[0].trim()}» та позначити для ураження.`;
+      if (after) {   // хардкор: картка цілі — лише після етапу
+        box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЩО ВИ ШУКАЛИ</div>${cards.join("")}
+          <div class="b-foot"><span class="b-sp"></span><button type="button" class="primary" id="b-go">До розбору</button></div></div>`;
+        box.hidden = false;
+        await new Promise((res) => (box.querySelector("#b-go").onclick = res));
+        box.hidden = true;
+        return;
+      }
       box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЗНАЙТИ ${n > 1 ? n + " ЦІЛІ" : "ЦІЛЬ"}</div>
         <div class="b-task"><div class="b-from">📡 ЗАВДАННЯ${unit ? " ВІД: " + esc(unit.toUpperCase()) : ""}</div><p>${esc(task)}</p></div>${cards.join("")}
         <p class="b-warn">⚠ На знімку можуть бути муляжі — клік по обманці рахується як промах.</p>
@@ -366,6 +373,11 @@
         this.msg(`${reason} (етап ${this.idx + 1} з ${this.rounds.length})`);
         $("g-next").textContent = this.idx === this.rounds.length - 1 ? "Результат →" : "Далі →";
         $("g-next").hidden = false;
+        return;
+      }
+      if (this.mode.blind) {   // спершу картка «що це було», потім розбір
+        const st = this.cur;
+        setTimeout(() => this.brief(st, true).then(() => { if (this.cur === st) { this.showAllMarks(); this.debrief(); } }), 700);
         return;
       }
       this.outroT = setTimeout(() => this.showAllMarks(), OUTRO_DELAY);
