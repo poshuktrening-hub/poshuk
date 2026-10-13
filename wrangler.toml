@@ -6,3 +6,7 @@ pages_build_output_dir = "."
 binding = "DB"
 database_name = "poshuk"
 database_id = "REPLACE_WITH_D1_ID"
+
+[vars]
+SHEETS_URL = "https://script.google.com/macros/s/AKfycbwQwREKkQLH18-z4cnJKse146hTkdDmNlfE83ru9OlXQjkE_bU7xctcndsNhps3Dmra3w/exec"
+# SHEETS_SECRET задається в панелі Cloudflare як Secret (не тут — репозиторій публічний)
