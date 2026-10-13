@@ -2,6 +2,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const {LS, SS} = API;
+  const HINT_SCORE = 5;
   const OUTRO_DELAY = 450, OUTRO_MS = 1100;
   const COLORS = {hit: "#5fd38a", miss: "#e8664f", accent: "#c9d64a"};
 
@@ -25,6 +26,7 @@
       $("start-form").onsubmit = (e) => { e.preventDefault(); this.start(); };
       $("logout-btn").onclick = () => { LS.del("poshuk_pw"); this.password = null; this.showLogin(); };
       $("g-skip").onclick = () => this.skip();
+      $("g-hint").onclick = () => this.hint();
       $("g-next").onclick = () => this.nextRound();
       $("g-quit").onclick = () => { if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
       $("g-report").onsubmit = (e) => { e.preventDefault(); this.submitReport(); };
@@ -116,7 +118,8 @@
       this.targets = st.targets;
       this.found = new Set(); this.foundOrder = []; this.misses = 0; this.marks = []; this.clicks = []; this.reports = {};
       this.over = true;
-      $("g-next").hidden = true; $("g-skip").hidden = false;
+      $("g-next").hidden = true; $("g-skip").hidden = false; $("g-hint").hidden = false; $("g-hint").disabled = false;
+      this.hintUsed = false;
       $("g-report").hidden = true; $("g-debrief").hidden = true;
       $("g-stage").textContent = `Етап ${this.idx + 1}/${this.rounds.length} · ${st.title}`;
       this.msg("Завантажую знімок…");
@@ -199,13 +202,38 @@
 
     skip() { if (!this.over) this.endRound("Етап пропущено."); },
 
+    /* Підказка: блок 2×2 квадрати, всередині якого ціль (ціль не обов'язково в центрі блоку). */
+    hint() {
+      if (this.over || this.hintUsed) return;
+      const v = this.viewer, c = v.gridCell, img = v.img;
+      const i = this.targets.findIndex((_, k) => !this.found.has(k));
+      if (i < 0 || !c || !img) return;
+      const t = this.targets[i];
+      const cols = Math.ceil(img.width / c), rows = Math.ceil(img.height / c);
+      const col = Math.floor(t.x / c), row = Math.floor(t.y / c);
+      const c0 = Math.max(0, Math.min(cols - 2, col - (Math.random() < 0.5 ? 0 : 1)));
+      const r0 = Math.max(0, Math.min(rows - 2, row - (Math.random() < 0.5 ? 0 : 1)));
+      const x = c0 * c, y = r0 * c, w = Math.min(2 * c, img.width - x), h = Math.min(2 * c, img.height - y);
+      this.hintUsed = true;
+      $("g-hint").disabled = true;
+      this.marks.push({rect: [x, y, w, h], color: COLORS.accent});
+      v.setMarks(this.marks);
+      v.toggleGrid(true); this.gridBtn.classList.add("on");
+      const rel = Math.min(v.W / w, v.H / h) * 0.85 / v.minS;
+      v.zoomTo(Math.max(1, rel), x + w / 2, y + h / 2);
+      const names = [squareName(x + 1, y + 1, c), squareName(x + w - 1, y + 1, c), squareName(x + 1, y + h - 1, c), squareName(x + w - 1, y + h - 1, c)];
+      this.msg(`Підказка: ціль у квадратах ${[...new Set(names)].join(", ")}. За етап буде ${HINT_SCORE} балів замість 10.`);
+    },
+
     endRound(reason) {
       if (this.over) return;
       this.over = true;
       clearTimeout(this.tickT);
       this.used = this.cfg.time_limit_sec - this.left();
       this.reason = reason;
-      const score = Logic.roundScore(this.targets.length, this.found.size);
+      let score = Logic.roundScore(this.targets.length, this.found.size);
+      if (this.hintUsed && score) score = HINT_SCORE;
+      $("g-hint").hidden = true;
       this.result = {title: this.cur.title, id: this.cur.id, found: this.found.size, total: this.targets.length,
         misses: this.misses, time: Math.round(this.used * 10) / 10, score, clicks: this.clicks.slice(), report: ""};
       this.results.push(this.result);
@@ -314,7 +342,7 @@
         h.push(`<p class="t-no">✗ Промах ${n}: квадрат ${sq}, ${d} пкс від цілі «${esc(near.type || "ціль")}»</p>`);
       });
       if (!this.clicks.length) h.push(`<p class="muted">Кліків по знімку не було.</p>`);
-      h.push(`<p class="muted">Час: ${this.result.time} с · бали: +${this.result.score}</p>`);
+      h.push(`<p class="muted">Час: ${this.result.time} с · бали: +${this.result.score}${this.hintUsed ? " (з підказкою)" : ""}</p>`);
       $("g-debrief").innerHTML = h.join("");
       $("g-debrief").hidden = false;
       const last = this.idx === this.rounds.length - 1;
