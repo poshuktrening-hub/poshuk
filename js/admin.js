@@ -50,6 +50,7 @@
       <aside class="side">
         <div class="row"><h2>Етапи</h2><button type="button" id="a-settings-btn" style="flex:0">Налаштування</button><button type="button" style="flex:0" id="a-out">Вийти</button></div>
         <section>
+          <div class="row filters"><select id="a-filter-dir"><option value="">Усі напрямки</option></select><select id="a-filter-season"><option value="">Усі пори року</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select></div>
           <ul class="list" id="a-stages"></ul>
           <div class="row">
             <label class="btnlike" style="margin:0;flex:1"><button type="button" id="a-add" style="width:100%">Додати знімки…</button></label>
@@ -63,6 +64,11 @@
         <section id="a-stage-box" hidden>
           <label for="a-title" style="margin:0">Назва етапу</label>
           <input id="a-title">
+          <div class="kv">
+            <label for="a-dir">Напрямок</label><input id="a-dir" list="a-dirs" maxlength="40" placeholder="Сумський">
+            <label for="a-season">Пора року</label><select id="a-season"><option value="">—</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select>
+          </div>
+          <datalist id="a-dirs"></datalist>
           <label for="a-unit" style="margin:0">Завдання від (підрозділ)</label>
           <input id="a-unit" maxlength="80" placeholder="3-й батальйон 92 ОШБр">
           <label for="a-task" style="margin:0">Текст завдання для брифінгу</label>
@@ -124,6 +130,9 @@
       $("a-imp-file").onchange = (e) => this.importLocal([...e.target.files]);
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
       $("a-unit").oninput = () => { this.stage().unit = $("a-unit").value; this.dirty(true); };
+      $("a-dir").oninput = () => { this.stage().direction = $("a-dir").value.trim(); this.dirty(true); this.renderList(); };
+      $("a-season").onchange = () => { this.stage().season = $("a-season").value; this.dirty(true); this.renderList(); };
+      $("a-filter-dir").onchange = $("a-filter-season").onchange = () => this.renderList();
       $("a-task").oninput = () => { this.stage().task = $("a-task").value; this.dirty(true); };
       $("a-toggle").onclick = () => { const s = this.stage(); s.enabled = !s.enabled; this.dirty(true); this.renderStage(); };
       $("a-del").onclick = () => this.deleteStage();
@@ -153,9 +162,16 @@
 
     renderList() {
       const $ = this.$;
-      $("a-stages").innerHTML = this.stages.map((s) =>
-        `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}</span><span class="cnt">${s.targets.length}</span></li>`
-      ).join("") || `<li class="muted">Етапів ще немає</li>`;
+      const dirs = [...new Set(this.stages.map((s) => s.direction).filter(Boolean))].sort();
+      const fd = $("a-filter-dir"), keep = fd.value;
+      fd.innerHTML = `<option value="">Усі напрямки</option>` + dirs.map((d) => `<option>${esc(d)}</option>`).join("");
+      fd.value = dirs.includes(keep) ? keep : "";
+      $("a-dirs").innerHTML = dirs.map((d) => `<option value="${esc(d)}">`).join("");
+      const fs = $("a-filter-season").value;
+      const list = this.stages.filter((s) => (!fd.value || s.direction === fd.value) && (!fs || s.season === fs));
+      $("a-stages").innerHTML = list.map((s) =>
+        `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}${s.direction || s.season ? `<small class="tag">${esc([s.direction, s.season].filter(Boolean).join(" · "))}</small>` : ""}</span><span class="cnt">${s.targets.length}</span></li>`
+      ).join("") || `<li class="muted">${this.stages.length ? "Нічого за фільтром" : "Етапів ще немає"}</li>`;
       $("a-stages").querySelectorAll("li[data-id]").forEach((li) => (li.onclick = () => this.select(li.dataset.id)));
       const types = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))].sort();
       $("a-types").innerHTML = types.map((t) => `<option value="${esc(t)}">`).join("");
@@ -187,6 +203,8 @@
       if (!s) return;
       $("a-title").value = s.title;
       $("a-unit").value = s.unit || "";
+      $("a-dir").value = s.direction || "";
+      $("a-season").value = s.season || "";
       $("a-task").value = s.task || "";
       $("a-toggle").textContent = s.enabled ? "Вимкнути етап" : "Увімкнути етап";
       this.renderTargets();
@@ -293,7 +311,7 @@
       if (!s) return;
       this.status("Зберігаю…", "");
       try {
-        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, unit: s.unit || "", task: s.task || ""}, this.pw);
+        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, unit: s.unit || "", task: s.task || "", direction: s.direction || "", season: s.season || ""}, this.pw);
         this.status("Збережено ✓", "ok");
       } catch (e) {
         this.status("Не збережено: " + e.message, "no");
@@ -333,7 +351,17 @@
       for (let i = 0; i < files.length; i++) {
         st.textContent = `Завантажую ${i + 1}/${files.length}: ${files[i].name}…`;
         st.className = "status";
-        try { last = await this.uploadOne(files[i], files[i].name.replace(/\.[^.]+$/, "")); } catch (e) { st.textContent = e.message; st.className = "status no"; return; }
+        try {
+          const title = files[i].name.replace(/\.[^.]+$/, "");
+          last = await this.uploadOne(files[i], title);
+          const parts = title.split(/\s*[·|_]\s*|\s+-\s+/).map((x) => x.trim());
+          const season = parts.find((x) => /^(зима|весна|літо|осінь)$/i.test(x));
+          if (season) {
+            last.season = season[0].toUpperCase() + season.slice(1).toLowerCase();
+            last.direction = parts.find((x) => x && x !== season && !/^\d+$/.test(x)) || "";
+            await API.call("save_stage", {id: last.id, unit: "", task: "", direction: last.direction, season: last.season}, this.pw);
+          }
+        } catch (e) { st.textContent = e.message; st.className = "status no"; return; }
       }
       st.textContent = files.length ? `Додано: ${files.length}. Клікніть по знімку, щоб поставити ціль.` : "";
       st.className = "status ok";

@@ -37,7 +37,6 @@
       $("g-hint").onclick = () => this.hint();
       $("g-sound").textContent = SFX.on ? "🔊" : "🔇";
       $("g-sound").onclick = () => { $("g-sound").textContent = SFX.toggle() ? "🔊" : "🔇"; };
-      this.noiseLoop();
       $("g-next").onclick = () => this.nextRound();
       $("g-quit").onclick = () => { if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
       $("sum-again").onclick = () => this.showStart();
@@ -219,20 +218,6 @@
       const s = Math.floor((performance.now() - this.t0) / 1000);
       $("hud-clock").textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
     },
-    noiseLoop() {
-      const c = document.querySelector(".hud-noise"); if (!c) return;
-      const x = c.getContext("2d"), id = x.createImageData(c.width, c.height);
-      const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const draw = () => {
-        if (!$("s-game").hidden) {
-          for (let i = 0; i < id.data.length; i += 4) { const g = Math.random() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = g; id.data[i + 3] = 255; }
-          x.putImageData(id, 0, 0);
-        }
-        if (!still) setTimeout(draw, 90);
-      };
-      draw();
-    },
-
     left() { return Math.max(0, this.cfg.time_limit_sec - (performance.now() - this.t0) / 1000); },
 
     tick() {
@@ -276,7 +261,7 @@
         if (dec) this.clicks[this.clicks.length - 1][4] = 1;
         if (dec) SFX.decoy(); else SFX.miss();
         if (dec) { dec.hitByPlayer = true; this.marks.push({x: dec.x, y: dec.y, r: dec.r || 14, color: COLORS.decoy, dashed: true, label: "муляж!"}); }
-        else this.marks.push({x, y, cross: true, color: COLORS.miss});
+        else this.marks.push({x, y, square: true, color: COLORS.miss});
         v.setMarks(this.marks);
         const leftM = this.cfg.misses_allowed - this.misses;
         if (leftM < 0) return this.endRound(dec ? "Це муляж! Другий промах — етап завершено." : "Другий промах — етап завершено.");
@@ -348,7 +333,7 @@
       const missed = this.targets.map((_, i) => i).filter((i) => !this.found.has(i));
       const marks = [];
       let n = 0;
-      this.clicks.forEach((c) => { if (!c[3] && !c[4]) marks.push({x: c[1], y: c[2], cross: true, color: COLORS.miss, label: String(++n)}); });
+      this.clicks.forEach((c) => { if (!c[3] && !c[4]) marks.push({x: c[1], y: c[2], square: true, color: COLORS.miss, label: String(++n)}); });
       this.targets.forEach((t, i) => {
         const ok = this.found.has(i);
         marks.push({x: t.x, y: t.y, r: (t.r || 14) + (ok ? 0 : 6), color: ok ? COLORS.hit : COLORS.accent, dashed: !ok, label: t.type || ""});

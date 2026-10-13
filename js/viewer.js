@@ -266,6 +266,23 @@
       const cx = this.tx + m.x * this.s, cy = this.ty + m.y * this.s;
       ctx.save();
       ctx.strokeStyle = m.color; ctx.fillStyle = m.color; ctx.lineWidth = 2;
+      if (m.square) {
+        // широкий квадратний «приціл» промаху: рамка з кутами
+        const half = Math.max(22, Math.min(46, 18 * Math.sqrt(this.s / this.minS))), k = half * 0.45;
+        ctx.setLineDash([]); ctx.lineWidth = 2.5; ctx.strokeStyle = m.color; ctx.shadowColor = "rgba(0,0,0,.7)"; ctx.shadowBlur = 3;
+        ctx.beginPath();
+        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          const px = cx + sx * half, py = cy + sy * half;
+          ctx.moveTo(px - sx * k, py); ctx.lineTo(px, py); ctx.lineTo(px, py - sy * k);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 0.35; ctx.lineWidth = 1; ctx.strokeRect(cx - half, cy - half, half * 2, half * 2); ctx.globalAlpha = 1;
+        ctx.fillStyle = m.color; ctx.beginPath(); ctx.arc(cx, cy, 2, 0, 7); ctx.fill();
+        ctx.shadowBlur = 0;
+        if (m.label) { ctx.font = "600 12px 'IBM Plex Sans', system-ui, sans-serif"; ctx.textBaseline = "middle"; ctx.lineWidth = 3; ctx.strokeStyle = "rgba(13,16,13,.85)"; ctx.strokeText(m.label, cx + half + 5, cy - half + 6); ctx.fillText(m.label, cx + half + 5, cy - half + 6); }
+        ctx.restore();
+        return;
+      }
       if (m.rect) {
         const [rx, ry, rw, rh] = m.rect;
         ctx.setLineDash([8, 5]); ctx.lineWidth = 3;
