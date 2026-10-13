@@ -42,6 +42,30 @@
   };
   const cleanTtx = (s) => (isAutoTtx(s) ? "" : String(s).trim());
 
+  /* ---- головне меню: режими, напрямки, пори року ---- */
+  const MODES = {
+    game: {id: "game", name: "Ігровий", desc: "Підказка, пропуск і розбір після кожного етапу.", hint: true, skip: true, grid: true, debrief: true, time: 1, misses: null},
+    exam: {id: "exam", name: "Іспит", desc: "Без підказок і пропусків. Розбір — у кінці, прохідний бал 80%.", hint: false, skip: false, grid: true, debrief: false, time: 1, misses: null, pass: 80},
+    hard: {id: "hard", name: "Хардкор", desc: "Без підказок і сітки, половина часу, перший промах завершує етап.", hint: false, skip: true, grid: false, debrief: true, time: 0.5, misses: 0},
+  };
+  const REGIONS = ["Північ", "Схід", "Південь", "Крим"];
+  const SEASONS = ["Весна", "Літо", "Осінь", "Зима"];
+  const REGION_KEYS = {
+    "Північ": ["північ", "сум", "харків", "черніг", "київ", "бєлгор", "курськ", "брянськ"],
+    "Схід": ["схід", "донец", "донеччин", "луган", "бахмут", "покров", "краматор", "слов'ян", "слов’ян", "куп'ян", "куп’ян", "лиман", "часів яр", "торецьк", "авдіїв", "курахов", "вугледар"],
+    "Південь": ["півден", "херсон", "запор", "микола", "одес", "оріх", "каховк", "очаків", "кінбурн"],
+    "Крим": ["крим", "севаст", "сімфер", "джанкой", "керч", "євпатор"],
+  };
+  /* Напрямок етапу: вибраний в адмінці, або впізнаний зі старого тексту напрямку/назви («Сумський» → Північ). */
+  const GENERIC = ["північ", "схід", "півден"];   // «Тернувате, схід» у назві — не напрямок, тож ці слова шукаємо лише в полі напрямку
+  function region(s) {
+    if (REGIONS.includes(s.direction)) return s.direction;
+    const d = String(s.direction || "").toLowerCase(), t = String(s.title || "").toLowerCase();
+    return REGIONS.find((r) => REGION_KEYS[r].some((k) => d.includes(k))) ||
+      REGIONS.find((r) => REGION_KEYS[r].some((k) => !GENERIC.includes(k) && t.includes(k))) || "";
+  }
+  function regionOf(text) { return region({direction: text}); }
+
   function pickRounds(stages, n) {
     const pool = stages.filter((s) => s.targets && s.targets.some((t) => !t.decoy)).slice();
     for (let i = pool.length - 1; i > 0; i--) {
@@ -108,5 +132,5 @@
     return {ok: checks.filter((c) => c[1]).length, total: checks.length, checks};
   }
 
-  window.Logic = {rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
+  window.Logic = {MODES, REGIONS, SEASONS, region, regionOf, rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
 })();

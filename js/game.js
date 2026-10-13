@@ -7,7 +7,6 @@
   const COLORS = {hit: "#3ddc97", miss: "#ff5a4f", accent: "#ffb23e", decoy: "#b48cff"};
 
   const TOUCH = window.matchMedia && matchMedia("(pointer: coarse)").matches;
-  const HELP = () => (TOUCH ? "Тап по цілі — позначити, двома пальцями — зум." : "Клік по цілі — позначити, колесо — зум.");
   const BG_SCREENS = ["s-login", "s-start", "s-summary"];
   function show(id) {
     document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== id));
@@ -84,16 +83,55 @@
 
     showStart() {
       show("s-start");
-      const n = Math.min(this.cfg.rounds_per_game, this.stages.length);
-      $("start-info").textContent = n ? `Етапів у грі: ${n}. Знайдіть усю техніку на кожному знімку.`
-        : "Поки немає жодного етапу. Адміністратору: відкрийте адмінку й імпортуйте знімки.";
-      $("start-info").insertAdjacentHTML("beforeend", n ? "" : ' <a href="#admin">Відкрити адмінку →</a>');
-      $("start-btn").disabled = !n;
+      const saved = LS.get("poshuk_menu", {}) || {};
+      this.sel = {mode: Logic.MODES[saved.mode] ? saved.mode : "game",
+        regions: Array.isArray(saved.regions) ? saved.regions.filter((r) => Logic.REGIONS.includes(r)) : Logic.REGIONS.slice(),
+        seasons: Array.isArray(saved.seasons) ? saved.seasons.filter((r) => Logic.SEASONS.includes(r)) : Logic.SEASONS.slice()};
+      this.renderMenu();
       $("callsign").value = LS.get("poshuk_callsign", "");
       $("start-err").textContent = "";
       this.refreshPending();
       this.flushPending();
       $("callsign").focus();
+    },
+
+    /* Головне меню: режим, напрямок, пора року (з кількістю етапів у кожному варіанті). */
+    /* Скільки мапи закривають панелі поверх неї — на стільки можна «перегорнути» край, щоб техніка не сховалась під ними. */
+    overlayInsets() {
+      const v = $("g-view").getBoundingClientRect(), top = document.querySelector("#s-game .timebar").getBoundingClientRect();
+      const rail = this.viewer && this.viewer.rail.getBoundingClientRect();
+      const btns = [...document.querySelectorAll("#s-game .bar.bottom > *:not([hidden])")].map((e) => e.getBoundingClientRect()).filter((r) => r.height);
+      const foot = btns.length ? v.bottom - Math.min(...btns.map((r) => r.top)) : 0;
+      return {t: Math.max(0, top.bottom - v.top), r: rail ? Math.max(0, v.right - rail.left) : 0, b: Math.max(0, foot + 4), l: 0};
+    },
+
+    playable() { return this.stages.filter((s) => s.targets && s.targets.some((t) => !t.decoy)); },
+    /* Галочки: усі вибрані = без фільтра (разом з етапами, де напрямок/пора не вказані). */
+    filtered(regions = this.sel.regions, seasons = this.sel.seasons) {
+      const allR = regions.length === Logic.REGIONS.length, allS = seasons.length === Logic.SEASONS.length;
+      return this.playable().filter((s) => (allR || regions.includes(Logic.region(s))) && (allS || seasons.includes(s.season)));
+    },
+    renderMenu() {
+      const sel = this.sel;
+      const chip = (group, v, list, n) => { const on = sel[group].includes(v);
+        return `<button type="button" role="checkbox" aria-checked="${on}" class="chip${on ? " on" : ""}" data-g="${group}" data-v="${esc(v)}"><i aria-hidden="true">${on ? "✓" : ""}</i>${esc(v)}<small>${n}</small></button>`; };
+      $("pick-mode").innerHTML = Object.values(Logic.MODES).map((m) =>
+        `<button type="button" role="radio" aria-checked="${sel.mode === m.id}" class="mode${sel.mode === m.id ? " on" : ""}" data-m="${m.id}"><b>${m.name}</b><span>${esc(m.desc)}</span></button>`).join("");
+      $("pick-region").innerHTML = Logic.REGIONS.map((r) => chip("regions", r, sel.regions, this.playable().filter((s) => Logic.region(s) === r).length)).join("");
+      $("pick-season").innerHTML = Logic.SEASONS.map((x) => chip("seasons", x, sel.seasons, this.playable().filter((s) => s.season === x).length)).join("");
+      const save = () => { LS.set("poshuk_menu", sel); SFX.click(); this.renderMenu(); };
+      document.querySelectorAll("#pick-mode [data-m]").forEach((b) => (b.onclick = () => { sel.mode = b.dataset.m; save(); }));
+      document.querySelectorAll("#s-start [data-g]").forEach((b) => (b.onclick = () => {
+        const a = sel[b.dataset.g], v = b.dataset.v;
+        sel[b.dataset.g] = a.includes(v) ? a.filter((x) => x !== v) : [...a, v];
+        save();
+      }));
+      const pool = this.filtered(), n = Math.min(this.cfg.rounds_per_game, pool.length);
+      if (!this.playable().length) {
+        $("start-info").innerHTML = 'Поки немає жодного етапу. Адміністратору: <a href="#admin">відкрийте адмінку</a> й додайте знімки.';
+      } else $("start-info").textContent = n ? `Етапів у грі: ${n}${pool.length > n ? ` (з ${pool.length})` : ""}.` : "Для вибраних напрямків і пір року етапів немає — додайте галочки.";
+      $("start-btn").disabled = !n;
+      $("start-btn").textContent = `Почати: ${Logic.MODES[sel.mode].name.toLowerCase()}`;
     },
 
     // ---------- гра
@@ -103,18 +141,23 @@
       LS.set("poshuk_callsign", cs);
       SFX.unlock();
       this.callsign = cs;
-      this.rounds = Logic.pickRounds(this.stages, this.cfg.rounds_per_game);
+      this.mode = Logic.MODES[this.sel.mode] || Logic.MODES.game;
+      this.limit = Math.round(this.cfg.time_limit_sec * this.mode.time);
+      this.missLimit = this.mode.misses === null ? this.cfg.misses_allowed : this.mode.misses;
+      document.body.dataset.mode = this.mode.id;
+      this.rounds = Logic.pickRounds(this.filtered(), this.cfg.rounds_per_game);
       this.results = [];
       this.idx = -1;
       show("s-game");
       if (!this.viewer) {
-        this.viewer = new Viewer($("g-view"), {fill: true, onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
+        this.viewer = new Viewer($("g-view"), {fill: true, insets: () => this.overlayInsets(), onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
         const g = this.viewer.addButton("#", "Сітка квадратів", () => { this.viewer.toggleGrid(); g.classList.toggle("on", this.viewer.showGrid); });
         this.gridBtn = g;
         this.viewer.rail.insertBefore($("g-sound"), this.viewer.zoomLbl || null); // звук — у колонку кнопок над мапою
       }
       this.viewer.toggleGrid(false);   // сітка — за кнопкою «#» (і вмикається підказкою)
       this.gridBtn.classList.remove("on");
+      this.gridBtn.hidden = !this.mode.grid;
       this.rounds.forEach((_, i) => this.preload(i));
       this.nextRound();
     },
@@ -133,10 +176,10 @@
       this.decoys = st.targets.filter((t) => t.decoy);
       this.found = new Set(); this.foundOrder = []; this.misses = 0; this.marks = []; this.clicks = [];
       this.over = true;
-      $("g-next").hidden = true; $("g-skip").hidden = false; $("g-hint").hidden = false; $("g-hint").disabled = false;
+      $("g-next").hidden = true; $("g-skip").hidden = !this.mode.skip; $("g-hint").hidden = !this.mode.hint; $("g-hint").disabled = false;
       this.hintUsed = false;
       $("g-debrief").hidden = true;
-      $("g-stage").textContent = `Етап ${this.idx + 1}/${this.rounds.length} · ${st.title}`;
+      $("g-stage").textContent = `${this.mode.id === "game" ? "" : this.mode.name + " · "}Етап ${this.idx + 1}/${this.rounds.length} · ${st.title}`;
       this.msg("Завантажую знімок…");
       $("g-loading").hidden = false;
       let img;
@@ -155,7 +198,7 @@
       await this.brief(st);
       if (this.cur !== st) return;
       this.over = false;
-      this.msg(HELP());
+      this.msg("");
       this.t0 = performance.now(); this.lastTick = null;
       this.hudSeed(st); this.hud();
       this.stats();
@@ -221,7 +264,7 @@
       const s = Math.floor((performance.now() - this.t0) / 1000);
       $("hud-clock").textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
     },
-    left() { return Math.max(0, this.cfg.time_limit_sec - (performance.now() - this.t0) / 1000); },
+    left() { return Math.max(0, this.limit - (performance.now() - this.t0) / 1000); },
 
     tick() {
       if (this.over) return;
@@ -229,7 +272,7 @@
       $("g-time").textContent = fmt(l);
       $("g-time").classList.toggle("warn", warn);
       document.querySelector(".timebar").classList.toggle("warn", warn);
-      $("g-timebar").style.transform = `scaleX(${l / this.cfg.time_limit_sec})`;
+      $("g-timebar").style.transform = `scaleX(${l / this.limit})`;
       const sec = Math.ceil(l);
       if (warn && sec !== this.lastTick && sec > 0) { this.lastTick = sec; SFX.tick(sec <= 3); }
       this.hudClock();
@@ -239,7 +282,7 @@
 
     stats() {
       $("g-score").textContent = this.results.reduce((a, r) => a + r.score, 0);
-      $("g-miss").textContent = `${this.misses}/${this.cfg.misses_allowed}`;
+      $("g-miss").textContent = `${this.misses}/${Math.max(1, this.missLimit)}`;
       $("g-found").textContent = `${this.found.size}/${this.targets.length}`;
     },
 
@@ -260,8 +303,8 @@
         if (dec) { dec.hitByPlayer = true; this.marks.push({x: dec.x, y: dec.y, r: dec.r || 14, color: COLORS.decoy, dashed: true, label: "муляж!"}); }
         else this.marks.push({x, y, square: true, color: COLORS.miss});
         v.setMarks(this.marks);
-        const leftM = this.cfg.misses_allowed - this.misses;
-        if (leftM < 0) return this.endRound(dec ? "Це муляж! Другий промах — етап завершено." : "Другий промах — етап завершено.");
+        const leftM = this.missLimit - this.misses;
+        if (leftM < 0) return this.endRound(`${dec ? "Це муляж! " : ""}${this.missLimit ? "Ліміт промахів — етап завершено." : "Промах — етап завершено."}`);
         this.msg(`${dec ? "Це муляж — промах!" : "Мимо!"} ${leftM === 0 ? "Ще промах — кінець етапу." : "Можна ще: " + leftM + "."}`, "no");
       } else {
         this.found.add(hit); this.foundOrder.push(hit);
@@ -309,7 +352,7 @@
       if (this.over) return;
       this.over = true;
       clearTimeout(this.tickT);
-      this.used = this.cfg.time_limit_sec - this.left();
+      this.used = this.limit - this.left();
       this.reason = reason;
       let score = Logic.roundScore(this.targets.length, this.found.size);
       if (this.hintUsed && score) score = HINT_SCORE;
@@ -319,6 +362,12 @@
       this.results.push(this.result);
       this.stats();
       $("g-skip").hidden = true;
+      if (!this.mode.debrief) {   // іспит: без розбору й показу цілей до кінця
+        this.msg(`${reason} (етап ${this.idx + 1} з ${this.rounds.length})`);
+        $("g-next").textContent = this.idx === this.rounds.length - 1 ? "Результат →" : "Далі →";
+        $("g-next").hidden = false;
+        return;
+      }
       this.outroT = setTimeout(() => this.showAllMarks(), OUTRO_DELAY);
       this.debrief();
     },
@@ -391,17 +440,19 @@
       show("s-summary");
       const res = this.results;
       const max = 10 * res.length, total = res.reduce((a, r) => a + r.score, 0);
-      const pct = max ? Math.round(100 * total / max) : 0, concl = Logic.conclusion(total, max);
-      $("sum-title").textContent = `Підсумок · ${this.callsign}`;
+      const pct = max ? Math.round(100 * total / max) : 0, m = this.mode || Logic.MODES.game;
+      const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);
+      $("sum-title").textContent = `${m.id === "game" ? "Підсумок" : m.name} · ${this.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
       const rk = Logic.rank(pct);
       $("sum-rank").innerHTML = `${Logic.rankBadge(rk.level)}<div><div class="rk-label">Звання</div><div class="rk-name">${esc(rk.name)}</div><div class="rk-next">${rk.next ? `До «${esc(rk.next.name)}» — від ${rk.next.min}%` : "Найвище звання"}</div></div>`;
-      $("sum-total").style.color = pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
+      $("sum-total").style.color = m.pass ? (pct >= m.pass ? "var(--hit)" : "var(--miss)") : pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
       $("sum-table").innerHTML = `<tr><th class="num">Етап</th><th>Знімок</th><th class="num">Цілі</th><th class="num">Промахи</th><th class="num">Час, с</th><th class="num">Бали</th></tr>` +
         res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.title)}</td><td class="num">${r.found}/${r.total}</td><td class="num">${r.misses}</td><td class="num">${r.time}</td><td class="num">${r.score}</td></tr>`).join("");
       const now = new Date();
       const p2 = (x) => String(x).padStart(2, "0");
-      const item = {callsign: this.callsign, scores: res.map((r) => r.score), max, conclusion: concl,
+      const item = {callsign: this.callsign, scores: res.map((r) => r.score), max, mode: m.id,
+        conclusion: m.id === "game" ? concl : `${m.name}: ${concl}${m.pass ? ` (поріг ${m.pass}%)` : ""}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`,
         clicks: res.flatMap((r) => r.clicks)};
       const q = LS.get("poshuk_pending", []);

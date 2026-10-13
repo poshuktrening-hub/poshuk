@@ -17,7 +17,8 @@
       this.onLeft = opts.onLeft || null;
       this.onRight = opts.onRight || null;
       this.onChange = opts.onChange || null;
-      this.startFill = !!opts.fill;   // стартовий вигляд: знімок на весь екран (без порожніх смуг)
+      this.startFill = !!opts.fill;
+      this.insets = opts.insets || null;   // () => {t,r,b,l}: смуги під панелями поверх мапи — мапу можна витягнути з-під них   // стартовий вигляд: знімок на весь екран (без порожніх смуг)
       this.MAX_ZOOM = 16;
       this.ANIM_MS = 220;
       this.img = null;
@@ -98,7 +99,8 @@
       if (!this.img) return;
       this.minS = Math.min(this.W / this.img.width, this.H / this.img.height);
       const s = this.minS * Math.min(this.MAX_ZOOM, this.coverRel() * (this.fillExtra || 1.25));
-      this._go(s, 0, 0, animate, ms);
+      const n = this.insets ? this.insets() : {t: 0, l: 0};
+      this._go(s, n.l, n.t, animate, ms);   // верх мапи — одразу під панеллю, не під нею
     }
 
     replaceImage(img) { this.img = img; this.draw(); }
@@ -146,8 +148,9 @@
     // ---------- стан і анімація
     _clamped(s, tx, ty) {
       const iw = this.img.width * s, ih = this.img.height * s;
-      tx = iw < this.W ? (this.W - iw) / 2 : Math.min(0, Math.max(this.W - iw, tx));
-      ty = ih < this.H ? (this.H - ih) / 2 : Math.min(0, Math.max(this.H - ih, ty));
+      const n = this.insets ? this.insets() : {t: 0, r: 0, b: 0, l: 0};
+      tx = iw < this.W ? (this.W - iw) / 2 : Math.min(n.l, Math.max(this.W - iw - n.r, tx));
+      ty = ih < this.H ? (this.H - ih) / 2 : Math.min(n.t, Math.max(this.H - ih - n.b, ty));
       return [s, tx, ty];
     }
 
