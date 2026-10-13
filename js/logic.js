@@ -32,10 +32,11 @@
     for (const k of Object.keys(TYPE_ALIASES)) if (n.includes(k)) return TYPE_ALIASES[k];
     return String(name).trim().split(/\s+/)[0];
   }
-  const ttxFor = (o, type) => (o && o.ttx) || TTX_DEFAULT[String(type || (o && o.type) || "").toLowerCase().trim()] || "";
+  const DECOY_TTX = "Надувний / макетний муляж — обманка для розвідки.\nОзнаки зверху: згладжені округлі форми, «надуті» стволи й борти, рівний світлий колір, глянцевий відблиск, немає колії та слідів руху, тінь мʼяка, деталі (люки, сітки, гусениці) не читаються.";
+  const ttxFor = (o, type) => (o && o.ttx) || (o && o.decoy ? DECOY_TTX : "") || TTX_DEFAULT[String(type || (o && o.type) || "").toLowerCase().trim()] || "";
 
   function pickRounds(stages, n) {
-    const pool = stages.filter((s) => s.targets && s.targets.length).slice();
+    const pool = stages.filter((s) => s.targets && s.targets.some((t) => !t.decoy)).slice();
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];

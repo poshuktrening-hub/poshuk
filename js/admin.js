@@ -73,6 +73,7 @@
           <div id="a-tedit">
             <div class="kv">
               <label for="a-obj">Модель</label><select id="a-obj"></select>
+              <label for="a-decoy">Муляж (обманка)</label><input id="a-decoy" type="checkbox">
               <label for="a-lm">Орієнтир</label><select id="a-lm"></select>
             </div>
             <div id="a-model-box" class="model-box" hidden>
@@ -122,8 +123,10 @@
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
       $("a-toggle").onclick = () => { const s = this.stage(); s.enabled = !s.enabled; this.dirty(true); this.renderStage(); };
       $("a-del").onclick = () => this.deleteStage();
-      ["a-r", "a-lm", "a-note"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
+      ["a-r", "a-lm", "a-note", "a-decoy"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
       $("a-obj").onchange = () => {
+        const om = this.objById($("a-obj").value);
+        if (om) $("a-decoy").checked = !!om.decoy;
         this.fieldChanged(); this.showModel();
       };
       $("a-ttx-save").onclick = () => this.saveTtx();
@@ -188,7 +191,7 @@
       if (!s) return;
       if (this.tsel !== null && this.tsel >= s.targets.length) this.tsel = null;
       $("a-targets").innerHTML = s.targets.map((t, i) =>
-        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length || t.landmark ? "•" : " "}${i + 1}. ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль") + " (модель не вибрана)"}</li>`
+        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length || t.landmark ? "•" : " "}${t.decoy ? "◇ " : ""}${i + 1}. ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль") + " (модель не вибрана)"}${t.decoy ? " — муляж" : ""}</li>`
       ).join("") || `<li class="muted">Клікніть по знімку, щоб додати ціль</li>`;
       $("a-targets").querySelectorAll("li[data-i]").forEach((li) => (li.onclick = () => this.selectTarget(Number(li.dataset.i), true)));
       $("a-thint").textContent = this.tsel === null
@@ -196,7 +199,7 @@
         : `Редагується ціль №${this.tsel + 1}: клік по знімку переносить її, поля змінюють одразу.`;
       $("a-thint").className = "status" + (this.tsel === null ? "" : " ok");
       ["a-tdel", "a-tdesel"].forEach((id) => ($(id).disabled = this.tsel === null));
-      const marks = s.targets.map((t, i) => ({x: t.x, y: t.y, r: t.r || 14, color: i === this.tsel ? C.accent : C.hit, dashed: i === this.tsel, label: t.type || ""}));
+      const marks = s.targets.map((t, i) => ({x: t.x, y: t.y, r: t.r || 14, color: i === this.tsel ? C.accent : t.decoy ? "#f0a64a" : C.hit, dashed: i === this.tsel || !!t.decoy, label: (t.decoy ? "муляж: " : "") + (t.type || "")}));
       this.viewer.setMarks(marks);
     },
 
@@ -210,6 +213,7 @@
         $("a-lm").value = t.landmark || "";
         $("a-note").value = t.note || "";
         $("a-obj").value = t.obj || "";
+        $("a-decoy").checked = !!t.decoy;
         this.showModel();
         $("a-signs").querySelectorAll("input").forEach((cb) => (cb.checked = (t.signs || []).includes(cb.dataset.sign)));
         this.filling = false;
@@ -227,6 +231,7 @@
       const lm = $("a-lm").value; if (lm) t.landmark = lm; else delete t.landmark;
       const note = $("a-note").value.trim(); if (note) t.note = note; else delete t.note;
       const ob = $("a-obj").value; if (ob) t.obj = ob; else delete t.obj;
+      if ($("a-decoy").checked) t.decoy = true; else delete t.decoy;
       const signs = [...$("a-signs").querySelectorAll("input:checked")].map((cb) => cb.dataset.sign);
       if (signs.length) t.signs = signs; else delete t.signs;
       this.dirty(true);
@@ -243,6 +248,8 @@
       } else {
         const t = {x: Math.round(x), y: Math.round(y), r: Math.max(3, Number(this.$("a-r").value) || 14), type: this.objById(this.$("a-obj").value) ? Logic.typeOf(this.objById(this.$("a-obj").value).name) : "ціль"};
         if (this.$("a-obj").value) t.obj = this.$("a-obj").value;
+        const om = this.objById(this.$("a-obj").value);
+        if (this.$("a-decoy").checked || (om && om.decoy)) t.decoy = true;
         s.targets.push(t);
       }
       this.dirty(true);
@@ -396,7 +403,7 @@
     // ---------- моделі техніки (бібліотека генератора) для брифінгу
     async loadObjects() {
       try { this.objects = (await API.call("objects", {}, this.pw)).objects; } catch (e) { this.objects = []; }
-      this.objects.push({id: "builtin:catapult", name: "Катапульта з «Ланцетом» (вбудована)", type: "катапульта з БпЛА", length_m: 6.2, builtin: true});
+      this.objects.push(...Models.LIST);
       const sel = this.$("a-obj"), keep = sel.value;
       sel.innerHTML = `<option value="">— не вибрано —</option>` + this.objects.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
       sel.value = keep || (this.objects[0] ? this.objects[0].id : "");
@@ -416,7 +423,7 @@
       $("a-ttx").disabled = $("a-ttx-save").disabled = $("a-mname").disabled = !!o.builtin;
       $("a-ttx-st").textContent = o.builtin ? "вбудована модель — ТТХ типові" : "";
       const img = $("a-model-img");
-      img.src = o.builtin ? Compose.catapultSprite().toDataURL() : (await API.objUrl(o.id, this.pw).catch(() => "")) || "";
+      img.src = o.builtin ? Models.sprite(o.id).toDataURL() : (await API.objUrl(o.id, this.pw).catch(() => "")) || "";
     },
 
     async saveTtx() {

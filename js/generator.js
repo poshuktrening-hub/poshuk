@@ -3,7 +3,7 @@
   const {LS} = API;
   const esc = (s) => UI.esc(s);
   const C = {hit: "#5fd38a", accent: "#c9d64a"};
-  const BUILTIN = {id: "builtin:catapult", name: "Катапульта з «Ланцетом» (вбудована)", length_m: 6.2, type: "катапульта з БпЛА", builtin: true};
+  const BUILTIN = Models.LIST[0];
 
   // назва, ключ, мін, макс, крок, типове значення
   const SLIDERS = [
@@ -58,6 +58,8 @@
             <label for="g-name" title="Перше слово — тип: «Танк Т-72Б3», «САУ 2С19»">Назва моделі</label><input id="g-name" maxlength="40" placeholder="Танк Т-72Б3">
             <label for="g-cage">«Мангал» (сітка над баштою)</label><input id="g-cage" type="checkbox">
           </div>
+          <label class="chk"><input type="checkbox" id="g-decoy"> Муляж (обманка): клік по ньому — промах</label>
+          <div class="row"><button type="button" id="g-inflate" title="Створити з цієї моделі надувний муляж і додати в бібліотеку">🎈 Зробити надувний муляж</button></div>
           <details class="adv"><summary>ТТХ для брифінгу курсанта</summary>
             <textarea id="g-ttx" rows="5" placeholder="Що це, розміри, як виглядає зверху"></textarea>
             <div class="row"><button type="button" id="g-ttx-save">Зберегти модель</button></div>
@@ -117,6 +119,8 @@
       $("g-obj-del").onclick = () => this.deleteObject();
       $("g-cage").onchange = () => this.schedule();
       $("g-ttx-save").onclick = () => this.saveMeta();
+      $("g-decoy").onchange = () => this.renderMarks();
+      $("g-inflate").onclick = () => this.makeDecoy();
       $("g-gsd").value = LS.get("poshuk_gen_gsd", "");
       $("g-gsd").oninput = () => { LS.set("poshuk_gen_gsd", $("g-gsd").value); this.autoSize(); };
       $("g-len").oninput = () => this.autoSize();
@@ -139,7 +143,7 @@
     async loadObjects(select) {
       let list = [];
       try { list = (await API.call("objects", {}, this.pw)).objects; } catch (e) { this.$("g-obj-status").textContent = "Бібліотека недоступна: " + e.message; }
-      this.objects = [...list, BUILTIN];
+      this.objects = [...list, ...Models.LIST];
       this.$("g-obj").innerHTML = this.objects.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
       const keep = select || LS.get("poshuk_gen_obj", "");
       if (this.objects.some((o) => o.id === keep)) this.$("g-obj").value = keep;
@@ -152,7 +156,9 @@
       const o = this.obj();
       LS.set("poshuk_gen_obj", o.id);
       this.$("g-len").value = o.length_m;
-      this.$("g-name").value = o.builtin ? "Катапульта Ланцет" : o.name;
+      this.$("g-name").value = o.name.replace(/\s*\((вбудована|надувний)\)$/, "");
+      this.$("g-decoy").checked = !!o.decoy;
+      this.$("g-inflate").disabled = !!o.decoy;
       this.$("g-obj-del").disabled = !!o.builtin;
       this.$("g-ttx").value = Logic.ttxFor(o, Logic.typeOf(this.$("g-name").value));
       this.$("g-ttx-save").disabled = !!o.builtin;
@@ -163,7 +169,7 @@
       const o = this.obj(), cage = this.$("g-cage").checked, key = o.id + (cage ? "+cage" : "");
       if (!this.sprites.has(o.id)) {
         let spr;
-        if (o.builtin) spr = Compose.catapultSprite();
+        if (o.builtin) spr = Models.sprite(o.id);
         else {
           const j = await API.call("object", {id: o.id}, this.pw);
           spr = Compose.prepareObject(await loadImg(`data:${j.mime || "image/png"};base64,${j.data}`));
@@ -181,7 +187,7 @@
         const spr = Compose.prepareObject(await loadImg(await fileToDataURL(file)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
         const name = file.name.replace(/\.[^.]+$/, "").slice(0, 40);
-        const j = await API.call("object_upload", {name, data, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(name), ttx: this.$("g-ttx").value.trim()}, this.pw);
+        const j = await API.call("object_upload", {name, data, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: this.$("g-ttx").value.trim(), decoy: this.$("g-decoy").checked || /^муляж/i.test(name) ? 1 : 0}, this.pw);
         this.sprites.set(j.object.id, spr);
         await this.loadObjects(j.object.id);
         st.textContent = `Додано «${name}». Перевірте довжину й тип.`; st.className = "status ok";
@@ -189,12 +195,30 @@
       this.$("g-obj-file").value = "";
     },
 
+    /* Надувний муляж з поточної моделі → нова модель у бібліотеці з позначкою «муляж». */
+    async makeDecoy() {
+      const o = this.obj(), st = this.$("g-obj-status");
+      if (o.builtin) { const v = this.objects.find((x) => x.id === o.id + ":decoy"); if (v) { this.$("g-obj").value = v.id; this.objectChanged(); } return; }
+      st.textContent = "Роздуваю…"; st.className = "status";
+      try {
+        if (!this.sprites.has(o.id)) await this.sprite();
+        const spr = Models.inflate(this.sprites.get(o.id));
+        const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
+        const name = ("Муляж " + o.name).slice(0, 40);
+        const j = await API.call("object_upload", {name, data, length_m: o.length_m, type: o.type || Logic.typeOf(o.name), decoy: 1}, this.pw);
+        this.sprites.set(j.object.id, spr);
+        await this.loadObjects(j.object.id);
+        st.textContent = `Додано «${name}» ✓`; st.className = "status ok";
+      } catch (e) { st.textContent = e.message; st.className = "status no"; }
+    },
+
     async saveMeta() {
       const o = this.obj(), st = this.$("g-obj-status");
       if (o.builtin) return;
       const nm = this.$("g-name").value.trim() || o.name;
       Object.assign(o, {name: nm, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(nm), ttx: this.$("g-ttx").value.trim()});
-      try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx}, this.pw); await this.loadObjects(o.id); st.textContent = `Збережено ✓ (тип: ${o.type})`; st.className = "status ok"; }
+      o.decoy = this.$("g-decoy").checked ? 1 : 0;
+      try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx, decoy: o.decoy}, this.pw); await this.loadObjects(o.id); st.textContent = `Збережено ✓ (тип: ${o.type})`; st.className = "status ok"; }
       catch (e) { st.textContent = e.message; st.className = "status no"; }
     },
 
@@ -271,7 +295,7 @@
     },
 
     renderMarks() {
-      this.viewer.setMarks(this.placed.map((t) => ({x: t.x, y: t.y, r: t.r, color: C.hit, label: t.type})));
+      this.viewer.setMarks(this.placed.map((t) => ({x: t.x, y: t.y, r: t.r, color: t.decoy ? "#f0a64a" : C.hit, dashed: !!t.decoy, label: (t.decoy ? "муляж: " : "") + t.type})));
     },
 
     place(cx, cy) {
@@ -284,7 +308,7 @@
     },
 
     target() {
-      return {x: this.point[0], y: this.point[1], r: Math.max(8, Math.round(this.val("size") * 0.6)), type: Logic.typeOf(this.$("g-name").value), obj: this.obj().id};
+      return {x: this.point[0], y: this.point[1], r: Math.max(8, Math.round(this.val("size") * 0.6)), type: Logic.typeOf(this.$("g-name").value.replace(/^муляж\s+/i, "")), obj: this.obj().id, ...(this.$("g-decoy").checked ? {decoy: true} : {})};
     },
 
     async commit() {
@@ -324,11 +348,12 @@
       const targets = this.placed.slice();
       if (this.point) targets.push(this.target());
       if (!targets.length) { this.hint("На знімку ще немає техніки."); return; }
+      if (!targets.some((t) => !t.decoy)) { this.hint("Потрібна хоча б одна справжня ціль — зараз на знімку лише муляжі."); return; }
       this.loading("Зберігаю етап…");
       try {
         const d = new Date(), pad = (n) => String(n).padStart(2, "0");
         const name = `gen_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-        const title = `${this.baseName} · ${[...new Set(targets.map((t) => t.type))].sort().join(", ")}`;
+        const title = `${this.baseName} · ${[...new Set(targets.filter((t) => !t.decoy).map((t) => t.type))].sort().join(", ")}${targets.some((t) => t.decoy) ? " + муляжі" : ""}`;
         const cv = Compose.canvas(this.work.width, this.work.height);
         cv.getContext("2d").drawImage(this.work, 0, 0);
         const stage = await API.uploadStage(cv, {title, targets, name}, this.pw, (m) => this.loading("Зберігаю етап… " + m));

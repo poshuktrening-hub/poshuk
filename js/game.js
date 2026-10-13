@@ -4,7 +4,7 @@
   const {LS, SS} = API;
   const HINT_SCORE = 5, BRIEF_MS = 5000;
   const OUTRO_DELAY = 450, OUTRO_MS = 1100;
-  const COLORS = {hit: "#5fd38a", miss: "#e8664f", accent: "#c9d64a"};
+  const COLORS = {hit: "#5fd38a", miss: "#e8664f", accent: "#c9d64a", decoy: "#f0a64a"};
 
   const BG_SCREENS = ["s-login", "s-start", "s-summary"];
   function show(id) {
@@ -123,7 +123,8 @@
       if (this.idx >= this.rounds.length) return this.summary();
       clearTimeout(this.outroT);
       const st = this.cur = this.rounds[this.idx];
-      this.targets = st.targets;
+      this.targets = st.targets.filter((t) => !t.decoy);
+      this.decoys = st.targets.filter((t) => t.decoy);
       this.found = new Set(); this.foundOrder = []; this.misses = 0; this.marks = []; this.clicks = []; this.reports = {};
       this.over = true;
       $("g-next").hidden = true; $("g-skip").hidden = false; $("g-hint").hidden = false; $("g-hint").disabled = false;
@@ -158,26 +159,27 @@
     async brief(st) {
       const norm = (s) => String(s || "").toLowerCase().trim();
       const seen = new Set(), items = [];
-      for (const t of st.targets) {
+      for (const t of st.targets.filter((x) => !x.decoy)) {
         const key = t.obj || norm(t.type);
         if (seen.has(key)) continue;
         seen.add(key);
         const o = this.objects.find((x) => x.id === t.obj) || this.objects.find((x) => norm(x.type) === norm(t.type)) || null;
-        items.push({t, o, builtin: !o && (t.obj === "builtin:catapult" || /катапульт/.test(norm(t.type)))});
+        items.push({t, o: o || (Models.isBuiltin(t.obj) ? Models.LIST.find((m) => m.id === t.obj) : null) || (/катапульт/.test(norm(t.type)) ? Models.LIST[0] : null)});
       }
       const box = $("g-brief");
-      const cards = await Promise.all(items.map(async ({t, o, builtin}) => {
+      const cards = await Promise.all(items.map(async ({t, o}) => {
         let pic = "";
-        if (o) { const u = await API.objUrl(o.id, this.password).catch(() => null); if (u) pic = `<img src="${u}" alt="">`; }
-        else if (builtin) pic = `<img src="${Compose.catapultSprite().toDataURL()}" alt="">`;
+        if (o && o.builtin) pic = `<img src="${Models.sprite(o.id).toDataURL()}" alt="">`;
+        else if (o) { const u = await API.objUrl(o.id, this.password).catch(() => null); if (u) pic = `<img src="${u}" alt="">`; }
         const ttx = Logic.ttxFor(o, t.type);
         const len = o && o.length_m ? `<p class="len">Довжина ≈ ${o.length_m} м</p>` : "";
-        const name = o && o.name ? o.name : builtin ? "Катапульта з БпЛА «Ланцет»" : (t.type || "ціль");
+        const name = o && o.name ? o.name.replace(/\s*\(вбудована\)$/, "") : (t.type || "ціль");
         const sub = o && o.name && t.type && norm(o.name) !== norm(t.type) ? `<p class="len">${esc(t.type)}</p>` : "";
         return `<div class="b-card">${pic ? `<div class="b-pic">${pic}</div>` : ""}<div class="b-txt"><h3>${esc(name)}</h3>${sub}${len}${ttx ? `<p>${esc(ttx).replace(/\n/g, "<br>")}</p>` : ""}</div></div>`;
       }));
-      const n = st.targets.length;
+      const n = st.targets.filter((x) => !x.decoy).length;
       box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЗНАЙТИ ${n > 1 ? n + " ЦІЛІ" : "ЦІЛЬ"}</div>${cards.join("")}
+        <p class="b-warn">⚠ На знімку можуть бути муляжі — клік по обманці рахується як промах.</p>
         <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Почати зараз</button></div></div>`;
       box.hidden = false;
       const bar = box.querySelector(".b-bar i");
@@ -220,12 +222,15 @@
       const hit = Logic.hitTest(this.targets, this.found, x, y);
       this.clicks.push([this.cur.id, Math.round(x), Math.round(y), hit !== null]);
       if (hit === null) {
+        const dec = this.decoys.find((t) => Math.hypot(x - t.x, y - t.y) <= (t.r || 14));
         this.misses++;
-        this.marks.push({x, y, cross: true, color: COLORS.miss});
+        if (dec) this.clicks[this.clicks.length - 1][4] = 1;
+        if (dec) { dec.hitByPlayer = true; this.marks.push({x: dec.x, y: dec.y, r: dec.r || 14, color: COLORS.decoy, dashed: true, label: "муляж!"}); }
+        else this.marks.push({x, y, cross: true, color: COLORS.miss});
         v.setMarks(this.marks);
         const leftM = this.cfg.misses_allowed - this.misses;
-        if (leftM < 0) return this.endRound("Другий промах — етап завершено.");
-        this.msg(`Мимо! ${leftM === 0 ? "Наступний промах завершить етап." : "Можна ще промахнутись: " + leftM + "."} Правий клік — віддалити й шукати далі.`, "no");
+        if (leftM < 0) return this.endRound(dec ? "Це муляж! Другий промах — етап завершено." : "Другий промах — етап завершено.");
+        this.msg(`${dec ? "Це МУЛЯЖ — обманка, рахується як промах." : "Мимо!"} ${leftM === 0 ? "Наступний промах завершить етап." : "Можна ще промахнутись: " + leftM + "."} Правий клік — віддалити й шукати далі.`, "no");
       } else {
         this.found.add(hit); this.foundOrder.push(hit);
         const t = this.targets[hit];
@@ -353,11 +358,12 @@
       const missed = this.targets.map((_, i) => i).filter((i) => !this.found.has(i));
       const marks = [];
       let n = 0;
-      this.clicks.forEach((c) => { if (!c[3]) marks.push({x: c[1], y: c[2], cross: true, color: COLORS.miss, label: String(++n)}); });
+      this.clicks.forEach((c) => { if (!c[3] && !c[4]) marks.push({x: c[1], y: c[2], cross: true, color: COLORS.miss, label: String(++n)}); });
       this.targets.forEach((t, i) => {
         const ok = this.found.has(i);
         marks.push({x: t.x, y: t.y, r: (t.r || 14) + (ok ? 0 : 6), color: ok ? COLORS.hit : COLORS.accent, dashed: !ok, label: t.type || ""});
       });
+      this.decoys.forEach((t) => marks.push({x: t.x, y: t.y, r: t.r || 14, color: COLORS.decoy, dashed: true, label: "муляж"}));
       this.viewer.setMarks(marks);
 
       const h = [`<h2>РОЗБІР ЕТАПУ</h2>`];
@@ -375,9 +381,13 @@
           h.push(`<p class="sub ${r.ev.ok === r.ev.total ? "t-ok" : "t-no"}">${parts.join(" · ")}</p>`);
         }
       });
+      this.decoys.forEach((t) => {
+        const sq = this.sq(t);
+        h.push(`<p class="t-decoy">◇ Муляж: ${esc(t.type || "техніка")}${sq ? " — квадрат " + sq : ""}${t.hitByPlayer ? " (ви на нього клікнули)" : " (не повелись ✓)"}</p>`);
+      });
       n = 0;
       this.clicks.forEach((c) => {
-        if (c[3]) return;
+        if (c[3] || c[4]) return;
         n++;
         const near = this.targets.reduce((a, t) => (Math.hypot(t.x - c[1], t.y - c[2]) < Math.hypot(a.x - c[1], a.y - c[2]) ? t : a));
         const d = Math.round(Math.hypot(near.x - c[1], near.y - c[2]));
