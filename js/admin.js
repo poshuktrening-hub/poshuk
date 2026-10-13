@@ -72,13 +72,12 @@
           <ul class="list" id="a-targets" style="font-family:var(--mono);font-size:.82rem"></ul>
           <div id="a-tedit">
             <div class="kv">
-              <label for="a-obj">Модель (брифінг)</label><select id="a-obj"></select>
-              <label for="a-type">Тип</label><input id="a-type" list="a-types" placeholder="танк">
+              <label for="a-obj">Модель</label><select id="a-obj"></select>
               <label for="a-lm">Орієнтир</label><select id="a-lm"></select>
             </div>
             <div id="a-model-box" class="model-box" hidden>
               <div class="row"><img id="a-model-img" alt=""><div class="status" id="a-model-meta"></div></div>
-              <div class="kv" style="margin-top:6px"><label for="a-mname">Назва моделі</label><input id="a-mname" maxlength="40" placeholder="Т-72Б3"></div>
+              <div class="kv" style="margin-top:6px"><label for="a-mname" title="Перше слово — тип: «Танк Т-72Б3», «САУ 2С19», «Катапульта Ланцет»">Назва моделі</label><input id="a-mname" maxlength="40" placeholder="Танк Т-72Б3"></div>
               <label for="a-ttx" style="margin:.4rem 0 .2rem">ТТХ моделі (бачить курсант перед етапом)</label>
               <textarea id="a-ttx" rows="5"></textarea>
               <div class="row"><button type="button" id="a-ttx-save">Зберегти модель</button><span class="status" id="a-ttx-st"></span></div>
@@ -123,10 +122,8 @@
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
       $("a-toggle").onclick = () => { const s = this.stage(); s.enabled = !s.enabled; this.dirty(true); this.renderStage(); };
       $("a-del").onclick = () => this.deleteStage();
-      ["a-type", "a-r", "a-lm", "a-note"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
+      ["a-r", "a-lm", "a-note"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
       $("a-obj").onchange = () => {
-        const o = this.objById($("a-obj").value);
-        if (o && this.tsel !== null) { const t = this.stage().targets[this.tsel]; if (o.type && (!t.type || t.type === "ціль")) $("a-type").value = o.type; }
         this.fieldChanged(); this.showModel();
       };
       $("a-ttx-save").onclick = () => this.saveTtx();
@@ -191,7 +188,7 @@
       if (!s) return;
       if (this.tsel !== null && this.tsel >= s.targets.length) this.tsel = null;
       $("a-targets").innerHTML = s.targets.map((t, i) =>
-        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length || t.landmark ? "•" : " "}${i + 1}. ${esc(t.type || "ціль")}${t.obj && this.objById(t.obj) ? " · " + esc(this.objById(t.obj).name) : ""} · x=${t.x} y=${t.y}</li>`
+        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length || t.landmark ? "•" : " "}${i + 1}. ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль") + " (модель не вибрана)"}</li>`
       ).join("") || `<li class="muted">Клікніть по знімку, щоб додати ціль</li>`;
       $("a-targets").querySelectorAll("li[data-i]").forEach((li) => (li.onclick = () => this.selectTarget(Number(li.dataset.i), true)));
       $("a-thint").textContent = this.tsel === null
@@ -209,7 +206,6 @@
       if (i !== null && s) {
         const t = s.targets[i];
         this.filling = true;
-        $("a-type").value = t.type || "";
         $("a-r").value = t.r || 14;
         $("a-lm").value = t.landmark || "";
         $("a-note").value = t.note || "";
@@ -225,7 +221,8 @@
     fieldChanged() {
       if (this.filling || this.tsel === null) return;
       const t = this.stage().targets[this.tsel], $ = this.$;
-      t.type = $("a-type").value.trim() || "ціль";
+      const mo = this.objById($("a-obj").value);
+      if (mo) t.type = Logic.typeOf(mo.name);
       t.r = Math.max(3, Number($("a-r").value) || 14);
       const lm = $("a-lm").value; if (lm) t.landmark = lm; else delete t.landmark;
       const note = $("a-note").value.trim(); if (note) t.note = note; else delete t.note;
@@ -244,7 +241,7 @@
       if (this.tsel !== null) {
         Object.assign(s.targets[this.tsel], {x: Math.round(x), y: Math.round(y)});
       } else {
-        const t = {x: Math.round(x), y: Math.round(y), r: Math.max(3, Number(this.$("a-r").value) || 14), type: this.$("a-type").value.trim() || "ціль"};
+        const t = {x: Math.round(x), y: Math.round(y), r: Math.max(3, Number(this.$("a-r").value) || 14), type: this.objById(this.$("a-obj").value) ? Logic.typeOf(this.objById(this.$("a-obj").value).name) : "ціль"};
         if (this.$("a-obj").value) t.obj = this.$("a-obj").value;
         s.targets.push(t);
       }
@@ -401,8 +398,8 @@
       try { this.objects = (await API.call("objects", {}, this.pw)).objects; } catch (e) { this.objects = []; }
       this.objects.push({id: "builtin:catapult", name: "Катапульта з «Ланцетом» (вбудована)", type: "катапульта з БпЛА", length_m: 6.2, builtin: true});
       const sel = this.$("a-obj"), keep = sel.value;
-      sel.innerHTML = `<option value="">— за типом —</option>` + this.objects.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
-      sel.value = keep;
+      sel.innerHTML = `<option value="">— не вибрано —</option>` + this.objects.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("");
+      sel.value = keep || (this.objects[0] ? this.objects[0].id : "");
       this.showModel();
       if (this.stage()) this.renderTargets();
     },
@@ -413,7 +410,7 @@
       const $ = this.$, o = this.objById($("a-obj").value);
       $("a-model-box").hidden = !o;
       if (!o) return;
-      $("a-model-meta").textContent = `${o.name} · ${o.type || "—"} · ≈${o.length_m} м`;
+      $("a-model-meta").textContent = `тип: ${Logic.typeOf(o.name)} · ≈${o.length_m} м`;
       $("a-ttx").value = Logic.ttxFor(o, o.type);
       $("a-mname").value = o.name;
       $("a-ttx").disabled = $("a-ttx-save").disabled = $("a-mname").disabled = !!o.builtin;
@@ -427,6 +424,7 @@
       if (!o || o.builtin) return;
       o.ttx = this.$("a-ttx").value.trim();
       o.name = this.$("a-mname").value.trim() || o.name;
+      o.type = Logic.typeOf(o.name);
       try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx}, this.pw); await this.loadObjects(); st.textContent = "Збережено ✓"; st.className = "status ok"; }
       catch (e) { st.textContent = e.message; st.className = "status no"; }
     },

@@ -21,6 +21,17 @@
     "реб": "Комплекс РЕБ на колісному шасі.\nДовжина ≈ 8–10 м.\nЗверху: кунг з антенами/щоглами, поруч генератори.",
     "зрк": "Зенітний ракетний комплекс.\nДовжина ≈ 7–10 м.\nЗверху: пакет ракет або пускові контейнери, РЛС на даху.",
   };
+  /* Тип техніки зі слова в назві моделі: «Танк Т-72Б3» → «танк», «Катапульта Ланцет» → «катапульта з БпЛА». */
+  const TYPE_ALIASES = {"tank": "танк", "t-72": "танк", "т-72": "танк", "т-80": "танк", "т-90": "танк", "т-62": "танк","катапульт": "катапульта з БпЛА", "ланцет": "катапульта з БпЛА", "гармат": "буксирувана гармата", "гаубиц": "буксирувана гармата",
+    "мінмет": "міномет", "вантаж": "вантажівка", "камаз": "вантажівка", "урал": "вантажівка", "бліндаж": "бліндаж / укриття", "укритт": "бліндаж / укриття"};
+  function typeOf(name) {
+    const n = String(name || "").toLowerCase();
+    if (!n.trim()) return "ціль";
+    const hit = TYPES.filter((t) => n.includes(t.toLowerCase().split(" ")[0])).sort((a, b) => b.length - a.length)[0];
+    if (hit) return hit;
+    for (const k of Object.keys(TYPE_ALIASES)) if (n.includes(k)) return TYPE_ALIASES[k];
+    return String(name).trim().split(/\s+/)[0];
+  }
   const ttxFor = (o, type) => (o && o.ttx) || TTX_DEFAULT[String(type || (o && o.type) || "").toLowerCase().trim()] || "";
 
   function pickRounds(stages, n) {
@@ -70,5 +81,5 @@
     return {ok: checks.filter((c) => c[1]).length, total: checks.length, checks};
   }
 
-  window.Logic = {TTX_DEFAULT, ttxFor, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
+  window.Logic = {TTX_DEFAULT, ttxFor, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
 })();
