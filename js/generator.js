@@ -13,9 +13,9 @@
     ["Тінь: куди падає, °", "shadow_dir", 0, 359, 5, 135],
     ["Тінь: довжина, пкс", "shadow_len", 0, 8, 0.5, 2],
     ["Тінь: щільність, %", "shadow_op", 0, 90, 5, 55],
-    ["Злиття з фоном, %", "blend", 0, 50, 1, 10],
-    ["Затемнення, %", "darken", 0, 50, 1, 10],
-    ["Насиченість кольору, %", "sat", 0, 150, 5, 70],
+    ["Злиття з фоном, %", "blend", 0, 50, 1, 4],
+    ["Затемнення, %", "darken", 0, 50, 1, 0],
+    ["Насиченість кольору, %", "sat", 0, 150, 5, 95],
     ["Різкість техніки, %", "sharp", 0, 150, 10, 70],
   ];
 
@@ -100,14 +100,14 @@
         "gp-angle": (v) => this.setVal("angle", v === "rnd" ? Math.floor(Math.random() * 360) : v),
         "gp-hide": (v) => this.setVal("hide", v),
         "gp-shadow": (v) => { const sz = this.val("size"); this.setVal("shadow_op", [0, 40, 60][v]); this.setVal("shadow_len", [0, Math.max(1, Math.round(sz * 0.08 * 2) / 2), Math.max(1.5, Math.round(sz * 0.15 * 2) / 2)][v]); },
-        "gp-look": (v) => { const L = {bright: [5, 0, 100], mid: [12, 12, 70], dim: [25, 22, 50]}[v]; this.setVal("blend", L[0]); this.setVal("darken", L[1]); this.setVal("sat", L[2]); },
+        "gp-look": (v) => { const L = {bright: [4, 0, 95], mid: [10, 6, 80], dim: [20, 15, 60]}[v]; this.setVal("blend", L[0]); this.setVal("darken", L[1]); this.setVal("sat", L[2]); },
       };
       Object.keys(presets).forEach((id) => $(id).querySelectorAll("button").forEach((b) => (b.onclick = () => {
         $(id).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
         presets[id](b.dataset.v); this.syncQuick(); this.schedule();
       })));
       $("gp-hide").querySelectorAll("button")[0].classList.add("on");
-      ["gp-shadow", "gp-look"].forEach((id) => $(id).querySelectorAll("button")[1].classList.add("on"));
+      $("gp-shadow").querySelectorAll("button")[1].classList.add("on"); $("gp-look").querySelectorAll("button")[0].classList.add("on");
       this.syncQuick();
       $("g-back").onclick = () => this.close();
       $("g-from-stage").onclick = () => this.baseFromStage();
