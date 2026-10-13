@@ -29,21 +29,29 @@
     let minA = 255;
     for (let i = 3; i < px.length; i += 4) if (px[i] < minA) minA = px[i];
     if (minA > 250) {
-      // Фон — те, що зʼєднане з краями картинки і схоже на колір кутів АБО такий самий сірий/темний
-      // (прибирає й сітку, й градієнт фону рендера; темні деталі всередині техніки лишаються).
-      const k = Math.max(2, Math.floor(Math.min(w, h) / 40));
-      const rs = [], gs = [], bs = [];
-      const take = (x0, y0) => { for (let y = y0; y < y0 + k; y++) for (let x = x0; x < x0 + k; x++) { const j = (y * w + x) * 4; rs.push(px[j]); gs.push(px[j + 1]); bs.push(px[j + 2]); } };
-      take(0, 0); take(w - k, 0); take(0, h - k); take(w - k, h - k);
-      const med = (a) => a.sort((p, q) => p - q)[a.length >> 1];
-      const bg = [med(rs), med(gs), med(bs)];
-      const bmx = Math.max(...bg), bgv = bmx / 255, bgs = bmx ? (bmx - Math.min(...bg)) / bmx : 0;
+      // Модель кольорів фону будується з рамки картинки (сітка, градієнт, шум — усе, що є по краях).
+      // Простір: яскравість (грубо, кроки 8) × відтінок r−g, b−g (точно, кроки 3) — тож сірий фон
+      // не плутається з оливковою/сіро-зеленою технікою навіть однакової яскравості.
+      const k = Math.max(2, Math.floor(Math.min(w, h) / 50));
+      const LB = 32, CB = 171, key = (r, g, b) => {
+        const L = Math.min(LB - 1, ((r + g + b) / 24) | 0);
+        return (L * CB + Math.round((r - g) / 3) + 85) * CB + Math.round((b - g) / 3) + 85;
+      };
+      const hist = new Uint32Array(LB * CB * CB);
+      let nb = 0;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (y >= k && y < h - k && x >= k && x < w - k) continue;
+        const j = (y * w + x) * 4; hist[key(px[j], px[j + 1], px[j + 2])]++; nb++;
+      }
+      const minCount = Math.max(2, nb * 0.0004);
       const cand = new Uint8Array(w * h);
       for (let i = 0, j = 0; i < cand.length; i++, j += 4) {
-        const r = px[j], g = px[j + 1], b = px[j + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-        const sat = mx ? (mx - mn) / mx : 0, val = mx / 255;
-        const d = Math.hypot(r - bg[0], g - bg[1], b - bg[2]);
-        cand[i] = d < tolerance || (Math.abs(sat - bgs) < 0.12 && Math.abs(val - bgv) < 0.22) ? 1 : 0;
+        const kk = key(px[j], px[j + 1], px[j + 2]), step = CB * CB;
+        // сусідні градації яскравості з тим самим відтінком — теж фон (м'які градієнти)
+        let c = hist[kk];
+        if (kk >= step) c = Math.max(c, hist[kk - step]);
+        if (kk + step < hist.length) c = Math.max(c, hist[kk + step]);
+        cand[i] = c >= minCount ? 1 : 0;
       }
       const isBg = new Uint8Array(w * h), stack = [];
       const push = (i) => { if (cand[i] && !isBg[i]) { isBg[i] = 1; stack.push(i); } };
