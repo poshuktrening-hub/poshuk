@@ -68,6 +68,7 @@
             <label for="a-dir">Напрямок</label><select id="a-dir"><option value="">—</option>${Logic.REGIONS.map((r) => `<option>${r}</option>`).join("")}</select>
             <label for="a-season">Пора року</label><select id="a-season"><option value="">—</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select>
             <label for="a-gsd" title="Скільки метрів на місцевості в одному пікселі знімка — для розміру техніки в генераторах">Масштаб, м/пкс</label><input id="a-gsd" type="number" min="0" max="10" step="0.01" placeholder="0.25">
+            <label for="a-hard" title="Техніка сховано понад 60% — етап іде лише в режим «Хардкор»">Хардкор-етап</label><input id="a-hard" type="checkbox">
           </div>
           <datalist id="a-dirs"></datalist>
           <label for="a-task" style="margin:0">Текст завдання для брифінгу</label>
@@ -130,6 +131,7 @@
       $("a-imp-file").onchange = (e) => this.importLocal([...e.target.files]);
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
       $("a-dir").onchange = () => { this.stage().direction = $("a-dir").value; this.dirty(true); this.renderList(); };
+      $("a-hard").onchange = () => { this.stage().hard = $("a-hard").checked; this.dirty(true); this.renderList(); };
       $("a-gsd").oninput = () => { this.stage().gsd = Number($("a-gsd").value) || 0; this.dirty(true); };
       $("a-season").onchange = () => { this.stage().season = $("a-season").value; this.dirty(true); this.renderList(); };
       $("a-filter-dir").onchange = $("a-filter-season").onchange = () => this.renderList();
@@ -170,7 +172,7 @@
       const reg = (s) => Logic.region(s) || "-";
       const list = this.stages.filter((s) => (!fd.value || reg(s) === fd.value) && (!fs || s.season === fs));
       $("a-stages").innerHTML = list.map((s) =>
-        `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}${Logic.region(s) || s.season ? `<small class="tag">${esc([Logic.region(s), s.season].filter(Boolean).join(" · "))}</small>` : ""}</span><span class="cnt">${s.targets.length}</span></li>`
+        `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}${Logic.region(s) || s.season || s.hard ? `<small class="tag">${esc([Logic.region(s), s.season, s.hard ? "хардкор" : ""].filter(Boolean).join(" · "))}</small>` : ""}</span><span class="cnt">${s.targets.length}</span></li>`
       ).join("") || `<li class="muted">${this.stages.length ? "Нічого за фільтром" : "Етапів ще немає"}</li>`;
       $("a-stages").querySelectorAll("li[data-id]").forEach((li) => (li.onclick = () => this.select(li.dataset.id)));
       const types = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))].sort();
@@ -205,6 +207,7 @@
       $("a-dir").value = Logic.region(s);
       $("a-season").value = s.season || "";
       $("a-gsd").value = s.gsd || "";
+      $("a-hard").checked = !!s.hard;
       $("a-task").value = s.task || "";
       $("a-toggle").textContent = s.enabled ? "Вимкнути етап" : "Увімкнути етап";
       this.renderTargets();
@@ -311,7 +314,7 @@
       if (!s) return;
       this.status("Зберігаю…", "");
       try {
-        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, task: s.task || "", direction: s.direction || "", season: s.season || "", gsd: s.gsd || 0}, this.pw);
+        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, task: s.task || "", direction: s.direction || "", season: s.season || "", gsd: s.gsd || 0, hard: !!s.hard}, this.pw);
         this.status("Збережено ✓", "ok");
       } catch (e) {
         this.status("Не збережено: " + e.message, "no");

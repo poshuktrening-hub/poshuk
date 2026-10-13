@@ -100,7 +100,11 @@
     /* Галочки: усі вибрані = без фільтра (разом з етапами, де напрямок/пора не вказані). */
     filtered(regions = this.sel.regions, seasons = this.sel.seasons) {
       const allR = regions.length === Logic.REGIONS.length, allS = seasons.length === Logic.SEASONS.length;
-      return this.playable().filter((s) => (allR || regions.includes(Logic.region(s))) && (allS || seasons.includes(s.season)));
+      const pool = this.playable().filter((s) => (allR || regions.includes(Logic.region(s))) && (allS || seasons.includes(s.season)));
+      // хардкор-етапи (техніка сховано понад 60%) — лише в «Хардкорі»; там вони йдуть першими
+      if ((this.sel && this.sel.mode) !== "hard") return pool.filter((s) => !s.hard);
+      const hard = pool.filter((s) => s.hard);
+      return hard.length >= Math.min(this.cfg.rounds_per_game, pool.length) ? hard : [...hard, ...pool.filter((s) => !s.hard)];
     },
     renderMenu() {
       const sel = this.sel;
@@ -136,7 +140,9 @@
       this.limit = this.mode.seconds || Math.round(this.cfg.time_limit_sec * (this.mode.time || 1));
       this.missLimit = this.mode.misses === null ? this.cfg.misses_allowed : this.mode.misses;
       document.body.dataset.mode = this.mode.id;
-      this.rounds = Logic.pickRounds(this.filtered(), this.cfg.rounds_per_game);
+      const fl = this.filtered(), hardFirst = this.mode.id === "hard" ? fl.filter((s) => s.hard) : [];
+      this.rounds = hardFirst.length >= this.cfg.rounds_per_game ? Logic.pickRounds(hardFirst, this.cfg.rounds_per_game)
+        : [...Logic.pickRounds(hardFirst, hardFirst.length), ...Logic.pickRounds(fl.filter((s) => !hardFirst.includes(s)), this.cfg.rounds_per_game - hardFirst.length)];
       this.results = [];
       this.idx = -1;
       show("s-game");
