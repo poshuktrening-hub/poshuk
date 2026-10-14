@@ -496,3 +496,17 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .c-reveal .credit { font-size: .74rem; color: var(--muted); }
 .ca-list .th { width: 56px; height: 38px; object-fit: cover; border-radius: 6px; background: #000; flex: 0 0 auto; }
 .ca-list .nm small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* Картки · ігровий режим: 4 варіанти */
+.c-choices { display: none; }
+.c-form.choice .c-type { display: none; }
+.c-form.choice .c-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.c-choices button { min-width: 0; white-space: normal; }
+.c-choices button span { min-width: 0; overflow-wrap: anywhere; }
+.c-choices button { display: flex; align-items: center; gap: 8px; text-align: left; min-height: 56px; padding: .6rem .7rem; border-radius: 12px;
+  font-size: .95rem; line-height: 1.2; background: var(--panel2); border: 1px solid var(--line); color: inherit; transition: opacity .2s, transform .08s; }
+.c-choices button:active { transform: scale(.98); }
+.c-choices button i { flex: 0 0 auto; font-style: normal; font-size: .75rem; width: 1.4rem; height: 1.4rem; display: grid; place-items: center; border-radius: 6px; background: rgba(255,255,255,.08); color: var(--muted); }
+.c-choices button.gone { opacity: .25; pointer-events: none; }
+@media (hover: hover) { .c-choices button:hover { border-color: var(--accent); } }
+@media (max-width: 340px) { .c-form.choice .c-choices { grid-template-columns: minmax(0, 1fr); } .c-choices button { min-height: 46px; } }

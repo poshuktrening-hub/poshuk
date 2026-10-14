@@ -6,8 +6,8 @@
   const LS = API.LS;
   const ROUND_SEC = 30, REVEAL_SEC = 10, ROUNDS = 10;
   const MODES = {
-    game: {id: "game", name: "Ігровий", desc: "30 с на картку, є підказка — тип техніки (перше слово назви).", hint: true},
-    exam: {id: "exam", name: "Іспит", desc: "30 с на картку, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
+    game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Є підказка 50/50.", hint: true, choice: true},
+    exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
   };
 
   /* ---------- нормалізація відповіді: регістр, латиниця-«двійники», і/и/ы, лапки, дефіси, пробіли */
@@ -73,6 +73,20 @@
     return {ok: false};
   }
 
+  /* Схожі типи — щоб хибні варіанти були правдоподібними (танк серед танків, ППО серед ППО). */
+  const GROUPS = [["Танк"], ["БМП", "БМД", "БМПТ", "БТР", "БРДМ", "Бронеавтомобіль", "Тягач"], ["САУ", "Гаубиця", "Гармата", "Міномет", "Гаубиця-гармата"],
+    ["РСЗВ", "ОТРК"], ["ЗРК", "ЗРГК", "ЗРС", "ЗСУ", "ЗУ"], ["РЕБ", "РЛС", "Машина"], ["Вантажівка", "Автомобіль", "Паливозаправник", "ТЗМ"],
+    ["ІМР", "БАТ", "Мінний", "ПТС", "БРЕМ", "Мостоукладач", "Понтонний"], ["БпЛА", "Катапульта"], ["Гелікоптер", "Літак"], ["ПТРК"]];
+  const typeOf = (c) => c.name.split(" ")[0];
+  const quoted = (c) => (c.name.match(/«([^»]+)»/) || [])[1] || "";
+  function options(card, deck) {
+    const t = typeOf(card), g = GROUPS.find((x) => x.includes(t)) || [t], q = quoted(card);
+    const pool = deck.filter((c) => c.id !== card.id && !(q && quoted(c) === q));
+    const pick = [], add = (list) => { for (const c of Logic.shuffle(list)) { if (pick.length >= 3) break; if (!pick.includes(c)) pick.push(c); } };
+    add(pool.filter((c) => typeOf(c) === t)); add(pool.filter((c) => g.includes(typeOf(c)))); add(pool);
+    return Logic.shuffle([card, ...pick]);
+  }
+
   const Cards = {
     MODES, check, norm,
     deck() { return (window.CARDS || []).map(([id, name, al, p1, p2]) => ({id, name, aliases: al.split("|").map((x) => x.trim()).filter(Boolean), p1, p2})); },
@@ -99,6 +113,9 @@
       UI.show("s-cards");
       document.body.dataset.mode = "cards";
       $("c-form").onsubmit = (e) => { e.preventDefault(); this.submit(); };
+      $("c-form").classList.toggle("choice", !!this.mode.choice);
+      this._deck = this.deck();
+      if (!this._keys) { this._keys = (e) => { if (!this.mode.choice || this.over || document.body.dataset.mode !== "cards" || $("s-cards").hidden) return; const b = $("c-choices").querySelectorAll("button")[Number(e.key) - 1]; if (b && !b.disabled) b.click(); }; addEventListener("keydown", this._keys); }
       $("c-hint-btn").onclick = () => this.hint();
       $("c-next").onclick = () => this.next();
       $("c-quit").onclick = () => { if (confirm("Перервати? Результат не буде збережено.")) { this.stop(); Game.showStart(); } };
@@ -123,8 +140,13 @@
       $("c-stage").textContent = `${this.mode.id === "exam" ? "Іспит · " : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
       $("c-score").textContent = this.results.reduce((a, r) => a + r.score, 0);
       $("c-reveal").hidden = true; $("c-nextbox").hidden = true; $("c-form").hidden = false;
-      $("c-hint").hidden = true; $("c-hint-btn").hidden = !this.mode.hint; $("c-hint-btn").disabled = false;
+      $("c-hint").hidden = true; $("c-hint-btn").hidden = !this.mode.hint; $("c-hint-btn").disabled = false; $("c-hint-btn").textContent = this.mode.choice ? "💡 50/50" : "💡 Підказка";
       $("c-answer").value = ""; $("c-answer").disabled = false; $("c-check").disabled = false;
+      if (this.mode.choice) {
+        const opts = this.opts = options(c, this._deck);
+        $("c-choices").innerHTML = opts.map((o, i) => `<button type="button" data-ci="${i}"><i>${i + 1}</i><span>${esc(o.name)}</span></button>`).join("");
+        $("c-choices").querySelectorAll("button").forEach((b) => (b.onclick = () => this.choose(opts[+b.dataset.ci])));
+      }
       const img = $("c-img"); img.removeAttribute("src"); $("c-loading").hidden = false;
       const url = await API.cardUrl(c.id, Game.cardPhotos.get(c.id), Game.password).catch(() => null);
       await new Promise((res) => { img.onload = img.onerror = res; img.src = url || ""; });
@@ -135,7 +157,7 @@
       if (nx) API.cardUrl(nx.id, Game.cardPhotos.get(nx.id), Game.password).then((u) => { const p = new Image(); p.src = u; }).catch(() => {});
       this.t0 = performance.now();
       this.tick(); this.tT = setInterval(() => this.tick(), 200);
-      if (!matchMedia("(pointer: coarse)").matches) $("c-answer").focus();
+      if (!this.mode.choice && !matchMedia("(pointer: coarse)").matches) $("c-answer").focus();
     },
 
     tick() {
@@ -150,9 +172,19 @@
     hint() {
       if (!this.mode.hint || this.hintUsed || this.over) return;
       this.hintUsed = true;
+      if (this.mode.choice) {   // 50/50: прибрати два хибні варіанти
+        const wrong = Logic.shuffle(this.opts.filter((o) => o !== this.cur)).slice(0, 2);
+        $("c-choices").querySelectorAll("button").forEach((b) => { if (wrong.includes(this.opts[+b.dataset.ci])) { b.disabled = true; b.classList.add("gone"); } });
+        $("c-hint-btn").disabled = true; SFX.click(); return;
+      }
       $("c-hint").innerHTML = `Тип: <b>${esc(this.cur.name.split(" ")[0])}</b> …`;
       $("c-hint").hidden = false; $("c-hint-btn").disabled = true;
       SFX.click();
+    },
+
+    choose(o) {
+      if (this.over) return;
+      this.finish(o.name, false, o.id === this.cur.id);
     },
 
     submit() {
@@ -161,10 +193,10 @@
       this.finish(v, false);
     },
 
-    finish(answer, timeout) {
+    finish(answer, timeout, picked) {
       if (this.over) return;
       this.over = true; this.stop();
-      const c = this.cur, r = timeout ? {ok: false} : check(c, answer), score = r.ok ? 10 : 0;
+      const c = this.cur, r = timeout ? {ok: false} : picked !== undefined ? {ok: picked, exact: true} : check(c, answer), score = r.ok ? 10 : 0;
       this.results.push({id: c.id, name: c.name, answer, ok: r.ok, score, hint: this.hintUsed});
       $("c-score").textContent = this.results.reduce((a, x) => a + x.score, 0);
       if (r.ok) SFX.hit(); else SFX.miss();
@@ -172,6 +204,7 @@
       $("c-form").hidden = true;
       const verdict = r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +10</p>`
         : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
+      $("c-choices").innerHTML = "";
       const cr = Game.cardCredits && Game.cardCredits.get(c.id);
       $("c-reveal").innerHTML = `${verdict}<h3>${esc(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
