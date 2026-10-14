@@ -41,7 +41,11 @@
     if (q) {
       const j = await commons(Object.assign({action: "query", generator: "search", gsrsearch: q + " filetype:bitmap", gsrnamespace: "6", gsrlimit: "12"}, ii));
       const pages = (j.query && j.query.pages || []).sort((a, b) => (a.index || 0) - (b.index || 0));
-      take(pages);
+      // пошук повертає й сміття (туманності, газети, інші гелікоптери) — у назві файлу має бути позначення моделі
+      const nz = (s) => String(s).toLowerCase().replace(/[^a-z0-9а-яіїєґ]/g, "");
+      const keys = q.split(/\s+/).filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
+      const need = keys.length ? keys : [nz(q.split(/\s+/)[0])];
+      take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/decoy|inflatable|maket|макет|model|toy|replica|lego/i.test(p.title); }));
     }
     return out;
   }
