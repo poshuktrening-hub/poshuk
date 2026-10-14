@@ -38,15 +38,15 @@
       $("g-hint").onclick = () => this.hint();
       $("g-sound").textContent = SFX.on ? "🔊" : "🔇";
       $("g-sound").onclick = () => { $("g-sound").textContent = SFX.toggle() ? "🔊" : "🔇"; };
-      $("g-next").onclick = () => this.nextRound();
-      $("g-quit").onclick = () => { if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
+      $("g-next").onclick = () => this.goNext();
+      $("g-quit").onclick = () => { clearInterval(this.nextT); if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
       $("sum-again").onclick = () => this.showStart();
       document.addEventListener("keydown", (e) => {
         if ($("s-game").hidden || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
         if (e.key === "+" || e.key === "=") this.viewer.zoomCenter(1.6);
         else if (e.key === "-") this.viewer.zoomCenter(1 / 1.6);
         else if (e.key === "0") this.viewer.fill(true);
-        else if (e.key === "Enter" && !$("g-next").hidden) this.nextRound();
+        else if (e.key === "Enter" && !$("g-next").hidden) this.goNext();
       });
       if (!this.password) return this.showLogin();
       try { await this.loadConfig(); this.showStart(); } catch (e) { this.showLogin(e.auth ? "" : e.message); }
@@ -165,6 +165,36 @@
       if (st) API.loadImage(st.id, this.password).catch(() => {});
     },
 
+    /* Кнопка «Далі» по центру з відліком 5 с — потім сама переходить далі.
+       Розгорнули розбір — відлік ставиться на паузу. */
+    showNext(label) {
+      const b = $("g-next"), N = 5;
+      clearInterval(this.nextT);
+      let left = N;
+      b.innerHTML = `${label} → <span class="cd">${left}</span><i class="cd-bar"></i>`;
+      b.hidden = false; b.classList.add("center-next");
+      const bar = b.querySelector(".cd-bar");
+      bar.style.transition = "none"; bar.style.transform = "scaleX(1)";
+      requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.transition = `transform ${N}s linear`; bar.style.transform = "scaleX(0)"; }));
+      b.focus({preventScroll: true});
+      this.nextT = setInterval(() => {
+        const det = document.querySelector("#g-debrief details");
+        if (det && det.open) {   // читають розбір — чекаємо
+          clearInterval(this.nextT); b.querySelector(".cd").textContent = ""; bar.style.transition = "none"; bar.style.transform = "scaleX(0)";
+          return;
+        }
+        left--;
+        const cd = b.querySelector(".cd"); if (cd) cd.textContent = left > 0 ? left : "";
+        if (left <= 0) { clearInterval(this.nextT); this.goNext(); }
+      }, 1000);
+    },
+    goNext() {
+      clearInterval(this.nextT);
+      const b = $("g-next"); if (b.hidden) return;
+      b.hidden = true; b.classList.remove("center-next");
+      this.nextRound();
+    },
+
     async nextRound() {
       this.idx++;
       if (this.idx >= this.rounds.length) return this.summary();
@@ -185,7 +215,7 @@
         $("g-loading").hidden = true;
         this.msg("Не вдалось завантажити знімок: " + e.message + " Етап пропущено.", "no");
         this.results.push({title: st.title, id: st.id, found: 0, total: st.targets.length, misses: 0, time: 0, score: 0, clicks: [], report: ""});
-        $("g-skip").hidden = true; $("g-next").hidden = false;
+        $("g-skip").hidden = true; this.showNext("Далі");
         return;
       }
       $("g-loading").hidden = true;
@@ -306,8 +336,8 @@
         const dec = this.decoys.find((t) => Math.hypot(x - t.x, y - t.y) <= (t.r || 14));
         this.misses++;
         if (dec) this.clicks[this.clicks.length - 1][4] = 1;
-        if (dec) SFX.decoy(); else SFX.miss();
-        if (dec) { dec.hitByPlayer = true; this.marks.push({x: dec.x, y: dec.y, r: dec.r || 14, color: COLORS.decoy, dashed: true, label: "муляж!"}); }
+        if (dec) { FX.explode(v, dec.x, dec.y, dec.r || 14, {small: true}); SFX.pop(); setTimeout(() => SFX.decoy(), 450); } else SFX.miss();
+        if (dec) { dec.hitByPlayer = true; this.marks.unshift({x: dec.x, y: dec.y, r: (dec.r || 14) * 0.6, scorch: true}); this.marks.push({x: dec.x, y: dec.y, r: dec.r || 14, color: COLORS.decoy, dashed: true, label: "муляж!"}); }
         else this.marks.push({x, y, square: true, color: COLORS.miss});
         v.setMarks(this.marks);
         const leftM = this.missLimit - this.misses;
@@ -315,11 +345,13 @@
         this.msg(`${dec ? "Це муляж — промах!" : "Мимо!"} ${leftM === 0 ? "Ще промах — кінець етапу." : "Можна ще: " + leftM + "."}`, "no");
       } else {
         this.found.add(hit); this.foundOrder.push(hit);
-        SFX.hit();
         const t = this.targets[hit];
+        FX.explode(v, t.x, t.y, t.r || 14); SFX.boom();
+        setTimeout(() => SFX.hit(), 650);
+        this.marks.unshift({x: t.x, y: t.y, r: t.r || 14, scorch: true});
         this.marks.push({x: t.x, y: t.y, r: t.r || 14, color: COLORS.hit});
         v.setMarks(this.marks);
-        if (this.found.size === this.targets.length) { setTimeout(() => SFX.win(), 250); return this.endRound("Усі цілі знайдено!"); }
+        if (this.found.size === this.targets.length) { setTimeout(() => SFX.win(), 1300); return this.endRound("Усі цілі знайдено!"); }
         this.msg(`Є! Лишилось: ${this.targets.length - this.found.size}.`, "ok");
       }
       this.stats();
@@ -371,8 +403,7 @@
       $("g-skip").hidden = true;
       if (!this.mode.debrief) {   // іспит: без розбору й показу цілей до кінця
         this.msg(`${reason} (етап ${this.idx + 1} з ${this.rounds.length})`);
-        $("g-next").textContent = this.idx === this.rounds.length - 1 ? "Результат →" : "Далі →";
-        $("g-next").hidden = false;
+        this.showNext(this.idx === this.rounds.length - 1 ? "Результат" : "Далі");
         return;
       }
       if (this.mode.blind) {   // спершу картка «що це було», потім розбір
@@ -400,7 +431,8 @@
 
     debrief() {
       const missed = this.targets.map((_, i) => i).filter((i) => !this.found.has(i));
-      const marks = [];
+      const marks = [...this.targets.filter((_, i) => this.found.has(i)).map((t) => ({x: t.x, y: t.y, r: t.r || 14, scorch: true})),
+        ...this.decoys.filter((t) => t.hitByPlayer).map((t) => ({x: t.x, y: t.y, r: (t.r || 14) * 0.6, scorch: true}))];
       let n = 0;
       this.clicks.forEach((c) => { if (!c[3] && !c[4]) marks.push({x: c[1], y: c[2], square: true, color: COLORS.miss, label: String(++n)}); });
       this.targets.forEach((t, i) => {
@@ -442,9 +474,7 @@
       $("g-debrief").hidden = false;
       const last = this.idx === this.rounds.length - 1;
       this.msg(`${this.reason} +${this.result.score} балів.`, missed.length ? "no" : "ok");
-      $("g-next").textContent = last ? "Підсумок →" : "Далі →";
-      $("g-next").hidden = false;
-      $("g-next").focus();
+      this.showNext(last ? "Підсумок" : "Далі");
     },
 
     // ---------- підсумок

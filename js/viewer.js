@@ -285,6 +285,13 @@
 
     _mark(m) {
       const ctx = this.ctx;
+      if (m.scorch) {   // випалена пляма після вибуху
+        const cx0 = this.tx + m.x * this.s, cy0 = this.ty + m.y * this.s, rr = Math.max(8, (m.r || 14) * this.s * 1.3);
+        const g = ctx.createRadialGradient(cx0, cy0, 0, cx0, cy0, rr);
+        g.addColorStop(0, "rgba(12,10,8,.75)"); g.addColorStop(0.55, "rgba(28,22,16,.45)"); g.addColorStop(1, "rgba(40,32,24,0)");
+        ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx0, cy0, rr, 0, 7); ctx.fill(); ctx.restore();
+        return;
+      }
       if (m.line) {   // лінія (напр. траса слідів, що малюється)
         ctx.save(); ctx.strokeStyle = m.color; ctx.lineWidth = Math.max(2, (m.w || 2) * this.s); ctx.lineCap = ctx.lineJoin = "round"; ctx.globalAlpha = 0.6;
         ctx.beginPath(); m.line.forEach(([x, y], i) => (i ? ctx.lineTo : ctx.moveTo).call(ctx, this.tx + x * this.s, this.ty + y * this.s)); ctx.stroke(); ctx.restore();

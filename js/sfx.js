@@ -28,7 +28,57 @@
     s.connect(f).connect(g).connect(c.destination); s.start(t);
   }
 
+  /* Вибух: тріск детонації + низький удар + «тіло» вибуху з падаючим фільтром + гуркіт + уламки. */
+  let master = null;
+  function bus() {
+    const c = ac(); if (!c) return null;
+    if (!master) {
+      const comp = c.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 6; comp.attack.value = 0.002; comp.release.value = 0.25;
+      master = c.createGain(); master.gain.value = 0.9; master.connect(comp).connect(c.destination);
+    }
+    return master;
+  }
+  function noiseBuf(c, dur, brown) {
+    const n = Math.floor(c.sampleRate * dur), b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; if (brown) { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w; }
+    return b;
+  }
+  function boom(scale = 1) {
+    const c = ac(), out = bus(); if (!c || !on || !out) return;
+    const t = c.currentTime + 0.01, v = scale;
+    const src = (buf) => { const s = c.createBufferSource(); s.buffer = buf; return s; };
+    // 1) тріск детонації
+    { const s = src(noiseBuf(c, 0.08)), f = c.createBiquadFilter(), g = c.createGain();
+      f.type = "highpass"; f.frequency.value = 1800; g.gain.setValueAtTime(0.9 * v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+      s.connect(f).connect(g).connect(out); s.start(t); }
+    // 2) удар: синус, що падає 110 → 32 Гц
+    { const o = c.createOscillator(), g = c.createGain();
+      o.type = "sine"; o.frequency.setValueAtTime(110, t); o.frequency.exponentialRampToValueAtTime(32, t + 0.45);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.0 * v, t + 0.012); g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+      o.connect(g).connect(out); o.start(t); o.stop(t + 1); }
+    // 3) тіло вибуху: шум через lowpass, що закривається 2400 → 160 Гц
+    { const s = src(noiseBuf(c, 1.8)), f = c.createBiquadFilter(), g = c.createGain();
+      f.type = "lowpass"; f.Q.value = 0.8; f.frequency.setValueAtTime(2400, t); f.frequency.exponentialRampToValueAtTime(160, t + 1.4);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.8 * v, t + 0.02); g.gain.exponentialRampToValueAtTime(0.001, t + 1.7);
+      s.connect(f).connect(g).connect(out); s.start(t); }
+    // 4) гуркіт-відлуння (брунатний шум, довгий хвіст)
+    { const s = src(noiseBuf(c, 3.2, true)), f = c.createBiquadFilter(), g = c.createGain();
+      f.type = "lowpass"; f.frequency.value = 220;
+      g.gain.setValueAtTime(0.0001, t + 0.05); g.gain.exponentialRampToValueAtTime(0.5 * v, t + 0.25); g.gain.exponentialRampToValueAtTime(0.001, t + 3.1);
+      s.connect(f).connect(g).connect(out); s.start(t + 0.05); }
+    // 5) уламки, що падають: короткі клацання
+    for (let i = 0; i < 9 * v; i++) {
+      const at = t + 0.25 + Math.random() * 1.1, s = src(noiseBuf(c, 0.03)), f = c.createBiquadFilter(), g = c.createGain();
+      f.type = "bandpass"; f.frequency.value = 1500 + Math.random() * 3000; f.Q.value = 3;
+      g.gain.setValueAtTime(0.12 * Math.random() * v, at); g.gain.exponentialRampToValueAtTime(0.001, at + 0.03);
+      s.connect(f).connect(g).connect(out); s.start(at);
+    }
+  }
+
   const SFX = {
+    boom() { boom(1); },
+    pop() { boom(0.45); },
     get on() { return on; },
     toggle() { on = !on; try { localStorage.setItem("poshuk_sound", on ? "on" : "off"); } catch (e) { /* ок */ } if (on) SFX.click(); return on; },
     unlock() { ac(); },
