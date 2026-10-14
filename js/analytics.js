@@ -34,7 +34,10 @@
 
     render() {
       const d = this.data, k = this.kind, who = this.who;
-      d.answers.forEach((a) => { a.cat = Logic.category(a.name); });   // категорію рахуємо за назвою — перейменування не дублюють рядки
+      d.answers.forEach((a) => { a.cat = Logic.category(a.name); });
+      // «Svinina» і «svinina » — той самий курсант
+      if (!d._cs) { const disp = new Map(), key = (c) => String(c || "").trim().toLowerCase();
+        [...d.results, ...d.answers].forEach((x) => { const k0 = key(x.callsign); if (!disp.has(k0)) disp.set(k0, String(x.callsign || "").trim()); x.callsign = disp.get(k0); }); d._cs = true; }   // категорію рахуємо за назвою — перейменування не дублюють рядки
       const ans = d.answers.filter((a) => (!k || a.kind === k) && (!who || a.callsign === who));
       const res = d.results.filter((r) => (!k || kindOf(r.mode) === k) && (!who || r.callsign === who));
       const people = [...new Set([...d.results.map((r) => r.callsign), ...d.answers.map((a) => a.callsign)])].filter(Boolean).sort((a, b) => a.localeCompare(b, "uk"));
