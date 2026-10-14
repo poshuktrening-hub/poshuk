@@ -25,6 +25,10 @@
   function loadImg(src) {
     return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Це не зображення")); i.src = src; });
   }
+  /* Довжина техніки за назвою (м) — щоб не вводити вручну. */
+  const LEN = [[/красух/i, 12], [/бук/i, 9.3], [/торнадо|ураган|смерч/i, 12], [/град|бм-21|рсзв/i, 7.4], [/бмп/i, 7.2], [/бтр/i, 7.6], [/мт-лб|мтлб/i, 6.5],
+    [/сау|мста|гвоздик|акаці/i, 7.2], [/katap|катап|lancet|ланцет/i, 6.2], [/tank|танк|т-\d/i, 7], [/урал|камаз|вантаж/i, 7.5], [/рлс|реб|зрк|тор|панцир/i, 8]];
+  const lenFor = (name) => (LEN.find(([re]) => re.test(name)) || [0, 7])[1];
   function toBlob(cv, type, q) { return new Promise((res) => cv.toBlob(res, type, q)); }
 
   const Gen = {
@@ -52,16 +56,16 @@
           <p class="status">PNG з виглядом зверху, перед дивиться вгору. Фон прибирається сам.</p>
           <div class="row"><select id="g-obj" style="flex:1 1 180px"></select><button type="button" id="g-obj-add" style="flex:0">PNG…</button><button type="button" id="g-obj-del" style="flex:0" title="Видалити з бібліотеки">✕</button></div>
           <input type="file" id="g-obj-file" accept="image/*" hidden>
-          <div class="kv">
-            <label for="g-len">Довжина техніки, м</label><input id="g-len" type="number" min="0.5" step="0.1">
-            <label for="g-name" title="Перше слово — тип: «Танк Т-72Б3», «САУ 2С19»">Назва моделі</label><input id="g-name" maxlength="40" placeholder="Танк Т-72Б3">
-            <label for="g-cage">«Мангал» (сітка над баштою)</label><input id="g-cage" type="checkbox">
-          </div>
           <label class="chk"><input type="checkbox" id="g-decoy"> Муляж (обманка): клік по ньому — промах</label>
-          <div class="row"><button type="button" id="g-inflate" title="Створити з цієї моделі надувний муляж і додати в бібліотеку">🎈 Зробити надувний муляж</button></div>
-          <details class="adv"><summary>ТТХ для брифінгу курсанта</summary>
-            <textarea id="g-ttx" rows="5" placeholder="Що це, розміри, як виглядає зверху"></textarea>
-            <div class="row"><button type="button" id="g-ttx-save">Зберегти модель</button></div>
+          <details class="adv"><summary>Параметри моделі</summary>
+            <div class="kv">
+              <label for="g-len">Довжина техніки, м</label><input id="g-len" type="number" min="0.5" step="0.1">
+              <label for="g-name" title="Перше слово — тип: «Танк Т-72Б3», «САУ 2С19»">Назва моделі</label><input id="g-name" maxlength="40" placeholder="Танк Т-72Б3">
+              <label for="g-cage">«Мангал» (сітка над баштою)</label><input id="g-cage" type="checkbox">
+            </div>
+            <label style="margin:.4rem 0 .2rem">ТТХ для брифінгу курсанта</label>
+            <textarea id="g-ttx" rows="4" placeholder="Що це, розміри, як виглядає зверху"></textarea>
+            <div class="row"><button type="button" id="g-ttx-save">Зберегти модель</button><button type="button" id="g-inflate" title="Створити з цієї моделі надувний муляж і додати в бібліотеку">🎈 Надувний муляж</button></div>
           </details>
           <p class="status" id="g-obj-status"></p>
         </section>
@@ -74,10 +78,7 @@
             <button type="button" data-v="rnd">🎲</button></div></div>
           <div class="seg-row"><span>Маскування</span><div class="seg" id="gp-hide">
             <button type="button" data-v="0">Відкрито</button><button type="button" data-v="30">Частково</button><button type="button" data-v="55">Під кронами</button><button type="button" data-v="75">Хардкор</button></div> <small class="muted" id="g-hid"></small></div>
-          <div class="seg-row"><span>Тінь</span><div class="seg" id="gp-shadow">
-            <button type="button" data-v="0">Немає</button><button type="button" data-v="1">Слабка</button><button type="button" data-v="2">Сильна</button></div></div>
-          <div class="seg-row"><span>Вигляд</span><div class="seg" id="gp-look">
-            <button type="button" data-v="bright">Помітно</button><button type="button" data-v="mid">Природно</button><button type="button" data-v="dim">Зливається</button></div></div>
+          <p class="status">Тінь за сонцем знімка, різкість і колір підлаштовуються самі.</p>
           <details class="adv"><summary>Тонке налаштування</summary><div class="sliders" id="g-sliders"></div></details>
         </section>
       </aside>
@@ -100,20 +101,12 @@
       const presets = {
         "gp-angle": (v) => this.setVal("angle", v === "rnd" ? Math.floor(Math.random() * 360) : v),
         "gp-hide": (v) => this.setVal("hide", v),
-        "gp-shadow": (v) => {
-          const gsd = Number(this.$("g-gsd").value), sz = this.val("size");
-          const len = gsd > 0 ? [0, 1.4 / gsd, 2.4 / gsd][v] : [0, sz * 0.12, sz * 0.25][v];   // висота техніки ≈2.5 м, сонце ~45°
-          this.setVal("shadow_op", [0, 45, 60][v]); this.setVal("shadow_len", Math.min(40, Math.max(v ? 1 : 0, Math.round(len * 2) / 2)));
-          if (v && this.sunDir !== undefined) this.setVal("shadow_dir", this.sunDir);
-        },
-        "gp-look": (v) => { const L = {bright: [4, 0, 95], mid: [10, 6, 80], dim: [20, 15, 60]}[v]; this.setVal("blend", L[0]); this.setVal("darken", L[1]); this.setVal("sat", L[2]); },
       };
       Object.keys(presets).forEach((id) => $(id).querySelectorAll("button").forEach((b) => (b.onclick = () => {
         $(id).querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
         presets[id](b.dataset.v); this.syncQuick(); this.schedule();
       })));
       $("gp-hide").querySelectorAll("button")[0].classList.add("on");
-      $("gp-shadow").querySelectorAll("button")[1].classList.add("on"); $("gp-look").querySelectorAll("button")[0].classList.add("on");
       this.syncQuick();
       $("g-back").onclick = () => this.close();
       $("g-from-stage").onclick = () => this.baseFromStage();
@@ -207,7 +200,7 @@
         const spr = Compose.prepareObject(await loadImg(await fileToDataURL(file)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
         const name = file.name.replace(/\.[^.]+$/, "").slice(0, 40);
-        const j = await API.call("object_upload", {name, data, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: Logic.cleanTtx(this.$("g-ttx").value), decoy: this.$("g-decoy").checked || /^муляж/i.test(name) ? 1 : 0}, this.pw);
+        const j = await API.call("object_upload", {name, data, length_m: lenFor(name), type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: Logic.cleanTtx(this.$("g-ttx").value), decoy: this.$("g-decoy").checked || /^муляж/i.test(name) ? 1 : 0}, this.pw);
         this.sprites.set(j.object.id, spr);
         await this.loadObjects(j.object.id);
         st.textContent = j.replaced ? `«${name}» вже був — замінено новою версією.` : `Додано «${name}». Перевірте довжину й тип.`; st.className = "status ok";
@@ -252,6 +245,7 @@
     autoSize() {
       const gsd = Number(this.$("g-gsd").value), len = Number(this.$("g-len").value);
       if (gsd > 0 && len > 0) this.setVal("size", Math.min(120, Math.max(3, Math.round(len / gsd * 2) / 2)));
+      if (gsd > 0) { this.setVal("shadow_len", Math.min(40, Math.max(1, Math.round(2.2 / gsd * 2) / 2))); this.setVal("shadow_op", 55); }   // тінь ≈2,2 м
       this.schedule();
     },
 
@@ -444,12 +438,10 @@
       let n = 0;
       for (const f of files) {
         const name = f.name.replace(/\.[^.]+$/, "").slice(0, 40);
-        if (have.includes(name)) continue;
         const spr = Compose.prepareObject(await loadImg(await fileToDataURL(f)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
         const decoy = /^муляж/i.test(name), base = name.replace(/^муляж\s+/i, "");
-        const LEN = [[/красух/i, 12], [/бук/i, 9.3], [/град|бм-21/i, 7.4], [/бмп/i, 7.2], [/бтр/i, 7.6], [/сау|мста|гвоздик/i, 7.2], [/katap|катап|lancet|ланцет/i, 6.2], [/tank|танк|т-\d/i, 7]];
-        const len = (LEN.find(([re]) => re.test(base)) || [0, 7])[1];
+        const len = lenFor(base);
         await API.call("object_upload", {name, data, length_m: len, type: Logic.typeOf(base), decoy: decoy ? 1 : 0}, pw);
         n++;
       }

@@ -48,72 +48,59 @@
       root.className = "screen admin";
       root.innerHTML = `
       <aside class="side">
-        <div class="row"><h2>Етапи</h2><button type="button" id="a-settings-btn" style="flex:0">Налаштування</button><button type="button" style="flex:0" id="a-out">Вийти</button></div>
+        <div class="adm-head"><h2>Адмінка</h2><button type="button" class="iconbtn" id="a-settings-btn" title="Налаштування гри">⚙</button><button type="button" class="iconbtn" id="a-out" title="Вийти з адмінки">⎋</button></div>
+        <div class="adm-actions">
+          <button type="button" class="primary" id="a-auto" title="Сам розставляє техніку на картах і створює етапи">⚡ Автогенератор</button>
+          <button type="button" id="a-add" title="Знімки без техніки: масштаб, напрямок і пора року визначаються самі">＋ Карти</button>
+          <button type="button" id="a-gen" title="Поставити техніку вручну">✎ Генератор</button>
+        </div>
+        <input type="file" id="a-file" accept="image/*" multiple hidden>
+        <p class="status" id="a-up-status"></p>
         <section>
+          <div class="tabs" id="a-tabs"><button type="button" data-t="stages" class="on">Етапи</button><button type="button" data-t="maps">Карти</button></div>
           <div class="row filters"><select id="a-filter-dir"><option value="">Усі напрямки</option></select><select id="a-filter-season"><option value="">Усі пори року</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select></div>
           <ul class="list" id="a-stages"></ul>
-          <div class="row">
-            <label class="btnlike" style="margin:0;flex:1"><button type="button" id="a-add" style="width:100%">Додати знімки…</button></label>
-            <button type="button" id="a-import" title="Виберіть папку локальної версії гри (poshuk_local)">Імпорт папки…</button>
-          </div>
-          <button type="button" id="a-migrate" hidden title="Скопіювати етапи й техніку з Google-таблиці">Перенести з Google…</button>
-          <input type="file" id="a-file" accept="image/*" multiple hidden>
-          <input type="file" id="a-imp-file" webkitdirectory directory multiple hidden>
-          <p class="status" id="a-up-status"></p>
         </section>
         <section id="a-stage-box" hidden>
-          <label for="a-title" style="margin:0">Назва етапу</label>
-          <input id="a-title">
-          <div class="kv">
-            <label for="a-dir">Напрямок</label><select id="a-dir"><option value="">—</option>${Logic.REGIONS.map((r) => `<option>${r}</option>`).join("")}</select>
-            <label for="a-season">Пора року</label><select id="a-season"><option value="">—</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select>
-            <label for="a-gsd" title="Скільки метрів на місцевості в одному пікселі знімка — для розміру техніки в генераторах">Масштаб, м/пкс</label><input id="a-gsd" type="number" min="0" max="10" step="0.01" placeholder="0.25">
-            <label for="a-hard" title="Техніка сховано понад 60% — етап іде лише в режим «Хардкор»">Хардкор-етап</label><input id="a-hard" type="checkbox">
+          <input id="a-title" aria-label="Назва" class="title-in">
+          <div class="kv3">
+            <label>Напрямок<select id="a-dir"><option value="">—</option>${Logic.REGIONS.map((r) => `<option>${r}</option>`).join("")}</select></label>
+            <label>Пора року<select id="a-season"><option value="">—</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select></label>
+            <label title="м на 1 піксель знімка — визначається сам">Масштаб<input id="a-gsd" type="number" min="0" max="10" step="0.01" placeholder="авто"></label>
           </div>
-          <datalist id="a-dirs"></datalist>
-          <label for="a-task" style="margin:0">Текст завдання для брифінгу</label>
-          <textarea id="a-task" rows="2" maxlength="400" placeholder="Виявити РСЗВ у районі лісосмуги північніше села та позначити для ураження."></textarea>
+          <button type="button" class="primary" id="a-gen-map" hidden>⚡ Згенерувати етапи з цієї карти</button>
           <div class="row">
-            <button type="button" id="a-toggle"></button>
-            <button type="button" class="danger" id="a-del">Видалити етап</button>
+            <label class="chk" title="Техніка сховано понад 60% — етап іде лише в режим «Хардкор»"><input id="a-hard" type="checkbox"> Хардкор</label>
+            <button type="button" id="a-toggle" style="flex:0"></button>
+            <button type="button" class="danger" id="a-del" style="flex:0">Видалити</button>
           </div>
-          <h2 style="margin-top:6px">Цілі</h2>
-          <p class="status" id="a-thint"></p>
-          <ul class="list" id="a-targets" style="font-family:var(--mono);font-size:.82rem"></ul>
-          <div id="a-tedit">
-            <div class="kv">
-              <label for="a-type" title="Що за техніка в цій точці. Модель з картинкою додається лише генератором.">Техніка</label><select id="a-type"></select>
-              <label for="a-decoy">Муляж (обманка)</label><input id="a-decoy" type="checkbox">
-            </div>
-            <div id="a-model-box" class="model-box" hidden>
-              <div class="row"><img id="a-model-img" alt=""><div class="status" id="a-model-meta"></div></div>
-              <div class="kv" style="margin-top:6px"><label for="a-mname" title="Перше слово — тип: «Танк Т-72Б3», «САУ 2С19», «Катапульта Ланцет»">Назва моделі</label><input id="a-mname" maxlength="40" placeholder="Танк Т-72Б3"></div>
-              <label for="a-ttx" style="margin:.4rem 0 .2rem">ТТХ моделі (бачить курсант перед етапом)</label>
-              <textarea id="a-ttx" rows="5"></textarea>
-              <div class="row"><button type="button" id="a-ttx-save">Зберегти модель</button><span class="status" id="a-ttx-st"></span></div>
-            </div>
-            <details class="adv"><summary>Для розбору (необовʼязково)</summary>
-              <div class="kv"><label for="a-r">Радіус влучання, пкс</label><input id="a-r" type="number" min="3" max="120" value="14"></div>
-              <label style="margin:.6rem 0 .2rem">Ознаки</label>
-              <div class="signs" id="a-signs"></div>
-              <label for="a-note" style="margin:.6rem 0 .2rem">Примітка</label>
-              <input id="a-note" placeholder="Корма під кронами, видно башту з «мангалом»">
-            </details>
-            <div class="row" style="margin-top:8px">
-              <button type="button" id="a-tdel">Видалити ціль</button>
-              <button type="button" id="a-tdesel">Зняти вибір (Esc)</button>
+          <div id="a-tg-wrap">
+            <h2>Цілі <small class="muted" id="a-thint"></small></h2>
+            <ul class="list" id="a-targets"></ul>
+            <div id="a-tedit" hidden>
+              <div class="row">
+                <select id="a-type" aria-label="Техніка" style="flex:1 1 140px"></select>
+                <label class="chk" style="flex:0"><input id="a-decoy" type="checkbox"> Муляж</label>
+                <button type="button" id="a-tdel" style="flex:0" title="Видалити ціль">✕</button>
+              </div>
+              <details id="a-model-box" class="model-box" hidden><summary><img id="a-model-img" alt=""><span class="status" id="a-model-meta"></span></summary>
+                <div class="kv" style="margin-top:6px"><label for="a-mname">Назва моделі</label><input id="a-mname" maxlength="40" placeholder="Танк Т-72Б3"></div>
+                <label for="a-ttx" style="margin:.4rem 0 .2rem">ТТХ (бачить курсант перед етапом)</label>
+                <textarea id="a-ttx" rows="5"></textarea>
+                <div class="row"><button type="button" id="a-ttx-save">Зберегти модель</button><span class="status" id="a-ttx-st"></span></div>
+              </details>
             </div>
           </div>
-          <datalist id="a-types"></datalist>
+          <details class="adv"><summary>Текст завдання на брифінгу</summary>
+            <textarea id="a-task" rows="2" maxlength="400" placeholder="Порожньо — складеться сам: «Виявити … у районі …»"></textarea>
+          </details>
           <p class="status" id="a-save-status"></p>
         </section>
         <section id="a-settings" hidden></section>
       </aside>
       <div class="mainpane">
-        <div class="bar"><div class="hint" id="a-hint">Новий етап: «Генератор» (вставити техніку в знімок) або «Додати знімки…» і клік по техніці на знімку.</div>
-          <button type="button" class="primary" id="a-auto" title="Сам розставляє техніку на чистих картах і створює багато етапів">Автогенератор</button>
-          <button type="button" class="primary" id="a-gen" title="Вбудувати техніку в знімок і зберегти як новий етап">Генератор</button>
-          <button type="button" id="a-heat">Теплова карта</button>
+        <div class="bar"><div class="hint" id="a-hint">«＋ Карти» → «⚡ Автогенератор» — і етапи готові. Клік по знімку — додати ціль вручну.</div>
+          <button type="button" id="a-heat" title="Куди клікали курсанти">Теплова карта</button>
           <button type="button" onclick="location.hash='';location.reload()">До гри</button></div>
         <div class="view-wrap"><div id="a-view" class="view-host"></div>
           <div class="loading" id="a-loading" hidden><span>Завантажую…</span></div></div>
@@ -123,12 +110,12 @@
       this.viewer = new Viewer($("a-view"), {onLeft: (x, y) => this.click(x, y), onRight: (x, y) => this.rclick(x, y)});
       const g = this.viewer.addButton("#", "Сітка квадратів", () => { this.viewer.toggleGrid(); g.classList.toggle("on", this.viewer.showGrid); });
 
-      $("a-signs").innerHTML = Logic.SIGNS.map((s, i) => `<label><input type="checkbox" data-sign="${esc(s)}" id="a-sg${i}"> ${esc(s)}</label>`).join("");
       $("a-out").onclick = () => { SS.del("poshuk_admin_pw"); location.reload(); };
       $("a-add").onclick = () => $("a-file").click();
       $("a-file").onchange = (e) => this.uploadFiles([...e.target.files]);
-      $("a-import").onclick = () => $("a-imp-file").click();
-      $("a-imp-file").onchange = (e) => this.importLocal([...e.target.files]);
+      this.tab = this.tab || "stages";
+      $("a-tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => { this.tab = b.dataset.t; this.renderList(); }));
+      $("a-gen-map").onclick = () => { const s = this.stage(); if (s) AutoGen.open(this, s.id); };
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
       $("a-dir").onchange = () => { this.stage().direction = $("a-dir").value; this.dirty(true); this.renderList(); };
       $("a-hard").onchange = () => { this.stage().hard = $("a-hard").checked; this.dirty(true); this.renderList(); };
@@ -138,7 +125,7 @@
       $("a-task").oninput = () => { this.stage().task = $("a-task").value; this.dirty(true); };
       $("a-toggle").onclick = () => { const s = this.stage(); s.enabled = !s.enabled; this.dirty(true); this.renderStage(); };
       $("a-del").onclick = () => this.deleteStage();
-      ["a-r", "a-note", "a-decoy"].forEach((id) => ($(id).oninput = () => this.fieldChanged()));
+      $("a-decoy").onchange = () => this.fieldChanged();
       $("a-type").onchange = () => this.fieldChanged();
       $("a-ttx-save").onclick = () => this.saveTtx();
       $("a-mname").oninput = () => {
@@ -146,12 +133,8 @@
         if (o && Logic.isAutoTtx(box.value)) box.value = Logic.ttxFor(null, Logic.typeOf($("a-mname").value.replace(/^муляж\s+/i, "")), !!o.decoy);
       };
       this.loadObjects();
-      $("a-signs").onchange = () => this.fieldChanged();
       $("a-tdel").onclick = () => this.deleteTarget(this.tsel);
-      $("a-tdesel").onclick = () => this.selectTarget(null);
       $("a-heat").onclick = () => this.toggleHeat();
-      $("a-migrate").hidden = !(API.isCF && window.POSHUK_CONFIG.gas);
-      $("a-migrate").onclick = () => this.migrate();
       $("a-auto").onclick = () => { this.heatOn = false; AutoGen.open(this); };
       $("a-gen").onclick = async () => { await this.flushSave(); this.heatOn = false; Gen.open(this); };
       $("a-settings-btn").onclick = () => this.settings();
@@ -170,13 +153,15 @@
       fd.value = keep;
       const fs = $("a-filter-season").value;
       const reg = (s) => Logic.region(s) || "-";
-      const list = this.stages.filter((s) => (!fd.value || reg(s) === fd.value) && (!fs || s.season === fs));
+      const isMap = (s) => !s.targets.length;   // карта = знімок без техніки
+      const nM = this.stages.filter(isMap).length, nS = this.stages.length - nM;
+      $("a-tabs").innerHTML = `<button type="button" data-t="stages" class="${this.tab !== "maps" ? "on" : ""}">Етапи <small>${nS}</small></button><button type="button" data-t="maps" class="${this.tab === "maps" ? "on" : ""}">Карти <small>${nM}</small></button>`;
+      $("a-tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => { this.tab = b.dataset.t; this.renderList(); }));
+      const list = this.stages.filter((s) => (this.tab === "maps") === isMap(s) && (!fd.value || reg(s) === fd.value) && (!fs || s.season === fs));
       $("a-stages").innerHTML = list.map((s) =>
-        `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}${Logic.region(s) || s.season || s.hard ? `<small class="tag">${esc([Logic.region(s), s.season, s.hard ? "хардкор" : ""].filter(Boolean).join(" · "))}</small>` : ""}</span><span class="cnt">${s.targets.length}</span></li>`
-      ).join("") || `<li class="muted">${this.stages.length ? "Нічого за фільтром" : "Етапів ще немає"}</li>`;
+        `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}${Logic.region(s) || s.season || s.hard ? `<small class="tag">${esc([Logic.region(s), s.season, s.hard ? "хардкор" : ""].filter(Boolean).join(" · "))}</small>` : ""}</span>${s.targets.length ? `<span class="cnt">${s.targets.filter((t) => !t.decoy).length}${s.targets.some((t) => t.decoy) ? "+" + s.targets.filter((t) => t.decoy).length : ""}</span>` : `<span class="cnt">${s.gsd ? s.gsd + " м" : ""}</span>`}</li>`
+      ).join("") || `<li class="muted">${this.tab === "maps" ? "Карт немає — «＋ Карти»" : this.stages.length ? "Нічого за фільтром" : "Етапів ще немає — додайте карти й запустіть автогенератор"}</li>`;
       $("a-stages").querySelectorAll("li[data-id]").forEach((li) => (li.onclick = () => this.select(li.dataset.id)));
-      const types = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))].sort();
-      $("a-types").innerHTML = types.map((t) => `<option value="${esc(t)}">`).join("");
     },
 
     async select(id) {
@@ -187,7 +172,8 @@
       this.$("a-loading").hidden = false;
       try {
         this.img = await API.loadImage(id, this.pw);
-      } catch (e) { this.$("a-loading").hidden = true; UI.toast(e.message); return; }
+      } catch (e) { if (this.$("a-loading")) this.$("a-loading").hidden = true; UI.toast(e.message); return; }
+      if (!this.$("a-loading")) return;   // поки вантажилось — відкрили генератор
       this.$("a-loading").hidden = true;
       if (this.sel !== id) return;
       if (!s.w) { s.w = this.img.width; s.h = this.img.height; }
@@ -209,7 +195,11 @@
       $("a-gsd").value = s.gsd || "";
       $("a-hard").checked = !!s.hard;
       $("a-task").value = s.task || "";
-      $("a-toggle").textContent = s.enabled ? "Вимкнути етап" : "Увімкнути етап";
+      $("a-toggle").textContent = s.enabled ? "Вимкнути" : "Увімкнути";
+      const map = !s.targets.length;
+      $("a-gen-map").hidden = !map;
+      $("a-toggle").hidden = map;   // карта без цілей у гру не йде
+      $("a-hard").parentElement.hidden = map;
       this.renderTargets();
     },
 
@@ -218,14 +208,11 @@
       if (!s) return;
       if (this.tsel !== null && this.tsel >= s.targets.length) this.tsel = null;
       $("a-targets").innerHTML = s.targets.map((t, i) =>
-        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.signs && t.signs.length ? "•" : " "}${t.decoy ? "◇ " : ""}${i + 1}. ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль")}${t.decoy ? " — муляж" : ""}</li>`
-      ).join("") || `<li class="muted">Клікніть по знімку, щоб додати ціль</li>`;
+        `<li data-i="${i}" class="${i === this.tsel ? "sel" : ""}">${t.decoy ? "◇" : "●"} ${t.obj && this.objById(t.obj) ? esc(this.objById(t.obj).name) : esc(t.type || "ціль")}${t.decoy ? " · муляж" : ""}${t.hidden ? ` <small class="muted">сховано ${Math.round(t.hidden * 100)}%</small>` : ""}</li>`
+      ).join("") || `<li class="muted">Клікніть по техніці на знімку</li>`;
       $("a-targets").querySelectorAll("li[data-i]").forEach((li) => (li.onclick = () => this.selectTarget(Number(li.dataset.i), true)));
-      $("a-thint").textContent = this.tsel === null
-        ? "Клік по знімку — нова ціль (тип і радіус з полів нижче). Виберіть ціль у списку, щоб змінити її."
-        : `Редагується ціль №${this.tsel + 1}: клік по знімку переносить її, поля змінюють одразу.`;
-      $("a-thint").className = "status" + (this.tsel === null ? "" : " ok");
-      ["a-tdel", "a-tdesel"].forEach((id) => ($(id).disabled = this.tsel === null));
+      $("a-thint").textContent = this.tsel === null ? "клік по знімку — нова; ПКМ — видалити" : `№${this.tsel + 1}: клік по знімку — перенести · Esc — готово`;
+      $("a-tedit").hidden = this.tsel === null;
       const marks = s.targets.map((t, i) => ({x: t.x, y: t.y, r: t.r || 14, color: i === this.tsel ? C.accent : t.decoy ? "#b48cff" : C.hit, dashed: i === this.tsel || !!t.decoy, label: (t.decoy ? "муляж: " : "") + (t.type || "")}));
       this.viewer.setMarks(marks);
     },
@@ -236,15 +223,12 @@
       if (i !== null && s) {
         const t = s.targets[i];
         this.filling = true;
-        $("a-r").value = t.r || 14;
-        $("a-note").value = t.note || "";
         this.typeOptions(t.type);
         $("a-type").value = t.type || "ціль";
         $("a-type").disabled = !!(t.obj && this.objById(t.obj));   // ціль з генератора: тип — від її моделі
         $("a-decoy").checked = !!t.decoy;
         this.modelId = t.obj || null;
         this.showModel();
-        $("a-signs").querySelectorAll("input").forEach((cb) => (cb.checked = (t.signs || []).includes(cb.dataset.sign)));
         this.filling = false;
         if (zoom) this.viewer.zoomTo(6, t.x, t.y);
       } else { $("a-type").disabled = false; this.modelId = null; this.showModel(); }
@@ -256,12 +240,9 @@
       const t = this.stage().targets[this.tsel], $ = this.$;
       const mo = this.objById(t.obj);
       t.type = mo ? Logic.typeOf(mo.name.replace(/^муляж\s+/i, "")) : ($("a-type").value || "ціль");
-      t.r = Math.max(3, Number($("a-r").value) || 14);
+      if (!mo) this.lastType = t.type;
       delete t.landmark;
-      const note = $("a-note").value.trim(); if (note) t.note = note; else delete t.note;
       if ($("a-decoy").checked) t.decoy = true; else delete t.decoy;
-      const signs = [...$("a-signs").querySelectorAll("input:checked")].map((cb) => cb.dataset.sign);
-      if (signs.length) t.signs = signs; else delete t.signs;
       this.dirty(true);
       this.renderTargets();
     },
@@ -274,9 +255,13 @@
       if (this.tsel !== null) {
         Object.assign(s.targets[this.tsel], {x: Math.round(x), y: Math.round(y)});
       } else {
-        const t = {x: Math.round(x), y: Math.round(y), r: Math.max(3, Number(this.$("a-r").value) || 14), type: this.$("a-type").value || "ціль"};
-        if (this.$("a-decoy").checked) t.decoy = true;
+        // радіус влучання — під реальний розмір техніки (≈7 м) за масштабом карти
+        const r = s.gsd > 0 ? Math.max(8, Math.min(90, Math.round(3.5 / s.gsd))) : 14;
+        const t = {x: Math.round(x), y: Math.round(y), r, type: this.lastType || "ціль"};
         s.targets.push(t);
+        this.dirty(true); this.renderList(); this.renderStage();
+        this.selectTarget(s.targets.length - 1);   // одразу вибрати тип
+        return;
       }
       this.dirty(true);
       this.renderTargets(); this.renderList();
@@ -353,7 +338,7 @@
     },
 
     async uploadFiles(files) {
-      const st = this.$("a-up-status");
+      const st = this.$("a-up-status"), skipped = [];
       let last = null;
       for (let i = 0; i < files.length; i++) {
         st.textContent = `Завантажую ${i + 1}/${files.length}: ${files[i].name}…`;
@@ -361,6 +346,8 @@
         try {
           // число масштабу в назві («… · 0.1») — не частина назви етапу
           const title = files[i].name.replace(/\.[^.]+$/, "").replace(/\s*[·|_-]?\s*\d+[.,]\d+\s*(м\/пкс|м|m\/px|m)?\s*$/i, "").trim() || files[i].name;
+          // без дублів: така сама карта вже є — не завантажуємо вдруге
+          if (this.stages.some((s) => s.title === title && !s.targets.length)) { skipped.push(title); continue; }
           last = await this.uploadOne(files[i], title);
           const parts = title.split(/\s*[·|_]\s*|\s+-\s+/).map((x) => x.trim());
           const season = parts.find((x) => /^(зима|весна|літо|осінь)$/i.test(x));
@@ -372,88 +359,15 @@
           }
         } catch (e) { st.textContent = e.message; st.className = "status no"; return; }
       }
-      const added = this.stages.slice(-files.length), noScale = added.filter((s) => !s.gsd).length;
+      const nAdd = files.length - skipped.length;
+      const added = nAdd ? this.stages.slice(-nAdd) : [], noScale = added.filter((s) => !s.gsd).length;
       const sc = added.filter((s) => s.gsd).map((s) => `${s.gsd} (${s.gsdHow})`).join(", ");
-      st.textContent = files.length ? `Додано: ${files.length}.${sc ? " Масштаб, м/пкс: " + sc + "." : ""}${noScale ? ` Для ${noScale} масштаб не визначився (немає доріг) — впишіть вручну.` : ""}` : "";
+      st.textContent = files.length ? `${skipped.length ? `Вже є, пропущено: ${skipped.join(", ")}. ` : ""}Додано: ${nAdd}.${sc ? " Масштаб, м/пкс: " + sc + "." : ""}${noScale ? ` Для ${noScale} масштаб не визначився (немає доріг) — впишіть вручну.` : ""}` : "";
       st.className = "status ok";
       this.$("a-file").value = "";
+      if (nAdd) this.tab = "maps";
       this.renderList();
       if (last) this.select(last.id);
-    },
-
-    async importLocal(files) {
-      if (!files.length) return;
-      const st = this.$("a-up-status");
-      const json = files.find((f) => f.name.toLowerCase() === "targets.json") || files.find((f) => f.name.toLowerCase().endsWith(".json") && /data/i.test(f.webkitRelativePath || ""));
-      if (!json) {
-        // Папка без targets.json — це папка з моделями техніки: PNG → бібліотека генератора («Муляж…» — обманки)
-        const imgs = files.filter((f) => /\.(png|webp|jpe?g)$/i.test(f.name));
-        if (!imgs.length) { st.textContent = "У папці немає ні data/targets.json (локальна гра), ні PNG моделей."; st.className = "status no"; return; }
-        st.textContent = `Додаю моделі в бібліотеку генератора: ${imgs.length}…`; st.className = "status";
-        try {
-          const n = await Gen.importObjects(imgs, this.pw);
-          st.textContent = `Моделей додано: ${n}` + (imgs.length - n ? ` (уже були: ${imgs.length - n})` : "") + ". Вони в «Генератор» і в полі «Модель» цілі."; st.className = "status ok";
-          await this.loadObjects();
-        } catch (e) { st.textContent = "Не вдалось: " + e.message; st.className = "status no"; }
-        this.$("a-imp-file").value = "";
-        return;
-      }
-      files = files.filter((f) => /^image\//.test(f.type) || /\.(png|jpe?g|webp|bmp)$/i.test(f.name));
-      const objFiles = files.filter((f) => /(^|\/)objects\//i.test(f.webkitRelativePath || "") && /\.png$/i.test(f.name));
-      let data;
-      try { data = JSON.parse(await json.text()); } catch (e) { st.textContent = "targets.json пошкоджений"; st.className = "status no"; return; }
-      const byName = new Map(files.map((f) => [f.name, f]));
-      const items = (data.images || []).filter((it) => byName.has(it.file));
-      const missing = (data.images || []).length - items.length;
-      for (let i = 0; i < items.length; i++) {
-        const it = items[i];
-        st.textContent = `Імпорт ${i + 1}/${items.length}: ${it.title}…`; st.className = "status";
-        try { await this.uploadOne(byName.get(it.file), it.title, it.targets || []); } catch (e) { st.textContent = e.message; st.className = "status no"; return; }
-      }
-      if (objFiles.length) { st.textContent = "Імпорт техніки для генератора…"; st.className = "status"; }
-      let nObj = 0;
-      try { nObj = await Gen.importObjects(objFiles, this.pw); } catch (e) { /* техніку можна додати й у генераторі */ }
-      st.textContent = `Імпортовано етапів: ${items.length}.` + (nObj ? ` Техніки в бібліотеку генератора: ${nObj}.` : "") + (missing ? ` Без знімка пропущено: ${missing} (виберіть і файли з папки images).` : "");
-      st.className = "status ok";
-      this.$("a-imp-file").value = "";
-      this.renderList();
-      if (items.length) this.select(this.stages[this.stages.length - 1].id);
-    },
-
-    /* Перенесення з Google-скрипта: етапи (знімок + цілі + увімкнено) і бібліотека техніки. Дублікати за назвою пропускаються. */
-    async migrate() {
-      const gas = window.POSHUK_CONFIG.gas, st = this.$("a-up-status");
-      const G = async (action, data = {}) => {
-        const r = await fetch(gas, {method: "POST", body: JSON.stringify(Object.assign({action, p: this.pw}, data)), redirect: "follow"});
-        const j = await r.json(); if (!j.ok) throw new Error(j.error || "Помилка Google-скрипта"); return j;
-      };
-      const img = (j) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Не вдалось відкрити знімок")); i.src = `data:${j.mime};base64,${j.data}`; });
-      try {
-        st.className = "status"; st.textContent = "Читаю етапи з Google…";
-        const list = (await G("admin_stages")).stages;
-        const have = new Set(this.stages.map((s) => s.title));
-        let n = 0;
-        for (const s of list) {
-          if (have.has(s.title)) continue;
-          st.textContent = `Переношу ${n + 1}: ${s.title}…`;
-          const stage = await API.uploadStage(await img(await G("image", {id: s.id})), {title: s.title, targets: s.targets}, this.pw);
-          if (!s.enabled) { stage.enabled = false; await API.call("save_stage", {id: stage.id, enabled: false}, this.pw); }
-          this.stages.push(stage); n++;
-          this.renderList();
-        }
-        let m = 0;
-        try {
-          const objs = (await G("objects")).objects;
-          const haveO = new Set((await API.call("objects", {}, this.pw)).objects.map((o) => o.name));
-          for (const o of objs) {
-            if (haveO.has(o.name)) continue;
-            const d = await G("object", {id: o.id});
-            await API.call("object_upload", {name: o.name, length_m: o.length_m, type: o.type, data: d.data}, this.pw); m++;
-          }
-        } catch (e) { /* у старій версії скрипта бібліотеки техніки ще немає */ }
-        st.className = "status ok"; st.textContent = `Перенесено етапів: ${n}` + (m ? `, техніки: ${m}` : "") + ".";
-        if (n && !this.sel) this.select(this.stages[0].id);
-      } catch (e) { st.className = "status no"; st.textContent = "Перенесення зупинено: " + e.message; }
     },
 
     // ---------- моделі техніки (бібліотека генератора) для брифінгу
@@ -467,7 +381,8 @@
 
     /* Список «Техніка»: типові типи + типи моделей з бібліотеки. */
     typeOptions(keep) {
-      const sel = this.$("a-type"), cur = keep || sel.value;
+      const sel = this.$("a-type"); if (!sel) return;
+      const cur = keep || sel.value;
       const types = [...new Set([...Logic.TYPES, ...(this.objects || []).filter((o) => !o.decoy).map((o) => Logic.typeOf(o.name)), ...(this.stages || []).flatMap((s) => s.targets.map((t) => t.type)), cur].filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, "uk"));
       sel.innerHTML = types.map((t) => `<option>${esc(t)}</option>`).join("");
@@ -478,6 +393,7 @@
 
     async showModel() {
       const $ = this.$, o = this.tsel === null ? null : this.objById(this.modelId);
+      if (!$("a-model-box")) return;
       $("a-model-box").hidden = !o;
       if (!o) return;
       $("a-model-meta").textContent = `модель з генератора · тип: ${Logic.typeOf(o.name.replace(/^муляж\s+/i, ""))}${o.decoy ? " · муляж" : ""} · ≈${o.length_m} м`;
