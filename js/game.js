@@ -412,7 +412,8 @@
       if (this.hintUsed && score) score = HINT_SCORE;
       $("g-hint").hidden = true;
       this.result = {title: this.cur.title, id: this.cur.id, found: this.found.size, total: this.targets.length,
-        misses: this.misses, time: Math.round(this.used * 10) / 10, score, clicks: this.clicks.slice(), report: ""};
+        misses: this.misses, time: Math.round(this.used * 10) / 10, score, clicks: this.clicks.slice(), report: "",
+        items: this.targets.map((t, i) => ["search", this.cur.id, t.type || "ціль", Logic.category(t.type), this.found.has(i) ? 1 : 0])};
       this.results.push(this.result);
       this.stats();
       $("g-skip").hidden = true;
@@ -511,7 +512,7 @@
       const item = {callsign: this.callsign, scores: res.map((r) => r.score), max, mode: m.id,
         conclusion: m.id === "game" ? concl : `${m.name}: ${concl}${m.pass ? ` (поріг ${m.pass}%)` : ""}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`,
-        clicks: res.flatMap((r) => r.clicks)};
+        clicks: res.flatMap((r) => r.clicks), items: res.flatMap((r) => r.items || [])};
       const q = LS.get("poshuk_pending", []);
       q.push(item);
       LS.set("poshuk_pending", q);

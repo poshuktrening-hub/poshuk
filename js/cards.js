@@ -200,7 +200,7 @@
       if (this.over) return;
       this.over = true; this.stop();
       const c = this.cur, r = timeout ? {ok: false} : picked !== undefined ? {ok: picked, exact: true} : check(c, answer), score = r.ok ? 10 : 0;
-      this.results.push({id: c.id, name: c.name, answer, ok: r.ok, score, hint: this.hintUsed});
+      this.results.push({id: c.id, name: c.name, answer, ok: r.ok, score, hint: this.hintUsed, cat: Logic.category(c.name)});
       $("c-score").textContent = this.results.reduce((a, x) => a + x.score, 0);
       if (r.ok) SFX.hit(); else SFX.miss();
       document.activeElement && document.activeElement.blur && document.activeElement.blur();   // сховати клавіатуру
@@ -236,7 +236,8 @@
       const now = new Date(), p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: Game.callsign, scores: res.map((r) => r.score), max, mode: m.id === "exam" ? "cards_exam" : "cards",
         conclusion: `Картки${m.id === "exam" ? " (іспит)" : ""}: ${concl}`,
-        date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`, clicks: []};
+        date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`, clicks: [],
+        items: res.map((r) => ["cards", r.id, r.name, r.cat, r.ok ? 1 : 0])};
       const q = LS.get("poshuk_pending", []); q.push(item); LS.set("poshuk_pending", q);
       $("sum-sync").className = "muted"; $("sum-sync").textContent = "Записую результат…";
       Game.flushPending().then((left) => {

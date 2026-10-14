@@ -29,6 +29,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS clicks_stage ON clicks (stage)`,
   `CREATE TABLE IF NOT EXISTS results (ts TEXT, callsign TEXT, total INTEGER, max INTEGER, pct INTEGER, conclusion TEXT, scores TEXT)`,
   `CREATE TABLE IF NOT EXISTS card_photos (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
+  `CREATE TABLE IF NOT EXISTS answers (ts TEXT, callsign TEXT, kind TEXT, mode TEXT, item TEXT, name TEXT, cat TEXT, ok INTEGER)`,
+  `CREATE INDEX IF NOT EXISTS answers_ts ON answers (ts)`,
 ];
 
 class HttpError extends Error { constructor(msg, status = 200) { super(msg); this.status = status; } }
@@ -279,6 +281,13 @@ async function action(env, ctx, req, origin) {
         .bind(String(req.name || "техніка").slice(0, 40), Number(req.length_m) || 7, String(req.type || ""), String(req.ttx || "").slice(0, 2000), req.decoy === undefined || req.decoy === null ? null : (req.decoy ? 1 : 0), String(req.id)).run();
       return {ok: true};
     }
+    case "analytics": {
+      const since = String(req.since || "0000");
+      const {results: ans} = await env.DB.prepare("SELECT callsign, kind, cat, name, SUM(ok) ok, COUNT(*) n FROM answers WHERE ts >= ? GROUP BY callsign, kind, cat, name").bind(since).all();
+      const {results: res} = await env.DB.prepare("SELECT callsign, mode, COUNT(*) n, AVG(pct) avg, MAX(ts) last FROM results WHERE ts >= ? GROUP BY callsign, mode").bind(since).all();
+      const first = await env.DB.prepare("SELECT MIN(ts) t FROM answers").first();
+      return {ok: true, answers: ans, results: res, since: first ? first.t : null};
+    }
     case "card_photos": {
       const {results} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
       return {ok: true, photos: results.map((r) => [r.id, r.updated]), credits: results.filter((r) => r.credit).map((r) => [r.id, r.credit])};
@@ -334,6 +343,13 @@ async function submit(env, ctx, req) {
   const pct = max ? Math.round(100 * total / max) : 0;
   const st = [env.DB.prepare("INSERT INTO results (ts,callsign,total,max,pct,conclusion,scores,mode) VALUES (?,?,?,?,?,?,?,?)")
     .bind(when, cs, total, max, pct, String(req.conclusion || "").slice(0, 120), JSON.stringify(scores), String(req.mode || "game").slice(0, 10))];
+  // відповіді по кожній цілі/картці — для аналітики інструктора (слабкі місця по категоріях техніки)
+  (req.items || []).slice(0, 200).forEach((it) => {
+    if (!Array.isArray(it)) return;
+    const s = (v, n) => String(v == null ? "" : v).slice(0, n);
+    st.push(env.DB.prepare("INSERT INTO answers (ts,callsign,kind,mode,item,name,cat,ok) VALUES (?,?,?,?,?,?,?,?)")
+      .bind(when, cs, s(it[0], 10), s(req.mode || "game", 10), s(it[1], 60), s(it[2], 80), s(it[3], 40), it[4] ? 1 : 0));
+  });
   const who = (await hmac(env, "who." + cs)).slice(0, 10); // позивний у кліках не зберігаємо
   (req.clicks || []).slice(0, 500).forEach((c) => st.push(env.DB.prepare("INSERT INTO clicks (stage,x,y,hit,ts,who) VALUES (?,?,?,?,?,?)")
     .bind(String(c[0]), Math.round(c[1]), Math.round(c[2]), c[3] ? 1 : 0, when, who)));
