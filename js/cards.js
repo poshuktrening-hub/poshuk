@@ -38,6 +38,7 @@
     const base = card.name.replace(/\s*\(.*?\)\s*/g, " ").trim();
     const list = new Set([card.name, base, card.name.split(" ").slice(1).join(" "), ...card.aliases]);
     card.aliases.forEach((a) => list.add(type + " " + a));
+    const q = card.name.match(/«([^»]+)»/); if (q) { list.add(q[1]); list.add(type + " " + q[1]); }   // власна назва в лапках — завжди зараховується
     return [...list].map(norm).filter(Boolean);
   }
   /* Перевірка: точний збіг або одруківка (1 символ для ≥5, 2 для ≥10), але цифри мають збігатися точно. */
@@ -49,11 +50,26 @@
     // точна назва ІНШОЇ техніки (Т-80БВ замість Т-80БВМ) — це не одруківка, а помилка
     if (!check.idx) { check.idx = new Map(); Cards.deck().forEach((c) => answers(c).forEach((v) => { if (!check.idx.has(v)) check.idx.set(v, c.id); })); }
     if (check.idx.has(a) && check.idx.get(a) !== card.id) return {ok: false};
+    const tolOf = (n) => n >= 9 ? 2 : n >= 5 ? 1 : 0;
     for (const v of vars) {
       if (digits(v) !== digits(a)) continue;
-      const tol = v.length >= 10 ? 2 : v.length >= 5 ? 1 : 0;
+      const tol = tolOf(v.length);
       if (tol && lev(a, v) <= tol) return {ok: true, exact: false};
     }
+    // Мʼяка перевірка: досить впізнаваної назви всередині відповіді («ТОС Солнцепек», «Град БМ-21», «солнцепьок»).
+    // Шукаємо найдовший збіг з назвами всієї техніки; зараховуємо, якщо він належить саме цій картці.
+    const words = String(input).split(/[\s,;/\\()«»"'.]+/).filter(Boolean);
+    const pieces = new Set();
+    for (let i = 0; i < words.length; i++) for (let k = 1; k <= 3 && i + k <= words.length; k++) pieces.add(norm(words.slice(i, i + k).join("")));
+    let best = null;
+    const consider = (owner, len, exact) => { if (!best || len > best.len || (len === best.len && exact && !best.exact)) best = {owner, len, exact}; };
+    for (const [v, owner] of check.idx) if (v.length >= 4 && a.includes(v)) consider(owner, v.length, true);
+    for (const p of pieces) {
+      if (p.length < 2) continue;
+      if (check.idx.has(p)) { consider(check.idx.get(p), p.length, true); continue; }
+      for (const v of vars) { const tol = tolOf(v.length); if (tol && digits(v) === digits(p) && lev(p, v) <= tol) consider(card.id, v.length, false); }
+    }
+    if (best && best.owner === card.id) return {ok: true, exact: false};
     return {ok: false};
   }
 
