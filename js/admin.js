@@ -326,8 +326,10 @@
 
     async uploadOne(file, title, targets) {
       if (file.size > (API.isCF ? 80 : 20) * 1024 * 1024) throw new Error(`«${file.name}» завеликий`);
-      const {img} = await this.readImage(file);
+      let {img} = await this.readImage(file);
       const st = this.$("a-up-status"), prefix = st.textContent;
+      // без цілей = чиста карта: обрізати білі/чорні поля довкола (скріншот слайда, підписи, клини)
+      if (!(targets && targets.length)) { const c = Crop.auto(img); if (c) { img = c.canvas; this.cropped = (this.cropped || 0) + 1; } }
       const stage = await API.uploadStage(img, {title, targets, name: file.name.replace(/\.[^.]+$/, "")}, this.pw, (m) => (st.textContent = prefix + " " + m));
       // масштаб: з назви файлу або автоматично за шириною доріг
       let gsd = Scale.fromName(file.name.replace(/\.[^.]+$/, "")), how = "з назви";
@@ -339,6 +341,7 @@
 
     async uploadFiles(files) {
       const st = this.$("a-up-status"), skipped = [];
+      this.cropped = 0;
       let last = null;
       for (let i = 0; i < files.length; i++) {
         st.textContent = `Завантажую ${i + 1}/${files.length}: ${files[i].name}…`;
@@ -362,7 +365,7 @@
       const nAdd = files.length - skipped.length;
       const added = nAdd ? this.stages.slice(-nAdd) : [], noScale = added.filter((s) => !s.gsd).length;
       const sc = added.filter((s) => s.gsd).map((s) => `${s.gsd} (${s.gsdHow})`).join(", ");
-      st.textContent = files.length ? `${skipped.length ? `Вже є, пропущено: ${skipped.join(", ")}. ` : ""}Додано: ${nAdd}.${sc ? " Масштаб, м/пкс: " + sc + "." : ""}${noScale ? ` Для ${noScale} масштаб не визначився (немає доріг) — впишіть вручну.` : ""}` : "";
+      st.textContent = files.length ? `${skipped.length ? `Вже є, пропущено: ${skipped.join(", ")}. ` : ""}Додано: ${nAdd}.${this.cropped ? ` Обрізано поля: ${this.cropped}.` : ""}${sc ? " Масштаб, м/пкс: " + sc + "." : ""}${noScale ? ` Для ${noScale} масштаб не визначився (немає доріг) — впишіть вручну.` : ""}` : "";
       st.className = "status ok";
       this.$("a-file").value = "";
       if (nAdd) this.tab = "maps";

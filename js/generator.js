@@ -279,7 +279,8 @@
 
     async baseFromFile(file) {
       try {
-        const img = await loadImg(await fileToDataURL(file));
+        let img = await loadImg(await fileToDataURL(file));
+        const cr = Crop.auto(img); if (cr) img = cr.canvas;   // прибрати поля довкола карти
         await this.setBase(img, file.name.replace(/\.[^.]+$/, "")); this.baseMeta = null;
         const gsd = Scale.fromName(file.name.replace(/\.[^.]+$/, "")) || (Scale.estimate(img) || {}).gsd;
         if (gsd) { this.$("g-gsd").value = gsd; LS.set("poshuk_gen_gsd", String(gsd)); this.autoSize(); }
