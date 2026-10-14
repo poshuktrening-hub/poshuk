@@ -493,7 +493,7 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .ca-list button { padding: 4px 10px; font-size: .82rem; }
 .ca-list .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--miss); flex: 0 0 auto; } .ca-list .dot.on { background: var(--hit); }
 #ca .tabs { margin-top: 10px; }
-.c-reveal .credit { font-size: .74rem; color: var(--muted); }
+.c-reveal .credit { font-size: .62rem; line-height: 1.3; color: var(--muted); opacity: .45; margin-top: 8px; overflow-wrap: anywhere; }
 .ca-list .th { width: 56px; height: 38px; object-fit: cover; border-radius: 6px; background: #000; flex: 0 0 auto; }
 .ca-list .nm small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
