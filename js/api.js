@@ -107,5 +107,10 @@
     return `${url}/obj/${encodeURIComponent(id)}?t=${encodeURIComponent(await token(password))}`;
   }
 
-  window.API = {call, loadImage, uploadStage, objUrl, url, isCF, LS, SS, imgCache};
+  async function cardUrl(id, ver, password) {
+    if (!isCF || !id) return null;
+    return `${url}/card/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}&t=${encodeURIComponent(await token(password))}`;
+  }
+
+  window.API = {call, loadImage, uploadStage, objUrl, cardUrl, url, isCF, LS, SS, imgCache};
 })();

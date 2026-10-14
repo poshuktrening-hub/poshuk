@@ -53,6 +53,7 @@
           <button type="button" class="primary" id="a-auto" title="Сам розставляє техніку на картах і створює етапи">⚡ Автогенератор</button>
           <button type="button" id="a-add" title="Знімки без техніки: масштаб, напрямок і пора року визначаються самі">＋ Карти</button>
           <button type="button" id="a-gen" title="Поставити техніку вручну">✎ Генератор</button>
+          <button type="button" id="a-cards" title="Фото для режиму «Картки цілей»">🃏 Картки</button>
         </div>
         <input type="file" id="a-file" accept="image/*" multiple hidden>
         <p class="status" id="a-up-status"></p>
@@ -135,6 +136,7 @@
       this.loadObjects();
       $("a-tdel").onclick = () => this.deleteTarget(this.tsel);
       $("a-heat").onclick = () => this.toggleHeat();
+      $("a-cards").onclick = () => CardsAdmin.open(this);
       $("a-auto").onclick = () => { this.heatOn = false; AutoGen.open(this); };
       $("a-gen").onclick = async () => { await this.flushSave(); this.heatOn = false; Gen.open(this); };
       $("a-settings-btn").onclick = () => this.settings();

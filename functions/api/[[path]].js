@@ -28,6 +28,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS clicks (stage TEXT, x INTEGER, y INTEGER, hit INTEGER, ts TEXT, who TEXT)`,
   `CREATE INDEX IF NOT EXISTS clicks_stage ON clicks (stage)`,
   `CREATE TABLE IF NOT EXISTS results (ts TEXT, callsign TEXT, total INTEGER, max INTEGER, pct INTEGER, conclusion TEXT, scores TEXT)`,
+  `CREATE TABLE IF NOT EXISTS card_photos (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
 ];
 
 class HttpError extends Error { constructor(msg, status = 200) { super(msg); this.status = status; } }
@@ -190,7 +191,8 @@ async function action(env, ctx, req, origin) {
     case "config": {
       const role = await auth(env, req, "player");
       const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects").all();
-      return {ok: true, settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, token: await makeToken(env, role)};
+      const {results: cp} = await env.DB.prepare("SELECT id,updated FROM card_photos").all();
+      return {ok: true, settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]), token: await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
   }
@@ -275,6 +277,19 @@ async function action(env, ctx, req, origin) {
         .bind(String(req.name || "техніка").slice(0, 40), Number(req.length_m) || 7, String(req.type || ""), String(req.ttx || "").slice(0, 2000), req.decoy === undefined || req.decoy === null ? null : (req.decoy ? 1 : 0), String(req.id)).run();
       return {ok: true};
     }
+    case "card_photos": {
+      const {results} = await env.DB.prepare("SELECT id,updated FROM card_photos").all();
+      return {ok: true, photos: results.map((r) => [r.id, r.updated])};
+    }
+    case "card_photo_upload": {
+      const id = String(req.id || "").slice(0, 40);
+      if (!/^[a-z0-9_]+$/.test(id)) throw new HttpError("Невірний id картки");
+      if (!req.data || req.data.length > 1_900_000) throw new HttpError("Фото завелике (до ~1,4 МБ)");
+      const up = new Date().toISOString();
+      await env.DB.prepare("INSERT OR REPLACE INTO card_photos (id,data,mime,updated) VALUES (?,?,?,?)").bind(id, String(req.data), String(req.mime || "image/jpeg"), up).run();
+      return {ok: true, updated: up};
+    }
+    case "card_photo_delete": await env.DB.prepare("DELETE FROM card_photos WHERE id=?").bind(String(req.id)).run(); return {ok: true};
     case "object_delete": await env.DB.prepare("DELETE FROM objects WHERE id=?").bind(String(req.id)).run(); return {ok: true};
   }
   throw new HttpError("Невідома дія");
@@ -329,6 +344,23 @@ async function submit(env, ctx, req) {
 }
 
 // ------------------------------------------------------------------ зображення техніки для брифінгу курсанта
+async function getCardPhoto(env, ctx, request, id, t, v) {
+  if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
+  const cache = caches.default, key = new Request(new URL(`/api/card/${id}?v=${encodeURIComponent(v || "")}`, request.url).toString());
+  let res = await cache.match(key);
+  if (!res) {
+    const r = await env.DB.prepare("SELECT data,mime FROM card_photos WHERE id=?").bind(id).first();
+    if (!r) return new Response("Не знайдено", {status: 404});
+    const bin = atob(r.data), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    res = new Response(bytes, {headers: {"Content-Type": r.mime || "image/jpeg", "Cache-Control": "public, max-age=86400"}});
+    ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
+  }
+  const out = new Response(res.body, res);
+  out.headers.set("Cache-Control", "private, max-age=86400");
+  return out;
+}
+
 async function getObject(env, ctx, request, id, t) {
   if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
   const cache = caches.default, key = new Request(new URL(`/api/obj/${id}`, request.url).toString());
@@ -388,6 +420,7 @@ export async function onRequest(context) {
     await db(env);
     if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], url.searchParams.get("t"));
     if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], url.searchParams.get("t"));
+    if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
     if (request.method === "PUT" && path[0] === "blob" && path[1]) return await putBlob(env, request, path[1], Number(path[2]));
     if (request.method === "GET") return json({ok: true, app: "poshuk", version: VERSION});
     if (request.method !== "POST") return json({ok: false, error: "Метод не підтримується"}, 405);

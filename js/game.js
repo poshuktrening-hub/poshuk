@@ -78,6 +78,7 @@
       this.cfg = j.settings;
       this.stages = j.stages;
       this.objects = j.objects || [];
+      this.cardPhotos = new Map(j.cardPhotos || []);
       this.typePool = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))];
     },
 
@@ -88,11 +89,27 @@
         regions: Array.isArray(saved.regions) ? saved.regions.filter((r) => Logic.REGIONS.includes(r)) : Logic.REGIONS.slice(),
         seasons: Array.isArray(saved.seasons) ? saved.seasons.filter((r) => Logic.SEASONS.includes(r)) : Logic.SEASONS.slice()};
       this.renderMenu();
+      try { if (window.Cards) Cards.renderMenu(); } catch (e) { console.error(e); }
       $("callsign").value = LS.get("poshuk_callsign", "");
       $("start-err").textContent = "";
+      this.view(this.lastView || "menu");
+      document.querySelectorAll("#s-start [data-go]").forEach((b) => (b.onclick = () => { SFX.click(); this.view(b.dataset.go); }));
       this.refreshPending();
       this.flushPending();
-      $("callsign").focus();
+      if (!$("callsign").value) $("callsign").focus();
+    },
+    /* Головне меню → підменю режиму. */
+    view(v) {
+      this.lastView = v;
+      $("main-menu").hidden = v !== "menu";
+      $("sub-search").hidden = v !== "search";
+      $("sub-cards").hidden = v !== "cards";
+      $("start-err").textContent = "";
+    },
+    callsignOk() {
+      const cs = $("callsign").value.trim();
+      if (!cs) { $("start-err").textContent = "Введіть позивний"; $("callsign").focus(); return null; }
+      LS.set("poshuk_callsign", cs); this.callsign = cs; return cs;
     },
 
     /* Головне меню: режим, напрямок, пора року (з кількістю етапів у кожному варіанті). */
@@ -131,11 +148,8 @@
 
     // ---------- гра
     start() {
-      const cs = $("callsign").value.trim();
-      if (!cs) { $("start-err").textContent = "Введіть позивний"; return; }
-      LS.set("poshuk_callsign", cs);
+      if (!this.callsignOk()) return;
       SFX.unlock();
-      this.callsign = cs;
       this.mode = Logic.MODES[this.sel.mode] || Logic.MODES.game;
       this.limit = this.mode.seconds || Math.round(this.cfg.time_limit_sec * (this.mode.time || 1));
       this.missLimit = this.mode.misses === null ? this.cfg.misses_allowed : this.mode.misses;
