@@ -450,3 +450,46 @@ details.model-box summary::-webkit-details-marker { display: none; }
 details.model-box summary img { width: 40px; height: 56px; object-fit: contain; background: #000; border-radius: 6px; flex: 0 0 auto; }
 .adm-actions .primary { order: -1; }
 .side .status:empty { display: none; }
+
+/* ---- головне меню: лише назви режимів ---- */
+.main-menu { display: grid; gap: 10px; margin-top: 16px; }
+.main-menu .mm { padding: 18px 16px; border-radius: 14px; text-align: left; background: rgba(8,11,14,.5); border: 1px solid var(--line); }
+.main-menu .mm b { font: 700 1.15rem var(--display); letter-spacing: -.01em; }
+.main-menu .mm:hover { border-color: var(--accent); background: rgba(255,178,62,.08); }
+.sub-h { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.sub-h h2 { margin: 0; font: 700 1.05rem var(--display); }
+.sub-h .back { padding: 0; text-decoration: none; }
+
+/* ---- «Картки цілей» (під телефон) ---- */
+.screen.cards { display: flex; flex-direction: column; height: var(--vvh, 100dvh); }
+.cards .bar.top { flex: 0 0 auto; }
+.cards .stage { font: 600 .9rem var(--body); }
+.cards .stats { display: flex; gap: 6px; }
+.cards .stats > div { display: flex; gap: 4px; align-items: baseline; padding: 3px 9px; border-radius: 999px; background: rgba(255,255,255,.06); }
+.cards .stats .lbl { display: none; } .cards .stats i { font-style: normal; }
+.cards .stats b { font: 600 .9rem var(--mono); color: var(--fg); } .cards .stats b.warn { color: var(--miss); }
+.cards .timebar { height: 3px; } .cards .timebar i { box-shadow: 0 0 8px rgba(255,178,62,.8); }
+.c-pic { position: relative; flex: 1 1 auto; min-height: 120px; background: #07090b; display: grid; place-items: center; overflow: hidden; }
+.c-pic img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.c-bottom { flex: 0 0 auto; position: relative; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+.c-row { display: flex; gap: 8px; }
+.c-row input { flex: 1; min-width: 0; font-size: 17px; padding: .75rem .85rem; border-radius: 12px; }   /* 17px — iOS не зумить */
+.c-row .primary { flex: 0 0 auto; padding: .7rem 1rem; border-radius: 12px; }
+.c-row2 { margin-top: 8px; justify-content: space-between; align-items: center; }
+.c-hint { margin: 0 0 8px; color: var(--accent); font-size: .95rem; }
+.c-reveal { max-height: 46vh; overflow: auto; padding-bottom: 6px; }
+.c-reveal h3 { margin: 4px 0 6px; font: 700 1.15rem var(--display); letter-spacing: -.01em; }
+.c-reveal p { margin: 0 0 6px; color: #cfd6da; line-height: 1.45; font-size: .95rem; }
+.c-v { font-weight: 600; } .c-v.ok { color: var(--hit); } .c-v.no { color: var(--miss); }
+.c-next { position: relative; margin-top: 6px; }
+.c-next .primary { width: 100%; padding: .8rem; border-radius: 12px; font-weight: 700; }
+.c-next .cd-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(23,18,10,.5); transform-origin: left; border-radius: 0 0 12px 12px; }
+td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
+@media (min-width: 900px) { .c-bottom { max-width: 760px; width: 100%; margin: 0 auto; border-left: 1px solid var(--line); border-right: 1px solid var(--line); border-radius: 14px 14px 0 0; } }
+.adm-actions #a-cards { grid-column: 1 / -1; }
+.ca-list { list-style: none; margin: 10px 0 0; padding: 0; max-height: 52vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
+.ca-list li { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.ca-list .nm { flex: 1; min-width: 0; font-size: .9rem; } .ca-list .nm small { display: block; color: var(--muted); font: .72rem var(--mono); }
+.ca-list button { padding: 4px 10px; font-size: .82rem; }
+.ca-list .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--miss); flex: 0 0 auto; } .ca-list .dot.on { background: var(--hit); }
+#ca .tabs { margin-top: 10px; }
