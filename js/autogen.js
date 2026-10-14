@@ -19,8 +19,10 @@
   };
 
   const AutoGen = {
-    async open(admin) {
+    async open(admin, onlyMap) {
       this.admin = admin; this.pw = admin.pw;
+      this.onlyMap = onlyMap || null;
+      if (onlyMap && this.state) this.state.maps = new Set([onlyMap]);
       await admin.flushSave();
       this.sprites = this.sprites || new Map();
       this.maps = new Map();
@@ -37,7 +39,7 @@
 
     render() {
       const maps = this.mapList(), real = this.models(false), dec = this.models(true);
-      const st = this.state = this.state || {maps: new Set(maps.map((m) => m.id)), real: new Set(real.map((o) => o.id)), dec: new Set(dec.map((o) => o.id)),
+      const st = this.state = this.state || {maps: new Set(this.onlyMap ? [this.onlyMap] : maps.map((m) => m.id)), real: new Set(real.map((o) => o.id)), dec: new Set(dec.map((o) => o.id)),
         n: 5, tmin: 1, tmax: 2, dmin: 0, dmax: 1, level: "norm", tracks: true};
       const tag = (m) => [Logic.region(m), m.season].filter(Boolean).join(" · ");
       const opt = (a, b, v) => Array.from({length: b - a + 1}, (_, i) => a + i).map((x) => `<option${x === v ? " selected" : ""}>${x}</option>`).join("");
@@ -51,7 +53,7 @@
         <div class="row"><button type="button" id="ag-add">Додати карти…</button><input type="file" id="ag-file" accept="image/*" multiple hidden></div>
         <p class="muted small">Масштаб визначається сам (за шириною доріг) або з назви файлу: «Північ · Літо · 02 · 0.1». Його можна поправити тут. Назва файлу також задає напрямок і пору року.</p>
 
-        <h3>Техніка</h3>
+        <h3>Техніка <button type="button" class="link" id="ag-models">＋ PNG моделі…</button><input type="file" id="ag-mfile" accept="image/png,image/*" multiple hidden></h3>
         <div class="ag-grid">${real.map((o) => `<label class="chk"><input type="checkbox" data-real="${o.id}"${st.real.has(o.id) ? " checked" : ""}> ${esc(o.name.replace(/\s*\(вбудована\)$/, ""))}</label>`).join("")}</div>
         <h3>Муляжі</h3>
         <div class="ag-grid">${dec.map((o) => `<label class="chk"><input type="checkbox" data-dec="${o.id}"${st.dec.has(o.id) ? " checked" : ""}> ${esc(o.name)}</label>`).join("") || `<span class="muted small">Немає</span>`}</div>
@@ -94,6 +96,15 @@
         this.say(`Додано карт: ${files.length}. Вкажіть їхній масштаб.`, "ok");
       };
       $("ag-go").onclick = () => this.run();
+      $("ag-models").onclick = () => $("ag-mfile").click();
+      $("ag-mfile").onchange = async (e) => {
+        const files = [...e.target.files]; if (!files.length) return;
+        this.say(`Додаю моделі: ${files.length}… (фон прибирається сам; «Муляж …» у назві — муляж)`);
+        const n = await Gen.importObjects(files, this.pw);
+        await this.admin.loadObjects();
+        this.models(false).forEach((o) => st.real.add(o.id)); this.models(true).forEach((o) => st.dec.add(o.id));
+        this.render(); this.say(`Додано/оновлено моделей: ${n}.`, "ok");
+      };
     },
 
     say(text, cls = "") { const s = $("ag-st"); if (s) { s.textContent = text; s.className = "status " + cls; } },
