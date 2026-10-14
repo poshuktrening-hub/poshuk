@@ -44,7 +44,7 @@
       // пошук повертає й сміття (туманності, газети, інші гелікоптери) — у назві файлу має бути позначення моделі
       const nz = (s) => String(s).toLowerCase().replace(/[^a-z0-9а-яіїєґ]/g, "");
       const keys = q.split(/\s+/).filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
-      const need = keys.length ? keys : [nz(q.split(/\s+/)[0])];
+      const need = keys.length ? keys : q.split(/\s+/).map(nz).filter((w) => w.length >= 3);
       take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/decoy|inflatable|maket|макет|model|toy|replica|lego/i.test(p.title); }));
     }
     return out;
