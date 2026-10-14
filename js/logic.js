@@ -132,5 +132,29 @@
     return {ok: checks.filter((c) => c[1]).length, total: checks.length, checks};
   }
 
-  window.Logic = {MODES, REGIONS, SEASONS, region, regionOf, rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
+  /* Категорія техніки для аналітики інструктора (картки й цілі на знімках). */
+  const CATS = [
+    ["ППО", /^(зрк|зргк|зрс|зсу|зу|зак)$/, /зрк|зенітн|зу-23|ппо/],
+    ["БпЛА", /^(бпла|катапульта)$/, /бпла|дрон|катапульт/],
+    ["Танки", /^танк$/, /танк|т-\d/],
+    ["БМП, БТР, броньовики", /^(бмп|бмд|бмпт|бтр|брдм|брм|рхм|бронеавтомобіль|тягач)$/, /бмп|бмд|бтр|брдм|броне|мт-лб/],
+    ["Артилерія", /^(сау|гаубиця|гармата|міномет|гаубиця-гармата|гармата-гаубиця-міномет)$/, /сау|гаубиц|гармат|міномет/],
+    ["РСЗВ і ракети", /^(рсзв|отрк|брк)$/, /рсзв|отрк|ракетн/],
+    ["РЕБ", /^реб$/, /реб/],
+    ["РЛС і розвідка", /^(рлс|арк)$/, /рлс|радар/],
+    ["Зв'язок і КШМ", /^(кшм|машина)$/, /кшм|зв'язк/],
+    ["Інженерна", /^(імр|бат|мінний|птс|брем|мостоукладач|понтонний|паром|пзм|мдк|робот|екскаватор)$/, /інженер|понтон|мост/],
+    ["Автомобілі", /^(вантажівка|автомобіль|паливозаправник|тзм|сідельний|багі|легковик)$/, /вантаж|автомоб|легков/],
+    ["Авіація", /^(літак|гелікоптер)$/, /літак|гелікоптер/],
+    ["ПТРК", /^птрк$/, /птрк/],
+    ["Укриття", /^(бліндаж|укриття)$/, /бліндаж|укритт/],
+  ];
+  function category(s) {
+    const t = String(s || "").toLowerCase().trim(), w = t.split(/[\s/]+/)[0];
+    for (const [name, first] of CATS) if (first.test(w)) return name;
+    for (const [name, , any] of CATS) if (any.test(t)) return name;
+    return "Інше";
+  }
+
+  window.Logic = {category, MODES, REGIONS, SEASONS, region, regionOf, rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
 })();
