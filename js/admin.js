@@ -60,14 +60,14 @@
         <p class="status" id="a-up-status"></p>
         <section>
           <div class="tabs" id="a-tabs"><button type="button" data-t="stages" class="on">Етапи</button><button type="button" data-t="maps">Карти</button></div>
-          <div class="row filters"><select id="a-filter-dir"><option value="">Усі напрямки</option></select><select id="a-filter-season"><option value="">Усі пори року</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select></div>
+          <div class="row filters"><select id="a-filter-dir"><option value="">Усі напрямки</option></select><select id="a-filter-season"><option value="">Усі пори року</option><option>Літо</option><option>Зима</option></select></div>
           <ul class="list" id="a-stages"></ul>
         </section>
         <section id="a-stage-box" hidden>
           <input id="a-title" aria-label="Назва" class="title-in">
           <div class="kv3">
             <label>Напрямок<select id="a-dir"><option value="">—</option>${Logic.REGIONS.map((r) => `<option>${r}</option>`).join("")}</select></label>
-            <label>Пора року<select id="a-season"><option value="">—</option><option>Зима</option><option>Весна</option><option>Літо</option><option>Осінь</option></select></label>
+            <label>Пора року<select id="a-season"><option value="">—</option><option>Літо</option><option>Зима</option></select></label>
             <label title="м на 1 піксель знімка — визначається сам">Масштаб<input id="a-gsd" type="number" min="0" max="10" step="0.01" placeholder="авто"></label>
           </div>
           <button type="button" class="primary" id="a-gen-map" hidden>⚡ Згенерувати етапи з цієї карти</button>
@@ -357,7 +357,7 @@
           if (this.stages.some((s) => s.title === title && !s.targets.length)) { skipped.push(title); continue; }
           last = await this.uploadOne(files[i], title);
           const parts = title.split(/\s*[·|_]\s*|\s+-\s+/).map((x) => x.trim());
-          const season = parts.find((x) => /^(зима|весна|літо|осінь)$/i.test(x));
+          const season = parts.find((x) => /^(зима|літо)$/i.test(x));
           if (season) {
             last.season = season[0].toUpperCase() + season.slice(1).toLowerCase();
             const d = parts.find((x) => x && x !== season && !/^\d+$/.test(x)) || "";
