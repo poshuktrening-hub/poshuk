@@ -89,6 +89,7 @@
       this.sel = {mode: Logic.MODES[saved.mode] ? saved.mode : "game",
         regions: Array.isArray(saved.regions) ? saved.regions.filter((r) => Logic.REGIONS.includes(r)) : Logic.REGIONS.slice(),
         seasons: Array.isArray(saved.seasons) ? saved.seasons.filter((r) => Logic.SEASONS.includes(r)) : Logic.SEASONS.slice()};
+      if (!this.sel.seasons.length) this.sel.seasons = Logic.SEASONS.slice();   // збережені «Весна/Осінь» більше не існують
       this.renderMenu();
       try { if (window.Cards) Cards.renderMenu(); } catch (e) { console.error(e); }
       $("callsign").value = LS.get("poshuk_callsign", "");
