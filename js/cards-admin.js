@@ -45,7 +45,7 @@
       const nz = (s) => String(s).toLowerCase().replace(/[^a-z0-9а-яіїєґ]/g, "");
       const keys = q.split(/\s+/).filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
       const need = keys.length ? keys : q.split(/\s+/).map(nz).filter((w) => w.length >= 3);
-      take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/decoy|inflatable|maket|макет|model|toy|replica|lego/i.test(p.title); }));
+      take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|emblem|logo|\bmap\b/i.test(p.title); }));
     }
     return out;
   }
