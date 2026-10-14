@@ -79,6 +79,7 @@
       this.stages = j.stages;
       this.objects = j.objects || [];
       this.cardPhotos = new Map(j.cardPhotos || []);
+      this.cardCredits = new Map(j.cardCredits || []);
       this.typePool = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))];
     },
 
