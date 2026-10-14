@@ -156,7 +156,8 @@
       $("c-form").hidden = true;
       const verdict = r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +10</p>`
         : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
-      $("c-reveal").innerHTML = `${verdict}<h3>${esc(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>`;
+      const cr = Game.cardCredits && Game.cardCredits.get(c.id);
+      $("c-reveal").innerHTML = `${verdict}<h3>${esc(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
       const last = this.idx === this.rounds.length - 1;
       $("c-next").textContent = last ? "Підсумок →" : "Далі →";

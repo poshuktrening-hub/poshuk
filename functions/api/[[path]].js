@@ -47,6 +47,7 @@ async function db(env) {
     try { await env.DB.prepare("ALTER TABLE objects ADD COLUMN decoy INTEGER DEFAULT 0").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE stages ADD COLUMN meta TEXT").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE results ADD COLUMN mode TEXT").run(); } catch (e) { /* колонка вже є */ }
+    try { await env.DB.prepare("ALTER TABLE card_photos ADD COLUMN credit TEXT").run(); } catch (e) { /* колонка вже є */ }
     schemaReady = true;
   }
   return env.DB;
@@ -191,8 +192,9 @@ async function action(env, ctx, req, origin) {
     case "config": {
       const role = await auth(env, req, "player");
       const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects").all();
-      const {results: cp} = await env.DB.prepare("SELECT id,updated FROM card_photos").all();
-      return {ok: true, settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]), token: await makeToken(env, role)};
+      const {results: cp} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
+      return {ok: true, settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]),
+        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), token: await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
   }
@@ -278,15 +280,15 @@ async function action(env, ctx, req, origin) {
       return {ok: true};
     }
     case "card_photos": {
-      const {results} = await env.DB.prepare("SELECT id,updated FROM card_photos").all();
-      return {ok: true, photos: results.map((r) => [r.id, r.updated])};
+      const {results} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
+      return {ok: true, photos: results.map((r) => [r.id, r.updated]), credits: results.filter((r) => r.credit).map((r) => [r.id, r.credit])};
     }
     case "card_photo_upload": {
       const id = String(req.id || "").slice(0, 40);
       if (!/^[a-z0-9_]+$/.test(id)) throw new HttpError("Невірний id картки");
       if (!req.data || req.data.length > 1_900_000) throw new HttpError("Фото завелике (до ~1,4 МБ)");
       const up = new Date().toISOString();
-      await env.DB.prepare("INSERT OR REPLACE INTO card_photos (id,data,mime,updated) VALUES (?,?,?,?)").bind(id, String(req.data), String(req.mime || "image/jpeg"), up).run();
+      await env.DB.prepare("INSERT OR REPLACE INTO card_photos (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(id, String(req.data), String(req.mime || "image/jpeg"), up, String(req.credit || "").slice(0, 400)).run();
       return {ok: true, updated: up};
     }
     case "card_photo_delete": await env.DB.prepare("DELETE FROM card_photos WHERE id=?").bind(String(req.id)).run(); return {ok: true};
