@@ -285,8 +285,9 @@ async function action(env, ctx, req, origin) {
       const since = String(req.since || "0000");
       const {results: ans} = await env.DB.prepare("SELECT callsign, kind, cat, name, SUM(ok) ok, COUNT(*) n FROM answers WHERE ts >= ? GROUP BY callsign, kind, cat, name").bind(since).all();
       const {results: res} = await env.DB.prepare("SELECT callsign, mode, COUNT(*) n, AVG(pct) avg, MAX(ts) last FROM results WHERE ts >= ? GROUP BY callsign, mode").bind(since).all();
+      const {results: list} = await env.DB.prepare("SELECT ts, callsign, mode, total, max, pct, conclusion FROM results WHERE ts >= ? ORDER BY ts DESC LIMIT 500").bind(since).all();
       const first = await env.DB.prepare("SELECT MIN(ts) t FROM answers").first();
-      return {ok: true, answers: ans, results: res, since: first ? first.t : null};
+      return {ok: true, answers: ans, results: res, list, since: first ? first.t : null};
     }
     case "card_photos": {
       const {results} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();

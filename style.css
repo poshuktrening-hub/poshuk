@@ -539,3 +539,6 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .an-table .num { text-align: right; }
 .an-table a { color: inherit; text-decoration: underline dotted; }
 @media (max-width: 560px) { .an-cats li { grid-template-columns: minmax(0, 1fr) 3rem 4rem; } .an-cats .an-bar { grid-column: 1 / -1; order: 5; } }
+.an-table .nowrap { white-space: nowrap; }
+.an-table h3 small, .an-card h3 small { font-weight: 400; color: var(--muted); }
+.an-runs td { vertical-align: top; }

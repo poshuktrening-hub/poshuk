@@ -3,7 +3,9 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => UI.esc(s);
-  const kindOf = (mode) => (/^cards/.test(mode || "") ? "cards" : "search");
+  const kindOf = (mode, concl) => (/^cards/.test(mode || "") || /^Картки/.test(concl || "") ? "cards" : "search");
+  const MODE_NAME = {game: "Ігровий", exam: "Іспит", hard: "Хардкор", cards: "Ігровий", cards_exam: "Іспит"};
+  const when = (ts) => { const m = String(ts || "").match(/^\d{4}-(\d\d)-(\d\d)[ T](\d\d:\d\d)/); return m ? `${m[2]}.${m[1]} ${m[3]}` : String(ts || ""); };
   const pctOf = (ok, n) => (n ? Math.round(100 * ok / n) : 0);
   const tone = (p) => (p < 50 ? "bad" : p < 75 ? "mid" : "good");
   const MIN_ITEM = 2, MIN_CAT_CADET = 3;
@@ -21,7 +23,7 @@
 
     since() {
       if (!this.period) return "0000";
-      const d = new Date(Date.now() - Number(this.period) * 864e5), p2 = (x) => String(x).padStart(2, "0");
+      const d = this.period === "today" ? new Date() : new Date(Date.now() - Number(this.period) * 864e5), p2 = (x) => String(x).padStart(2, "0");
       return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} 00:00`;
     },
 
@@ -37,12 +39,15 @@
       d.answers.forEach((a) => { a.cat = Logic.category(a.name); });
       // «Svinina» і «svinina » — той самий курсант
       if (!d._cs) { const disp = new Map(), key = (c) => String(c || "").trim().toLowerCase();
-        [...d.results, ...d.answers].forEach((x) => { const k0 = key(x.callsign); if (!disp.has(k0)) disp.set(k0, String(x.callsign || "").trim()); x.callsign = disp.get(k0); }); d._cs = true; }   // категорію рахуємо за назвою — перейменування не дублюють рядки
+        [...d.results, ...d.answers, ...(d.list || [])].forEach((x) => { const k0 = key(x.callsign); if (!disp.has(k0)) disp.set(k0, String(x.callsign || "").trim()); x.callsign = disp.get(k0); }); d._cs = true; }   // категорію рахуємо за назвою — перейменування не дублюють рядки
       const ans = d.answers.filter((a) => (!k || a.kind === k) && (!who || a.callsign === who));
       const res = d.results.filter((r) => (!k || kindOf(r.mode) === k) && (!who || r.callsign === who));
       const people = [...new Set([...d.results.map((r) => r.callsign), ...d.answers.map((a) => a.callsign)])].filter(Boolean).sort((a, b) => a.localeCompare(b, "uk"));
       if (who && !people.includes(who)) people.push(who);
 
+      // проходження — кожен тест з датою й часом
+      const runs = (d.list || []).filter((r) => (!k || kindOf(r.mode, r.conclusion) === k) && (!who || r.callsign === who));
+      const shown = runs.slice(0, 150);
       // по категоріях
       const cats = new Map();
       for (const a of ans) { const c = cats.get(a.cat) || {ok: 0, n: 0}; c.ok += a.ok; c.n += a.n; cats.set(a.cat, c); }
@@ -70,7 +75,7 @@
       $("an").innerHTML = `<div class="m-card an-card">
         <div class="m-head"><h2>Аналітика${who ? ` · ${esc(who)}` : ""}</h2><button type="button" class="link" id="an-x">Закрити</button></div>
         <div class="row an-filters">
-          ${sel("an-period", [["7", "7 днів"], ["30", "30 днів"], ["90", "90 днів"], ["", "Увесь час"]], this.period)}
+          ${sel("an-period", [["today", "Сьогодні"], ["7", "7 днів"], ["30", "30 днів"], ["90", "90 днів"], ["", "Увесь час"]], this.period)}
           ${sel("an-kind", [["", "Усі тести"], ["search", "Пошук цілей"], ["cards", "Картки цілей"]], this.kind)}
           ${sel("an-who", [["", "Уся група"], ...people.map((p) => [p, p])], who)}
         </div>
@@ -89,8 +94,12 @@
 
         <h3>Курсанти</h3>
         ${cadets.length ? `<div class="an-scroll"><table class="an-table"><tr><th>Позивний</th><th class="num">Тестів</th><th class="num">Середній</th><th>Найслабше</th><th class="num">Останній</th></tr>
-          ${cadets.map((c) => `<tr data-who="${esc(c.p)}"><td><a href="#" data-who="${esc(c.p)}">${esc(c.p)}</a></td><td class="num">${c.n}</td><td class="num ${c.av == null ? "" : tone(c.av)}">${c.av == null ? "—" : c.av + "%"}</td><td>${c.weak ? `${esc(c.weak.cat)} <small>${c.weak.p}%</small>` : "<small class=muted>мало даних</small>"}</td><td class="num"><small>${esc(c.last.slice(5, 10).split("-").reverse().join("."))}</small></td></tr>`).join("")}</table></div>`
+          ${cadets.map((c) => `<tr data-who="${esc(c.p)}"><td><a href="#" data-who="${esc(c.p)}">${esc(c.p)}</a></td><td class="num">${c.n}</td><td class="num ${c.av == null ? "" : tone(c.av)}">${c.av == null ? "—" : c.av + "%"}</td><td>${c.weak ? `${esc(c.weak.cat)} <small>${c.weak.p}%</small>` : "<small class=muted>мало даних</small>"}</td><td class="num"><small>${esc(when(c.last))}</small></td></tr>`).join("")}</table></div>`
           : `<p class="muted small">Немає результатів за цей період.</p>`}
+        <h3>Проходження${runs.length ? ` <small>${runs.length}${runs.length > shown.length ? `, показано ${shown.length}` : ""}</small>` : ""}</h3>
+        ${shown.length ? `<div class="an-scroll"><table class="an-table an-runs"><tr><th>Дата, час</th><th>Позивний</th><th>Тест</th><th class="num">Результат</th><th>Висновок</th></tr>
+          ${shown.map((r) => `<tr><td class="nowrap">${esc(when(r.ts))}</td><td><a href="#" data-who="${esc(r.callsign)}">${esc(r.callsign)}</a></td><td>${kindOf(r.mode, r.conclusion) === "cards" ? "Картки" : "Пошук"}<small> · ${esc(MODE_NAME[r.mode] || "—")}</small></td><td class="num nowrap"><b class="${tone(r.pct)}">${r.pct}%</b> <small>${r.total}/${r.max}</small></td><td><small>${esc(String(r.conclusion || "").replace(/^(Картки( \(іспит\))?|Іспит|Хардкор): /, ""))}</small></td></tr>`).join("")}</table></div>`
+          : `<p class="muted small">Ніхто не проходив тести за цей період.</p>`}
         <p class="muted small">Категорії рахуються з ${d.since ? esc(d.since.slice(0, 10).split("-").reverse().join(".")) : "наступного тесту"}: відтоді зберігається кожна відповідь (картка або ціль на знімку). Середній результат — за всіма тестами періоду.</p>
       </div>`;
       $("an-x").onclick = () => ($("an").hidden = true);
