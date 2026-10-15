@@ -112,6 +112,7 @@
     },
     /* Головне меню → підменю режиму. */
     view(v) {
+      if (v === "ref") { if (window.Ref) Ref.open(); return; }
       this.lastView = v;
       $("main-menu").hidden = v !== "menu";
       $("sub-search").hidden = v !== "search";

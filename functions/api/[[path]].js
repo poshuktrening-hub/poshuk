@@ -31,6 +31,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS card_photos (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
   `CREATE TABLE IF NOT EXISTS answers (ts TEXT, callsign TEXT, kind TEXT, mode TEXT, item TEXT, name TEXT, cat TEXT, ok INTEGER)`,
   `CREATE INDEX IF NOT EXISTS answers_ts ON answers (ts)`,
+  `CREATE TABLE IF NOT EXISTS ref_entries (id TEXT PRIMARY KEY, ord INTEGER, cat TEXT, name TEXT, ttx TEXT, descr TEXT, imgs TEXT, updated TEXT)`,
+  `CREATE TABLE IF NOT EXISTS ref_images (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
 ];
 
 class HttpError extends Error { constructor(msg, status = 200) { super(msg); this.status = status; } }
@@ -201,6 +203,11 @@ async function action(env, ctx, req, origin) {
         cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), token: await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
+    case "ref_list": {
+      await auth(env, req, "player");
+      const {results} = await env.DB.prepare("SELECT id, ord, cat, name, ttx, descr, imgs, updated FROM ref_entries ORDER BY ord").all();
+      return {ok: true, entries: results.map((r) => ({id: r.id, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
+    }
     case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env)}; }
   }
   await auth(env, req, "admin");
@@ -302,6 +309,31 @@ async function action(env, ctx, req, origin) {
         try { sheet = await gas(env, {action: "archive", secret: env.SHEETS_SECRET}); } catch (e) { sheet = {ok: false, error: String(e.message || e)}; }
       }
       return {ok: true, archived: n, sheet};
+    }
+    case "ref_put": {   // одна позиція довідника разом із її зображеннями
+      const e = req.entry || {}, id = String(e.id || "").slice(0, 40);
+      if (!/^[a-z0-9_-]+$/i.test(id)) throw new HttpError("Невірний id позиції");
+      const up = new Date().toISOString(), st = [];
+      for (const im of (req.images || []).slice(0, 12)) {
+        const iid = String(im.id || "").slice(0, 50);
+        if (!/^[a-z0-9_-]+$/i.test(iid) || !im.data || im.data.length > 1_900_000) throw new HttpError("Зображення завелике або без id");
+        st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_images (id,data,mime,updated) VALUES (?,?,?,?)").bind(iid, String(im.data), String(im.mime || "image/jpeg"), up));
+      }
+      st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_entries (id,ord,cat,name,ttx,descr,imgs,updated) VALUES (?,?,?,?,?,?,?,?)")
+        .bind(id, Number(e.ord) || 0, String(e.cat || "").slice(0, 80), String(e.name || "").slice(0, 200), String(e.ttx || "").slice(0, 8000),
+          String(e.desc || "").slice(0, 20000), JSON.stringify((e.imgs || []).map(String).slice(0, 12)), up));
+      await env.DB.batch(st);
+      return {ok: true};
+    }
+    case "ref_prune": {   // після імпорту: прибрати позиції й зображення, яких немає в новій версії довідника
+      const keep = new Set((req.keep || []).map(String));
+      const {results} = await env.DB.prepare("SELECT id, imgs FROM ref_entries").all();
+      const keepImg = new Set(), st = [];
+      for (const r of results) { if (keep.has(r.id)) JSON.parse(r.imgs || "[]").forEach((x) => keepImg.add(x)); else st.push(env.DB.prepare("DELETE FROM ref_entries WHERE id=?").bind(r.id)); }
+      const {results: ims} = await env.DB.prepare("SELECT id FROM ref_images").all();
+      for (const r of ims) if (!keepImg.has(r.id)) st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(r.id));
+      if (st.length) await env.DB.batch(st);
+      return {ok: true, removed: st.length};
     }
     case "card_photos": {
       const {results} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
@@ -409,6 +441,23 @@ async function getCardPhoto(env, ctx, request, id, t, v) {
   return out;
 }
 
+async function getRefImage(env, ctx, request, id, t, v) {
+  if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
+  const cache = caches.default, key = new Request(new URL(`/api/ref/${id}?v=${encodeURIComponent(v || "")}`, request.url).toString());
+  let res = await cache.match(key);
+  if (!res) {
+    const r = await env.DB.prepare("SELECT data,mime FROM ref_images WHERE id=?").bind(id).first();
+    if (!r) return new Response("Не знайдено", {status: 404});
+    const bin = atob(r.data), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    res = new Response(bytes, {headers: {"Content-Type": r.mime || "image/jpeg", "Cache-Control": "public, max-age=604800"}});
+    ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
+  }
+  const out = new Response(res.body, res);
+  out.headers.set("Cache-Control", "private, max-age=604800");
+  return out;
+}
+
 async function getObject(env, ctx, request, id, t) {
   if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
   const cache = caches.default, key = new Request(new URL(`/api/obj/${id}`, request.url).toString());
@@ -469,6 +518,7 @@ export async function onRequest(context) {
     if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], url.searchParams.get("t"));
     if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], url.searchParams.get("t"));
     if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
+    if (request.method === "GET" && path[0] === "ref" && path[1]) return await getRefImage(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
     if (request.method === "PUT" && path[0] === "blob" && path[1]) return await putBlob(env, request, path[1], Number(path[2]));
     if (request.method === "GET") return json({ok: true, app: "poshuk", version: VERSION});
     if (request.method !== "POST") return json({ok: false, error: "Метод не підтримується"}, 405);

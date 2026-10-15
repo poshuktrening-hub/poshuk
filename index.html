@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Пошук техніки</title>
 <link rel="preload" href="fonts/geologica-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="fonts.css?v=202610151200">
-<link rel="stylesheet" href="style.css?v=202610151200">
+<link rel="stylesheet" href="fonts.css?v=202610151230">
+<link rel="stylesheet" href="style.css?v=202610151230">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f1317'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23ffb23e' stroke-width='2.5'/%3E%3Cpath d='M16 3v8M16 21v8M3 16h8M21 16h8' stroke='%23ffb23e' stroke-width='2.5'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -39,6 +39,7 @@
     <div class="main-menu" id="main-menu">
       <button type="button" class="mm" data-go="search"><b>Пошук цілей</b><ol class="top3" id="top-search"></ol></button>
       <button type="button" class="mm" data-go="cards"><b>Картки цілей</b><ol class="top3" id="top-cards"></ol></button>
+      <button type="button" class="mm mm-ref" data-go="ref"><b>Довідник техніки</b><span>Фото, ТТХ і характерні ознаки — без оцінок</span></button>
     </div>
     <div class="sub" id="sub-search" hidden>
       <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Пошук цілей</h2></div>
@@ -87,6 +88,15 @@
     </form>
     <div class="c-next" id="c-nextbox" hidden><button type="button" class="primary" id="c-next">Далі</button><i class="cd-bar" id="c-cd"></i></div>
   </div>
+</section>
+
+<!-- довідник техніки -->
+<section id="s-ref" class="screen ref" hidden>
+  <header class="bar top"><button type="button" class="link" id="r-back">← Меню</button><div class="stage">Довідник техніки</div><span class="muted small" id="r-count"></span></header>
+  <div class="r-tools"><input id="r-q" type="search" placeholder="Пошук: Т-72, Бук, РЕБ, катки…" autocomplete="off" aria-label="Пошук у довіднику"><div class="chips r-cats" id="r-cats"></div></div>
+  <div class="r-list" id="r-list"></div>
+  <div class="r-detail" id="r-detail" hidden></div>
+  <div class="r-zoom" id="r-zoom" hidden></div>
 </section>
 
 <!-- гра -->
@@ -141,27 +151,28 @@
 
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="config.js?v=202610151200"></script>
-<script src="js/sfx.js?v=202610151200"></script>
-<script src="js/fx.js?v=202610151200"></script>
-<script src="js/api.js?v=202610151200"></script>
-<script src="js/tiles.js?v=202610151200"></script>
-<script src="js/viewer.js?v=202610151200"></script>
-<script src="js/logic.js?v=202610151200"></script>
-<script src="js/game.js?v=202610151200"></script>
-<script src="js/cards-data.js?v=202610151200"></script>
-<script src="js/cards-data2.js?v=202610151200"></script>
-<script src="js/cards.js?v=202610151200"></script>
-<script src="js/cards-commons.js?v=202610151200"></script>
-<script src="js/cards-admin.js?v=202610151200"></script>
-<script src="js/analytics.js?v=202610151200"></script>
-<script src="js/compose.js?v=202610151200"></script>
-<script src="js/scale.js?v=202610151200"></script>
-<script src="js/crop.js?v=202610151200"></script>
-<script src="js/models.js?v=202610151200"></script>
-<script src="js/generator.js?v=202610151200"></script>
-<script src="js/autogen.js?v=202610151200"></script>
-<script src="js/admin.js?v=202610151200"></script>
-<script src="js/main.js?v=202610151200"></script>
+<script src="config.js?v=202610151230"></script>
+<script src="js/sfx.js?v=202610151230"></script>
+<script src="js/fx.js?v=202610151230"></script>
+<script src="js/api.js?v=202610151230"></script>
+<script src="js/tiles.js?v=202610151230"></script>
+<script src="js/viewer.js?v=202610151230"></script>
+<script src="js/logic.js?v=202610151230"></script>
+<script src="js/game.js?v=202610151230"></script>
+<script src="js/cards-data.js?v=202610151230"></script>
+<script src="js/cards-data2.js?v=202610151230"></script>
+<script src="js/cards.js?v=202610151230"></script>
+<script src="js/ref.js?v=202610151230"></script>
+<script src="js/cards-commons.js?v=202610151230"></script>
+<script src="js/cards-admin.js?v=202610151230"></script>
+<script src="js/analytics.js?v=202610151230"></script>
+<script src="js/compose.js?v=202610151230"></script>
+<script src="js/scale.js?v=202610151230"></script>
+<script src="js/crop.js?v=202610151230"></script>
+<script src="js/models.js?v=202610151230"></script>
+<script src="js/generator.js?v=202610151230"></script>
+<script src="js/autogen.js?v=202610151230"></script>
+<script src="js/admin.js?v=202610151230"></script>
+<script src="js/main.js?v=202610151230"></script>
 </body>
 </html>
