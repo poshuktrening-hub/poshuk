@@ -542,3 +542,13 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .an-table .nowrap { white-space: nowrap; }
 .an-table h3 small, .an-card h3 small { font-weight: 400; color: var(--muted); }
 .an-runs td { vertical-align: top; }
+
+/* Головне меню · топ-3 */
+.main-menu .mm { display: grid; gap: 8px; }
+.top3 { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: .86rem; }
+.top3[hidden] { display: none; }
+.top3 li { display: grid; grid-template-columns: 1.4rem minmax(0, 1fr) auto; align-items: center; gap: 6px; color: #cfd6da; }
+.top3 li i { font-style: normal; font-size: .95rem; }
+.top3 li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top3 li em { font-style: normal; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+#a-settings h3 { margin: 18px 0 4px; font: 600 .95rem var(--body); }

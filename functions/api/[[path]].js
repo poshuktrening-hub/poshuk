@@ -199,6 +199,7 @@ async function action(env, ctx, req, origin) {
         cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), token: await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
+    case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env)}; }
   }
   await auth(env, req, "admin");
   switch (a) {
@@ -289,6 +290,12 @@ async function action(env, ctx, req, origin) {
       const first = await env.DB.prepare("SELECT MIN(ts) t FROM answers").first();
       return {ok: true, answers: ans, results: res, list, since: first ? first.t : null};
     }
+    case "clear_history": {
+      if (req.confirm !== "ОЧИСТИТИ") throw new HttpError("Не підтверджено");
+      const n = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM results) r, (SELECT COUNT(*) FROM answers) a, (SELECT COUNT(*) FROM clicks) c").first();
+      await env.DB.batch(["DELETE FROM results", "DELETE FROM answers", "DELETE FROM clicks"].map((q) => env.DB.prepare(q)));
+      return {ok: true, deleted: n};
+    }
     case "card_photos": {
       const {results} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
       return {ok: true, photos: results.map((r) => [r.id, r.updated]), credits: results.filter((r) => r.credit).map((r) => [r.id, r.credit])};
@@ -333,6 +340,21 @@ async function dedupeObjects(env) {
   for (const id of remap.keys()) ops.push(env.DB.prepare("DELETE FROM objects WHERE id=?").bind(id));
   await env.DB.batch(ops);
   return remap.size;
+}
+
+/* Топ-3 для головного меню: найкращий результат кожного позивного окремо для «Пошуку цілей» і «Карток». */
+async function top3(env) {
+  const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results ORDER BY ts DESC LIMIT 5000").all();
+  const out = {search: new Map(), cards: new Map()};
+  for (const r of results) {
+    const name = String(r.callsign || "").trim(); if (!name) continue;
+    const kind = /^cards/.test(r.mode || "") || /^Картки/.test(r.conclusion || "") ? "cards" : "search";
+    const key = name.toLowerCase(), m = out[kind], cur = m.get(key);
+    if (!cur) m.set(key, {name, best: r.pct, ts: r.ts, n: 1});
+    else { cur.n++; if (r.pct > cur.best || (r.pct === cur.best && r.ts < cur.ts)) { cur.best = r.pct; cur.ts = r.ts; } }
+  }
+  const pick = (m) => [...m.values()].sort((a, b) => b.best - a.best || b.n - a.n || String(a.ts).localeCompare(String(b.ts))).slice(0, 3).map((x) => ({name: x.name, pct: x.best, n: x.n}));
+  return {search: pick(out.search), cards: pick(out.cards)};
 }
 
 async function submit(env, ctx, req) {

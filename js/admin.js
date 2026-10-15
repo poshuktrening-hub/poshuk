@@ -474,7 +474,22 @@
           : `<label for="st-${k}">${l}</label><input id="st-${k}" type="${t}" value="${esc(s[k])}">`).join("") +
         `</div><p class="status muted">Паролі — щонайменше 6 символів. Після зміни пароля курсантам потрібно ввести новий.</p>
         <div class="row"><button class="primary" type="button" id="st-save">Зберегти</button><button type="button" id="st-close">Закрити</button></div>
-        <p class="status" id="st-status"></p>`;
+        <p class="status" id="st-status"></p>
+        <h3>Історія гри</h3>
+        <p class="status muted">Видаляє всі результати, аналітику, топ у меню й теплові карти кліків. Етапи, карти, техніка й картки лишаються. Google-таблиця не змінюється.</p>
+        <div class="row"><button type="button" class="danger" id="st-clear">🗑 Очистити історію гри</button></div>
+        <p class="status" id="st-clear-status"></p>`;
+      box.querySelector("#st-clear").onclick = async () => {
+        const out = box.querySelector("#st-clear-status");
+        const v = prompt("Буде видалено всю історію гри без можливості відновлення.\nЩоб підтвердити, введіть слово ОЧИСТИТИ");
+        if (v == null) return;
+        if (v.trim().toUpperCase() !== "ОЧИСТИТИ") { out.textContent = "Не підтверджено — нічого не видалено."; out.className = "status no"; return; }
+        try {
+          const j = await API.call("clear_history", {confirm: "ОЧИСТИТИ"}, this.pw);
+          const d = j.deleted || {};
+          out.textContent = `Очищено ✓ Результатів: ${d.r || 0}, відповідей: ${d.a || 0}, кліків: ${d.c || 0}.`; out.className = "status ok";
+        } catch (e) { out.textContent = e.message; out.className = "status no"; }
+      };
       box.querySelector("#st-close").onclick = () => { box.hidden = true; this.renderStage(); };
       box.querySelector("#st-save").onclick = async () => {
         const vals = {};
