@@ -16,8 +16,12 @@
     return c;
   }
 
-  async function build(src) {
+  /* opt.reuse (TiledImage) + opt.dirty ([{x,y,w,h}]): плитки поза зміненими ділянками беруться зі старого пакета як є —
+     без повторного JPEG-стиснення (якість решти знімка не падає) і швидше. */
+  async function build(src, opt = {}) {
     const full = await toCanvas(src);
+    const hit = (x, y, w, h) => !opt.dirty || opt.dirty.some((r) => r.x < x + w && r.x + r.w > x && r.y < y + h && r.y + r.h > y);
+    const addBlob = async (b) => { const u = new Uint8Array(await b.arrayBuffer()); parts.push(u); const r = [off, u.byteLength]; off += u.byteLength; return r; };
     const w = full.width, h = full.height;
     const parts = [], header = {w, h, tiles: []};
     let off = 0;
@@ -30,6 +34,8 @@
     if (k < 1) {
       for (let y = 0; y < h; y += TILE) for (let x = 0; x < w; x += TILE) {
         const tw = Math.min(TILE, w - x), th = Math.min(TILE, h - y);
+        const old = opt.reuse && opt.reuse.tiles && !hit(x, y, tw, th) && opt.reuse.tiles.find((q) => q.x === x && q.y === y && q.w === tw && q.h === th);
+        if (old) { header.tiles.push([x, y, tw, th, ...await addBlob(old.blob)]); continue; }
         const t = canvas(tw, th);
         t.getContext("2d").drawImage(full, x, y, tw, th, 0, 0, tw, th);
         header.tiles.push([x, y, tw, th, ...await add(t, 0.9)]);
