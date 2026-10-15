@@ -92,10 +92,11 @@
       if (!this.sel.seasons.length) this.sel.seasons = Logic.SEASONS.slice();   // збережені «Весна/Осінь» більше не існують
       this.renderMenu();
       try { if (window.Cards) Cards.renderMenu(); } catch (e) { console.error(e); }
-      $("callsign").value = LS.get("poshuk_callsign", "");
+      $("callsign").value = $("callsign").value.trim() || LS.get("poshuk_callsign", "");   // не губити щойно введений позивний
       $("start-err").textContent = "";
       this.view(this.lastView || "menu");
       document.querySelectorAll("#s-start [data-go]").forEach((b) => (b.onclick = () => { SFX.click(); this.view(b.dataset.go); }));
+      document.querySelectorAll("#s-start [data-help]").forEach((b) => (b.onclick = () => Help.show(b.dataset.help)));
       this.refreshPending();
       this.flushPending().then(() => this.loadTop());
       if (!$("callsign").value) $("callsign").focus();
@@ -163,6 +164,7 @@
     start() {
       if (!this.callsignOk()) return;
       SFX.unlock();
+      if (window.Help && Help.maybe("search", () => this.start())) return;   // перший раз — інструкція
       this.mode = Logic.MODES[this.sel.mode] || Logic.MODES.game;
       this.limit = this.mode.seconds || Math.round(this.cfg.time_limit_sec * (this.mode.time || 1));
       this.missLimit = this.mode.misses === null ? this.cfg.misses_allowed : this.mode.misses;
