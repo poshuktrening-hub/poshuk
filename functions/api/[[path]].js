@@ -176,7 +176,23 @@ function rowToStage(r) {
   return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, task: meta.task || "", direction: meta.direction || "", season: meta.season || "", gsd: Number(meta.gsd) || 0, hard: !!meta.hard, v: meta.v || ""};
 }
 
+/* Етапи, що «застрягли» (ready=0) після перерваного оновлення старою версією адмінки, — повернути з бекапу. */
+async function healStuck(env) {
+  const {results} = await env.DB.prepare("SELECT s.id FROM stages s JOIN stage_backups b ON b.id = s.id WHERE s.ready = 0").all();
+  for (const {id} of results) {
+    const b = await env.DB.prepare("SELECT targets,size,chunks FROM stage_backups WHERE id=?").bind(id).first();
+    const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind("bak_" + id).first();
+    if (!b || c.n !== b.chunks) continue;
+    await env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(id).run();
+    await env.DB.prepare("INSERT INTO blobs (id,part,data) SELECT ?, part, data FROM blobs WHERE id=?").bind(id, "bak_" + id).run();
+    await env.DB.prepare("UPDATE stages SET targets=?, size=?, chunks=?, ready=1 WHERE id=?").bind(b.targets, b.size, b.chunks, id).run();
+    await bumpStageVer(env, id);
+  }
+  return results.length;
+}
+
 async function stages(env, all) {
+  try { await healStuck(env); } catch (e) { /* не заважати завантаженню списку */ }
   const {results} = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE ready=1 ORDER BY created").all();
   return results.map(rowToStage).filter((s) => all || (s.enabled && s.targets.length));
 }
@@ -230,7 +246,6 @@ async function action(env, ctx, req, origin) {
       const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind(String(req.id)).first();
       if (c.n !== st.chunks) throw new HttpError(`Завантажено ${c.n} з ${st.chunks} частин — спробуйте ще раз`);
       await env.DB.prepare("UPDATE stages SET ready=1 WHERE id=?").bind(String(req.id)).run();
-      if (await env.DB.prepare("SELECT id FROM stage_backups WHERE id=?").bind(String(req.id)).first()) await bumpStageVer(env, String(req.id));
       await purgeImgCache(origin, String(req.id));
       const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id=?").bind(String(req.id)).first();
       return {ok: true, stage: rowToStage(r)};
@@ -279,10 +294,27 @@ async function action(env, ctx, req, origin) {
         if (c.n !== st.chunks) throw new HttpError("Бекап не вдався — етап не змінено");
         await env.DB.prepare("INSERT INTO stage_backups (id,targets,size,chunks,created) VALUES (?,?,?,?,?)").bind(id, st.targets, st.size, st.chunks, new Date().toISOString()).run();
       }
+      // новий знімок вантажиться окремо ("new_<id>"); живий етап не чіпається, доки все не дійде (stage_reimage_end)
       const chunks = Math.ceil(size / CHUNK);
-      await env.DB.batch([env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(id),
-        env.DB.prepare("UPDATE stages SET size=?, chunks=?, ready=0 WHERE id=?").bind(size, chunks, id)]);
-      return {ok: true, id, chunk: CHUNK, chunks, token: await makeToken(env, "admin")};
+      await env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("new_" + id).run();
+      await metaSet(env, "reimg_" + id, JSON.stringify({size, chunks}));
+      return {ok: true, id: "new_" + id, chunk: CHUNK, chunks, token: await makeToken(env, "admin")};
+    }
+    case "stage_reimage_end": {
+      const id = String(req.id);
+      let pend = null; try { pend = JSON.parse(await metaGet(env, "reimg_" + id) || "null"); } catch (e) { pend = null; }
+      if (!pend) throw new HttpError("Немає незавершеного оновлення для цього етапу");
+      const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind("new_" + id).first();
+      if (c.n !== pend.chunks) throw new HttpError(`Завантажено ${c.n} з ${pend.chunks} частин — етап не змінено, спробуйте ще раз`);
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(id),
+        env.DB.prepare("UPDATE blobs SET id=? WHERE id=?").bind(id, "new_" + id),
+        env.DB.prepare("UPDATE stages SET size=?, chunks=?, ready=1 WHERE id=?").bind(pend.size, pend.chunks, id),
+        env.DB.prepare("DELETE FROM meta WHERE k=?").bind("reimg_" + id)]);
+      await bumpStageVer(env, id);
+      await purgeImgCache(origin, id);
+      const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id=?").bind(id).first();
+      return {ok: true, stage: rowToStage(r)};
     }
     case "stage_restore": {
       const id = String(req.id);
@@ -595,7 +627,9 @@ async function getImage(env, ctx, request, id, t, v) {
 
 async function putBlob(env, request, id, part) {
   if (!await checkToken(env, request.headers.get("X-Token"), "admin")) return json({ok: false, error: "Потрібен вхід адміністратора"}, 403);
-  const st = await env.DB.prepare("SELECT chunks FROM stages WHERE id=?").bind(id).first();
+  let st;
+  if (id.startsWith("new_")) { try { st = JSON.parse(await metaGet(env, "reimg_" + id.slice(4)) || "null"); } catch (e) { st = null; } }
+  else st = await env.DB.prepare("SELECT chunks FROM stages WHERE id=?").bind(id).first();
   if (!st || part < 0 || part >= st.chunks) return json({ok: false, error: "Невірна частина"}, 400);
   const buf = await request.arrayBuffer();
   if (buf.byteLength > CHUNK) return json({ok: false, error: "Частина завелика"}, 400);
