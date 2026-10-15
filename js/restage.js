@@ -240,7 +240,7 @@
             }
             if (!ok) throw new Error(err || "не вдалось вивантажити");
           }
-          const fin = await API.call("stage_end", {id: s.id}, this.pw);
+          const fin = await API.call("stage_reimage_end", {id: s.id}, this.pw);   // підміна знімка — лише коли все завантажено
           s.v = fin.stage && fin.stage.v; API.noteStages([s]);
           await API.call("save_stage", {id: s.id, targets: r.targets}, this.pw);
           s.targets = r.targets;
