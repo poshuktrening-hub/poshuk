@@ -212,6 +212,7 @@
       bar.style.transition = "none"; bar.style.transform = "scaleX(1)";
       requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.transition = `transform ${N}s linear`; bar.style.transform = "scaleX(0)"; }));
       b.focus({preventScroll: true});
+      this.placeNext();
       this.nextT = setInterval(() => {
         const det = document.querySelector("#g-debrief details");
         if (det && det.open) {   // читають розбір — чекаємо
@@ -223,10 +224,23 @@
         if (left <= 0) { clearInterval(this.nextT); this.goNext(); }
       }, 1000);
     },
+    /* «Далі» — нижче або вище центру, там, де немає цілей (кнопка не має закривати щойно знищену ціль). */
+    placeNext() {
+      const b = $("g-next"), v = this.viewer;
+      if (!b || b.hidden || !v || !v.img) return;
+      const hr = v.host.getBoundingClientRect(), H = innerHeight, bh = b.offsetHeight || 60, bw = b.offsetWidth || 240;
+      const pts = [...(this.targets || []), ...(this.decoys || [])].map((t) => [hr.left + v.tx + t.x * v.s, hr.top + v.ty + t.y * v.s, (t.r || 14) * v.s + 30]);
+      const score = (fy) => {   // найменша відстань від цілей до прямокутника кнопки
+        const cy = H * fy, x0 = innerWidth / 2 - bw / 2, x1 = innerWidth / 2 + bw / 2, y0 = cy - bh / 2, y1 = cy + bh / 2;
+        return Math.min(1e9, ...pts.map(([x, y, r]) => Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1)) - r));
+      };
+      const best = [0.76, 0.86, 0.24, 0.5].map((fy) => [fy, score(fy)]).sort((a, c) => (c[1] > 0) - (a[1] > 0) || (a[1] > 0 ? 0 : c[1] - a[1]))[0][0];
+      b.style.top = Math.round(best * 100) + "%";
+    },
     goNext() {
       clearInterval(this.nextT);
       const b = $("g-next"); if (b.hidden) return;
-      b.hidden = true; b.classList.remove("center-next");
+      b.hidden = true; b.classList.remove("center-next"); b.style.top = "";
       this.nextRound();
     },
 
@@ -269,6 +283,14 @@
     },
 
     /* Брифінг перед етапом: 5 с чорний екран з технікою, яку шукатимуть, та її ТТХ. */
+    /* Модель за назвою цілі, якщо прямого збігу немає (напр. ціль «РСЗВ Град», а модель «БМ-21 Град» або вже оновлена версія). */
+    objByName(type) {
+      const GEN = /^(рсзв|танк|сау|зрк|зргк|бмп|бмд|бтр|рлс|реб|птрк|ціль|техніка|муляж|вантажівка|гаубиця|гармата|міномет|бпла|катапульта|з)$/;
+      const words = String(type || "").toLowerCase().split(/[^a-zа-яіїєґ0-9-]+/).filter((w) => w.length >= 3 && !GEN.test(w));
+      if (!words.length) return null;
+      const cand = this.objects.filter((x) => !x.decoy && words.some((w) => String((x.name || "") + " " + (x.type || "")).toLowerCase().includes(w)));
+      return cand[0] || null;
+    },
     async brief(st, after = false) {
       const norm = (s) => String(s || "").toLowerCase().trim();
       const seen = new Set(), items = [];
@@ -276,14 +298,14 @@
         const key = t.obj || norm(t.type);
         if (seen.has(key)) continue;
         seen.add(key);
-        const o = this.objects.find((x) => x.id === t.obj) || this.objects.find((x) => norm(x.type) === norm(t.type)) || null;
+        const o = this.objects.find((x) => x.id === t.obj) || this.objects.find((x) => norm(x.type) === norm(t.type)) || this.objByName(t.type) || null;
         items.push({t, o: o || (Models.isBuiltin(t.obj) ? Models.LIST.find((m) => m.id === t.obj) : null) || (/катапульт/.test(norm(t.type)) ? Models.LIST[0] : null)});
       }
       const box = $("g-brief");
       const cards = await Promise.all(items.map(async ({t, o}) => {
         let pic = "";
         if (o && o.builtin) pic = `<img src="${Models.sprite(o.id).toDataURL()}" alt="">`;
-        else if (o) { const u = await API.objUrl(o.id, this.password).catch(() => null); if (u) pic = `<img src="${u}" alt="">`; }
+        else if (o) { const u = await API.objUrl(o.id, this.password).catch(() => null); if (u) pic = `<img src="${u}" alt="" onerror="this.closest('.b-pic').remove()">`; }
         const ttx = Logic.ttxFor(o, t.type, !!t.decoy);
         const len = o && o.length_m ? `<p class="len">Довжина ≈ ${o.length_m} м</p>` : "";
         const name = o && o.name ? o.name.replace(/\s*\(вбудована\)$/, "") : (t.type || "ціль");
@@ -449,7 +471,7 @@
         return;
       }
       // після влучання камера рушає, коли вогняна куля вже згасла — інакше анімації накладаються й кадри «підвисають»
-      this.outroT = setTimeout(() => this.showAllMarks(), this.found.size ? 1500 : OUTRO_DELAY);
+      this.outroT = setTimeout(() => { this.showAllMarks(); setTimeout(() => this.placeNext(), OUTRO_MS + 60); }, this.found.size ? 1500 : OUTRO_DELAY);
       this.debrief();
     },
 
@@ -460,9 +482,11 @@
       if (!pts.length || !v.img) return v.fit(true, OUTRO_MS);
       const x0 = Math.min(...pts.map((p) => p[0] - p[2])), x1 = Math.max(...pts.map((p) => p[0] + p[2] + 50)); // +місце під підписи
       const y0 = Math.min(...pts.map((p) => p[1] - p[2])), y1 = Math.max(...pts.map((p) => p[1] + p[2]));
-      const rel = Math.max(v.coverRel(), Math.min(v.coverRel() * 3, Math.min(v.W / (x1 - x0), (v.H - 50) / (y1 - y0)) / v.minS));
+      // цілі — у верхніх ~62% екрана, щоб кнопка «Далі» (нижче центру) їх не перекривала
+      const availH = v.H * 0.62;
+      const rel = Math.max(v.coverRel(), Math.min(v.coverRel() * 3, Math.min(v.W / (x1 - x0), availH / (y1 - y0)) / v.minS));
       const s = v.minS * rel;
-      v._go(s, v.W / 2 - (x0 + x1) / 2 * s, (v.H - 50) / 2 - (y0 + y1) / 2 * s, true, OUTRO_MS);
+      v._go(s, v.W / 2 - (x0 + x1) / 2 * s, availH / 2 + 8 - (y0 + y1) / 2 * s, true, OUTRO_MS);
     },
 
     sq(t) { return this.viewer.gridCell ? squareName(t.x, t.y, this.viewer.gridCell) : ""; },
