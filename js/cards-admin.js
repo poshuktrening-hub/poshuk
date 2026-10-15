@@ -87,7 +87,7 @@
         <p class="status" id="ca-st"></p>
         <div class="tabs" id="ca-f"><button type="button" data-f="all" class="${this.f !== "no" && this.f !== "yes" ? "on" : ""}">Усі</button><button type="button" data-f="no" class="${this.f === "no" ? "on" : ""}">Без фото ${deck.length - n}</button><button type="button" data-f="yes" class="${this.f === "yes" ? "on" : ""}">З фото ${n}</button></div>
         <ul class="ca-list">${deck.filter((c) => this.f === "no" ? !this.photos.has(c.id) : this.f === "yes" ? this.photos.has(c.id) : true).map((c) => `<li>
-          ${this.photos.has(c.id) ? `<img class="th" loading="lazy" alt="" data-th="${c.id}">` : `<span class="dot"></span>`}<span class="nm">${esc(c.name)}<small>${esc(this.credits.get(c.id) || c.id)}</small></span>
+          ${this.photos.has(c.id) ? `<img class="th" loading="lazy" alt="" data-th="${c.id}">` : `<span class="dot"></span>`}<span class="nm">${esc(Logic.dispName(c.name))}<small>${esc(this.credits.get(c.id) || c.id)}</small></span>
           <button type="button" data-wiki="${c.id}" title="Інше фото з Вікісховища">🔎</button>
           <button type="button" data-up="${c.id}">${this.photos.has(c.id) ? "Замінити" : "Фото…"}</button>${this.photos.has(c.id) ? `<button type="button" data-del="${c.id}" title="Видалити фото">✕</button>` : ""}</li>`).join("")}</ul>
       </div>`;

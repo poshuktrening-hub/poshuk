@@ -32,6 +32,18 @@
     for (const k of Object.keys(TYPE_ALIASES)) if (n.includes(k)) return TYPE_ALIASES[k];
     return String(name).trim().split(/\s+/)[0];
   }
+  /* Назва без повтору типу: «БТР БТР-50ПК» → «БТР-50ПК», «ЗСУ ЗСУ-23-4 «Шилка»» → «ЗСУ-23-4 «Шилка»», «Танк Танк Т-72» → «Танк Т-72».
+     Працює для будь-яких нових назв (карток, моделей), тож повтори не зʼявляться й надалі. */
+  function dispName(name) {
+    const w = String(name || "").trim().split(/\s+/);
+    for (let i = 0; i < w.length - 1; i++) {
+      const a = w[i].toLowerCase().replace(/[«»"]/g, ""), b = w[i + 1].toLowerCase().replace(/[«»"]/g, "");
+      if (a && (b === a || (b.startsWith(a) && /^[-‑–\d]/.test(b.slice(a.length))))) { w.splice(i, 1); i--; }
+    }
+    return w.join(" ");
+  }
+  /* Чи вже містить назва сам тип (щоб не писати «Артилерія Акація» + окремо «Артилерія»). */
+  const nameHasType = (name, type) => { const n = String(name || "").toLowerCase(), t = String(type || "").toLowerCase().trim(); return !t || n.includes(t) || n.includes(t.split(/\s+/)[0]); };
   const DECOY_TTX = "Надувний / макетний муляж — обманка для розвідки.\nОзнаки зверху: згладжені округлі форми, «надуті» стволи й борти, рівний світлий колір, глянцевий відблиск, немає колії та слідів руху, тінь мʼяка, деталі (люки, сітки, гусениці) не читаються.";
   /* Автотекст (типовий або «муляж») не вважається власним описом моделі — його не зберігаємо, щоб зміна типу/муляжу оновлювала опис. */
   const isAutoTtx = (s) => { const t = String(s || "").trim(); return !t || t === DECOY_TTX || Object.values(TTX_DEFAULT).some((v) => v.trim() === t); };
@@ -156,5 +168,5 @@
     return "Інше";
   }
 
-  window.Logic = {category, MODES, REGIONS, SEASONS, region, regionOf, rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
+  window.Logic = {dispName, nameHasType, category, MODES, REGIONS, SEASONS, region, regionOf, rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
 })();

@@ -154,7 +154,7 @@
       $("c-answer").value = ""; $("c-answer").disabled = false; $("c-check").disabled = false;
       if (this.mode.choice) {
         const opts = this.opts = options(c, this._deck);
-        $("c-choices").innerHTML = opts.map((o, i) => `<button type="button" data-ci="${i}"><i>${i + 1}</i><span>${esc(o.name)}</span></button>`).join("");
+        $("c-choices").innerHTML = opts.map((o, i) => `<button type="button" data-ci="${i}"><i>${i + 1}</i><span>${esc(Logic.dispName(o.name))}</span></button>`).join("");
         $("c-choices").querySelectorAll("button").forEach((b) => (b.onclick = () => this.choose(opts[+b.dataset.ci])));
       }
       const img = $("c-img"); img.removeAttribute("src"); $("c-loading").hidden = false;
@@ -216,7 +216,7 @@
         : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
       $("c-choices").innerHTML = "";
       const cr = (Game.cardCredits && Game.cardCredits.get(c.id)) || (!Game.cardPhotos.has(c.id) && (window.CARD_REF || {})[c.id] ? "навчальний довідник ВОС276" : "");
-      $("c-reveal").innerHTML = `${verdict}<h3>${esc(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
+      $("c-reveal").innerHTML = `${verdict}<h3>${esc(Logic.dispName(c.name))}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
       const last = this.idx === this.rounds.length - 1;
       $("c-next").textContent = last ? "Підсумок →" : "Далі →";
@@ -230,6 +230,7 @@
     summary() {
       this.stop();
       UI.show("s-summary");
+      Game.lastGame = "cards";
       const res = this.results, max = 10 * res.length, total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.round(100 * total / max) : 0, m = this.mode;
       const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);
@@ -239,7 +240,7 @@
       const rk = Logic.rank(pct);
       $("sum-rank").innerHTML = `${Logic.rankBadge(rk.level)}<div><div class="rk-label">Звання</div><div class="rk-name">${esc(rk.name)}</div><div class="rk-next">${rk.next ? `До «${esc(rk.next.name)}» — від ${rk.next.min}%` : "Найвище звання"}</div></div>`;
       $("sum-table").innerHTML = `<tr><th class="num">№</th><th>Техніка</th><th>Ваша відповідь</th><th class="num">Бали</th></tr>` +
-        res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.name)}</td><td class="${r.ok ? "t-ok" : "t-no"}">${esc(r.answer || "—")}${r.hint ? " 💡" : ""}</td><td class="num">${r.score}</td></tr>`).join("");
+        res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(Logic.dispName(r.name))}</td><td class="${r.ok ? "t-ok" : "t-no"}">${esc(r.answer || "—")}${r.hint ? " 💡" : ""}</td><td class="num">${r.score}</td></tr>`).join("");
       const now = new Date(), p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: Game.callsign, scores: res.map((r) => r.score), max, mode: m.id === "exam" ? "cards_exam" : "cards",
         conclusion: `Картки${m.id === "exam" ? " (іспит)" : ""}: ${concl}`,

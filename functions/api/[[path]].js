@@ -267,23 +267,28 @@ async function action(env, ctx, req, origin) {
       return {ok: true, objects: results};
     }
     case "object": {
-      const r = await env.DB.prepare("SELECT data FROM objects WHERE id=?").bind(String(req.id)).first();
-      if (!r) throw new HttpError("Обʼєкт не знайдено");
-      return {ok: true, mime: "image/png", data: r.data};
+      const data = await objData(env, String(req.id));
+      if (data === null) throw new HttpError("Обʼєкт не знайдено");
+      return {ok: true, mime: "image/png", data};
     }
     case "object_upload": {
-      if (!req.data || req.data.length > 1_900_000) throw new HttpError("PNG техніки завеликий (до ~1,4 МБ)");
+      // модель зберігається частинами (D1 тримає до ~2 МБ у рядку) — ліміт розміру фактично знято
+      if (!req.data || typeof req.data !== "string") throw new HttpError("Немає файлу моделі");
+      if (req.data.length > OBJ_MAX) throw new HttpError("Модель завелика (понад ~20 МБ) — зменште її");
       const o = {id: newId(), name: String(req.name || "техніка").slice(0, 40), length_m: Number(req.length_m) || 7, type: String(req.type || ""), ttx: String(req.ttx || "").slice(0, 2000), decoy: req.decoy ? 1 : 0};
       // без дублів: модель з такою самою назвою — оновлюється (нова версія замість старої)
       const {results: same} = await env.DB.prepare("SELECT id,name,decoy,ttx FROM objects").all();
       const old = same.find((x) => normName(x.name) === normName(o.name) && (x.decoy ? 1 : 0) === o.decoy);
+      const id = old ? old.id : o.id;
+      const col = await objPut(env, id, req.data);
       if (old) {
         await env.DB.prepare("UPDATE objects SET name=?, length_m=?, type=?, data=?, created=?, ttx=? WHERE id=?")
-          .bind(o.name, o.length_m, o.type, String(req.data), new Date().toISOString(), o.ttx || old.ttx || "", old.id).run();
+          .bind(o.name, o.length_m, o.type, col, new Date().toISOString(), o.ttx || old.ttx || "", old.id).run();
+        await purgeObjCache(origin, old.id);
         return {ok: true, replaced: true, object: Object.assign(o, {id: old.id, ttx: o.ttx || old.ttx || ""})};
       }
       await env.DB.prepare("INSERT INTO objects (id,name,length_m,type,data,created,ttx,decoy) VALUES (?,?,?,?,?,?,?,?)")
-        .bind(o.id, o.name, o.length_m, o.type, String(req.data), new Date().toISOString(), o.ttx, o.decoy).run();
+        .bind(o.id, o.name, o.length_m, o.type, col, new Date().toISOString(), o.ttx, o.decoy).run();
       return {ok: true, object: o};
     }
     case "object_update": {
@@ -360,9 +365,35 @@ async function action(env, ctx, req, origin) {
       return {ok: true, updated: up};
     }
     case "card_photo_delete": await env.DB.prepare("DELETE FROM card_photos WHERE id=?").bind(String(req.id)).run(); return {ok: true};
-    case "object_delete": await env.DB.prepare("DELETE FROM objects WHERE id=?").bind(String(req.id)).run(); return {ok: true};
+    case "object_delete":
+      await env.DB.batch([env.DB.prepare("DELETE FROM objects WHERE id=?").bind(String(req.id)), env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("obj_" + String(req.id))]);
+      return {ok: true};
   }
   throw new HttpError("Невідома дія");
+}
+
+/* Моделі техніки: base64 PNG. До OBJ_PART — у самому рядку objects, більше — частинами в blobs ("obj_<id>"). */
+const OBJ_PART = 1_500_000, OBJ_MAX = 28_000_000;
+async function objPut(env, id, data) {
+  const bid = "obj_" + id;
+  await env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(bid).run();
+  if (data.length <= OBJ_PART) return data;
+  const n = Math.ceil(data.length / OBJ_PART);
+  for (let i = 0; i < n; i++)
+    await env.DB.prepare("INSERT INTO blobs (id,part,data) VALUES (?,?,?)").bind(bid, i, data.slice(i * OBJ_PART, (i + 1) * OBJ_PART)).run();
+  return "@parts:" + n;
+}
+async function objData(env, id) {
+  const r = await env.DB.prepare("SELECT data FROM objects WHERE id=?").bind(id).first();
+  if (!r) return null;
+  const m = /^@parts:(\d+)$/.exec(String(r.data || ""));
+  if (!m) return r.data;
+  const {results} = await env.DB.prepare("SELECT part, data FROM blobs WHERE id=? ORDER BY part").bind("obj_" + id).all();
+  if (results.length !== Number(m[1])) return null;
+  return results.map((x) => typeof x.data === "string" ? x.data : new TextDecoder().decode(new Uint8Array(x.data))).join("");
+}
+async function purgeObjCache(origin, id) {
+  try { await caches.default.delete(new Request(new URL(`/api/obj/${id}`, origin).toString())); } catch (e) { /* кеш не критичний */ }
 }
 
 /* Назва моделі для порівняння: регістр, пробіли/підкреслення, «(2)», «копія» не важать. */
@@ -388,7 +419,7 @@ async function dedupeObjects(env) {
     t.forEach((x) => { if (x && remap.has(x.obj)) { x.obj = remap.get(x.obj); ch = true; } });
     if (ch) ops.push(env.DB.prepare("UPDATE stages SET targets=? WHERE id=?").bind(JSON.stringify(t), s.id));
   }
-  for (const id of remap.keys()) ops.push(env.DB.prepare("DELETE FROM objects WHERE id=?").bind(id));
+  for (const id of remap.keys()) ops.push(env.DB.prepare("DELETE FROM objects WHERE id=?").bind(id), env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("obj_" + id));
   await env.DB.batch(ops);
   return remap.size;
 }
@@ -475,9 +506,9 @@ async function getObject(env, ctx, request, id, t) {
   const cache = caches.default, key = new Request(new URL(`/api/obj/${id}`, request.url).toString());
   let res = await cache.match(key);
   if (!res) {
-    const r = await env.DB.prepare("SELECT data FROM objects WHERE id=?").bind(id).first();
-    if (!r) return new Response("Не знайдено", {status: 404});
-    const bin = atob(r.data), bytes = new Uint8Array(bin.length);
+    const data = await objData(env, id);
+    if (data === null) return new Response("Не знайдено", {status: 404});
+    const bin = atob(data), bytes = new Uint8Array(bin.length);
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     res = new Response(bytes, {headers: {"Content-Type": "image/png", "Cache-Control": "public, max-age=3600"}});
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));

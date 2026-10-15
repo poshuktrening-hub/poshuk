@@ -64,7 +64,7 @@
         if (q) { const h = e._txt ? "Згадується в описі" : "Назва"; if (h !== last) { html += `<h3 class="r-h">${h}</h3>`; last = h; } }
         else if (!this.cat && e.cat !== last) { html += `<h3 class="r-h">${esc(e.cat)}</h3>`; last = e.cat; }
         html += `<button type="button" class="r-item" data-id="${esc(e.id)}"><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : ""}</span>
-          <span class="r-nm"><b>${esc(e.name)}</b><small>${esc(plain(e.desc || e.ttx).slice(0, 90))}</small></span></button>`;
+          <span class="r-nm"><b>${esc(Logic.dispName(e.name))}</b><small>${esc(plain(e.desc || e.ttx).slice(0, 90))}</small></span></button>`;
       }
       $("r-list").innerHTML = html;
       $("r-list").querySelectorAll("[data-id]").forEach((b) => (b.onclick = () => this.show(b.dataset.id)));
@@ -86,7 +86,7 @@
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
           <button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
-          <p class="r-cat">${esc(e.cat)}</p><h2>${esc(e.name)}</h2>
+          <p class="r-cat">${esc(e.cat)}</p><h2>${esc(Logic.dispName(e.name))}</h2>
           ${e.imgs.length ? `<div class="r-gal">${e.imgs.map((x) => `<button type="button" class="r-ph" data-zoom="${esc(x)}"><img alt="" data-img="${esc(x)}" data-v="${esc(e.v)}"></button>`).join("")}</div>
           ${e.imgs.length > 1 ? `<p class="muted small r-hint">Гортайте фото вбік · торкніться, щоб збільшити</p>` : `<p class="muted small r-hint">Торкніться фото, щоб збільшити</p>`}` : ""}
           ${e.ttx ? `<section class="r-sec"><h3>ТТХ</h3><div class="r-txt">${safe(e.ttx)}</div></section>` : ""}
@@ -162,7 +162,7 @@
         <p class="status" id="ra-st">${this.err ? esc(this.err) : ""}</p>
         <div class="row ra-filt"><input id="ra-q" type="search" placeholder="Пошук за назвою" value="${esc(this.f)}"><select id="ra-c"><option value="">Усі розділи</option>${this.cats().map((c) => `<option${c === this.fcat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
         <ul class="ra-list">${list.map((e) => `<li><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : ""}</span>
-          <span class="nm">${esc(e.name)}<small>${esc(e.cat)} · фото: ${e.imgs.length}</small></span>
+          <span class="nm">${esc(Logic.dispName(e.name))}<small>${esc(e.cat)} · фото: ${e.imgs.length}</small></span>
           <button type="button" data-edit="${esc(e.id)}" title="Змінити">✎</button><button type="button" data-del="${esc(e.id)}" title="Видалити">✕</button></li>`).join("") || `<li class="muted small">Нічого не знайдено</li>`}</ul></div>`;
       $("ra-x").onclick = () => { if (!this.busy) $("ra").hidden = true; };
       $("ra-new").onclick = () => this.edit(null);

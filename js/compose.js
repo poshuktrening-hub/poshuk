@@ -146,48 +146,202 @@
     return out;
   }
 
-  /* Малює обʼєкт у dst (canvas того ж розміру, що й base). Повертає змінений прямокутник {x,y,w,h}.
-     p: size (пкс на знімку), angle, hide (0…0.9), hide_dir, shadow_dir, shadow_len, shadow_op, blend, darken, seed */
+  /* ---------------- якісне зменшення моделі: піраміда (половинки) замість одного стрибка ---------------- */
+  const PYR = new WeakMap();
+  function fitSprite(sprite, target) {
+    let lv = PYR.get(sprite);
+    if (!lv) { lv = [sprite]; PYR.set(sprite, lv); }
+    let i = 0;
+    while (Math.max(lv[i].width, lv[i].height) > target * 2 && Math.max(lv[i].width, lv[i].height) > 8) {
+      if (!lv[i + 1]) {
+        const s = lv[i], c = canvas(Math.ceil(s.width / 2), Math.ceil(s.height / 2)), x = c.getContext("2d");
+        x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
+        x.drawImage(s, 0, 0, c.width, c.height);
+        lv.push(c);
+      }
+      i++;
+    }
+    return lv[i];
+  }
+
+  /* Нормалізація завантаженої моделі: будь-який розмір файлу → обрізаний PNG до maxSide пкс без втрати деталей. */
+  function normalizeModel(img, maxSide = 2048) {
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    let src = img;
+    if (Math.max(w, h) > maxSide * 1.05) {
+      const k = maxSide / Math.max(w, h), tmp = canvas(w, h);
+      tmp.getContext("2d").drawImage(img, 0, 0);
+      const lvl = fitSprite(tmp, maxSide), c = canvas(w * k, h * k), x = c.getContext("2d");
+      x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
+      x.drawImage(lvl, 0, 0, c.width, c.height);
+      src = c;
+    }
+    return prepareObject(src);
+  }
+
+  const lum = (r, g, b) => 0.299 * r + 0.587 * g + 0.114 * b;
+  function pct(hist, total, q) { let s = 0; const lim = total * q; for (let i = 0; i < hist.length; i++) { s += hist[i]; if (s >= lim) return i; } return hist.length - 1; }
+
+  /* ---------------- аналіз ділянки знімка довкола точки ----------------
+     Рівні (чорна/біла точка, серпанок), колірний відтінок освітлення, насиченість, шум, різкість (PSF), колір і щільність тіней. */
+  function analyze(base, cx, cy, size) {
+    const W = base.width, H = base.height, R = Math.round(Math.max(40, Math.min(320, size * 2.5)));
+    const x0 = Math.max(0, Math.round(cx - R)), y0 = Math.max(0, Math.round(cy - R));
+    const w = Math.min(W, Math.round(cx + R)) - x0, h = Math.min(H, Math.round(cy + R)) - y0;
+    if (w < 8 || h < 8) return null;
+    const d = base.getContext("2d").getImageData(x0, y0, w, h).data, N = w * h;
+    const L = new Float32Array(N), hist = new Uint32Array(256);
+    let sL = 0, sL2 = 0, sS = 0, mCb = 0, mCr = 0, nCb = 0, nCr = 0, nn = 0;
+    for (let i = 0; i < N; i++) {
+      const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], l = lum(r, g, b);
+      L[i] = l; hist[Math.min(255, l | 0)]++; sL += l; sL2 += l * l;
+      const cb = b - l, cr = r - l, c = Math.hypot(cb, cr);
+      sS += c; mCb += cb; mCr += cr;
+      if (c < 16 && l > 40 && l < 235) { nCb += cb; nCr += cr; nn++; }   // майже сірі поверхні: дороги, ґрунт, дахи — показують відтінок світла
+    }
+    const mean = sL / N, std = Math.sqrt(Math.max(1, sL2 / N - mean * mean));
+    const p1 = pct(hist, N, 0.01), p5 = pct(hist, N, 0.05), p50 = pct(hist, N, 0.5), p99 = pct(hist, N, 0.99);
+    const cast = nn > N * 0.02 ? [nCb / nn, nCr / nn] : [mCb / N * 0.3, mCr / N * 0.3];
+    // тіні: найтемніші 5% проти середніх тонів — щільність і колір (зазвичай синюватий від неба)
+    let dr = 0, dg = 0, db = 0, dn = 0, ar = 0, ag = 0, ab = 0, an = 0;
+    const lo40 = pct(hist, N, 0.4), hi60 = pct(hist, N, 0.6);
+    for (let i = 0; i < N; i++) {
+      const l = L[i];
+      if (l <= p5) { dr += d[i * 4]; dg += d[i * 4 + 1]; db += d[i * 4 + 2]; dn++; }
+      else if (l >= lo40 && l <= hi60) { ar += d[i * 4]; ag += d[i * 4 + 1]; ab += d[i * 4 + 2]; an++; }
+    }
+    const tr = dn && an ? [(dr / dn + 4) / (ar / an + 4), (dg / dn + 4) / (ag / an + 4), (db / dn + 4) / (ab / an + 4)] : [0.5, 0.5, 0.55];
+    // шум (Immerkær): маска Лапласа різниць; нижній квартиль — щоб фактура трави не рахувалась як шум
+    const nz = [];
+    for (let y = 1; y < h - 1; y += 2) for (let x = 1; x < w - 1; x += 2) {
+      const i = y * w + x;
+      nz.push(Math.abs(L[i - w - 1] - 2 * L[i - w] + L[i - w + 1] - 2 * L[i - 1] + 4 * L[i] - 2 * L[i + 1] + L[i + w - 1] - 2 * L[i + w] + L[i + w + 1]));
+    }
+    nz.sort((a, b) => a - b);
+    const noise = nz.length ? Math.min(12, nz[nz.length >> 2] / (0.3186 * 6)) : 0;
+    // різкість: як слабне 95-й перцентиль градієнта після розмиття σ=1 → σ PSF знімка
+    const g95 = (A) => { const v = []; for (let y = 1; y < h - 1; y += 2) for (let x = 1; x < w - 1; x += 2) { const i = y * w + x; v.push(Math.hypot(A[i + 1] - A[i - 1], A[i + w] - A[i - w])); } v.sort((a, b) => a - b); return v[Math.floor(v.length * 0.95)] || 0; };
+    const G1 = g95(L), G2 = g95(gaussBlur(L, w, h, 1));
+    const rho = Math.max(0.3, Math.min(0.96, G1 ? G2 / G1 : 0.5));
+    const psf = Math.sqrt(rho * rho / (1 - rho * rho));
+    return {mean, std, p1, p5, p50, p99, sat: sS / N, cast, env: [mCb / N, mCr / N], shadowT: tr, dark: p50 ? p5 / p50 : 0.5, noise, psf};
+  }
+
+  /* Статистика самої моделі (кешується). */
+  const SPST = new WeakMap();
+  function spriteStats(sprite) {
+    if (SPST.has(sprite)) return SPST.get(sprite);
+    const lv = fitSprite(sprite, 128), w = lv.width, h = lv.height;
+    const d = lv.getContext("2d").getImageData(0, 0, w, h).data, hist = new Uint32Array(256);
+    let n = 0, sL = 0, sL2 = 0, sS = 0;
+    for (let i = 0; i < w * h; i++) {
+      if (d[i * 4 + 3] < 200) continue;
+      const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], l = lum(r, g, b);
+      hist[Math.min(255, l | 0)]++; sL += l; sL2 += l * l; sS += Math.hypot(b - l, r - l); n++;
+    }
+    const st = n ? {mean: sL / n, std: Math.sqrt(Math.max(1, sL2 / n - (sL / n) ** 2)), sat: sS / n} : {mean: 110, std: 30, sat: 20};
+    SPST.set(sprite, st);
+    return st;
+  }
+
+  /* Підбір обробки моделі під ділянку: тон, рівні, колір, насиченість, розмиття, шум, тінь. */
+  function harmonize(sprite, sc, p = {}) {
+    const sp = spriteStats(sprite);
+    // рівні: чорне на знімку не чорне (серпанок), біле — не біле; модель частково переводиться в ці рівні
+    const lo = Math.min(70, sc.p1 * 0.6), hi = Math.max(lo + 120, 255 - (255 - Math.min(255, sc.p99 + 4)) * 0.6);
+    // середній тон: трохи до тону місцевості (освітлення одне), але техніка лишається собою
+    const mt = Math.max(sc.p5, Math.min(sc.p99 - 10, sp.mean * 0.7 + sc.mean * 0.92 * 0.3 + (p.bright || 0) * 60));
+    const gain = Math.max(0.8, Math.min(1.2, 1 + (sc.std / sp.std - 1) * 0.25));
+    const sat = Math.max(0.6, Math.min(1.05, Math.sqrt((sc.sat + 2) / (sp.sat + 2))));
+    const op = Math.max(0.4, Math.min(0.72, (1 - sc.dark) * 0.95)) * (p.shadowK === undefined ? 1 : p.shadowK);
+    const tl = lum(...sc.shadowT) || 0.5;
+    const T = sc.shadowT.map((t) => Math.max(0.15, Math.min(0.98, (1 - op) * t / tl)));
+    return {lo, hi, mt: (mt - lo) * 255 / (hi - lo), smean: sp.mean, gain, sat, cast: sc.cast, env: sc.env,
+      // знімки зазвичай уже підшарплені — розмиваємо лише на різницю, мʼякше за «фізичну» оцінку
+      blur: Math.max(0, Math.min(1.6, (sc.psf - 0.55) * 0.75)), noise: sc.noise, op, T};
+  }
+
+  function grade(src, g) {
+    const c = canvas(src.width, src.height), x = c.getContext("2d");
+    x.drawImage(src, 0, 0);
+    const id = x.getImageData(0, 0, c.width, c.height), d = id.data, k = (g.hi - g.lo) / 255;
+    const cb0 = g.cast[0] * 0.8 + g.env[0] * 0.1, cr0 = g.cast[1] * 0.8 + g.env[1] * 0.1;
+    for (let i = 0; i < d.length; i += 4) {
+      if (!d[i + 3]) continue;
+      const r = d[i], gg = d[i + 1], b = d[i + 2], l = lum(r, gg, b);
+      const L1 = Math.max(0, Math.min(255, g.mt + (l - g.smean) * g.gain)), Lo = g.lo + L1 * k;
+      const cb = (b - l) * g.sat + cb0, cr = (r - l) * g.sat + cr0;
+      const R = Lo + cr, B = Lo + cb, G = (Lo - 0.299 * R - 0.114 * B) / 0.587;
+      d[i] = R; d[i + 1] = G; d[i + 2] = B;
+    }
+    x.putImageData(id, 0, 0);
+    return c;
+  }
+
+  /* Напрям уздовж краю посадки/крон (компас) — техніку ставлять паралельно лісосмузі. null — краю немає. */
+  function alongEdge(base, cx, cy, size) {
+    const R = Math.round(Math.max(16, size * 2)), W = base.width, H = base.height;
+    const x0 = Math.max(0, Math.round(cx - R)), y0 = Math.max(0, Math.round(cy - R));
+    const w = Math.min(W, Math.round(cx + R)) - x0, h = Math.min(H, Math.round(cy + R)) - y0;
+    if (w < 6 || h < 6) return null;
+    const d = base.getContext("2d").getImageData(x0, y0, w, h).data, v = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) v[i] = Math.max(0, Math.min(1, (2 * d[i * 4 + 1] - d[i * 4] - d[i * 4 + 2]) / 60)) * 0.6 + (1 - lum(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]) / 255) * 0.4;
+    const s = gaussBlur(v, w, h, Math.max(1.5, size * 0.3));
+    let jxx = 0, jyy = 0, jxy = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x, gx = s[i + 1] - s[i - 1], gy = s[i + w] - s[i - w];
+      jxx += gx * gx; jyy += gy * gy; jxy += gx * gy;
+    }
+    const tr = jxx + jyy; if (tr < 1e-6) return null;
+    if (Math.sqrt((jxx - jyy) ** 2 + 4 * jxy * jxy) / tr < 0.2) return null;
+    const th = 0.5 * Math.atan2(2 * jxy, jxx - jyy);   // напрям градієнта; край — перпендикулярно
+    return ((Math.atan2(-Math.sin(th), -Math.cos(th)) * 180 / Math.PI) % 180 + 180) % 180;
+  }
+
+  /* Малює обʼєкт у dst (canvas того ж розміру, що й base). Повертає змінений прямокутник {x,y,w,h,hidden,auto}.
+     Усе, крім геометрії, підбирається саме з ділянки знімка (harmonize).
+     p: size (пкс), angle, hideTarget (0…0.95) або hide, shadow_dir, shadow_len (пкс), shade, bright (−0.5…0.5), shadowK (0…1.5), seed */
   function compose(base, dst, sprite, cx, cy, p) {
+    const SSd = Math.max(2, Math.min(8, Math.round(160 / Math.max(4, p.size))));
     const sw = sprite.width, sh = sprite.height;
-    const scale = p.size * SS / Math.max(sw, sh);
+    const scale = p.size * SSd / Math.max(sw, sh);
     const dw = sw * scale, dh = sh * scale, ang = p.angle * Math.PI / 180;
     const tw = Math.ceil(Math.abs(dw * Math.cos(ang)) + Math.abs(dh * Math.sin(ang)));
     const th = Math.ceil(Math.abs(dw * Math.sin(ang)) + Math.abs(dh * Math.cos(ang)));
-    const pad = Math.ceil((Math.abs(p.shadow_len) + 3) * SS);
+    const pad = Math.ceil((Math.abs(p.shadow_len || 0) + 4 + p.size * 0.12) * SSd);
     let Wp = tw + 2 * pad, Hp = th + 2 * pad;
-    Wp += (SS - Wp % SS) % SS; Hp += (SS - Hp % SS) % SS;
-    const mw = Wp / SS, mh = Hp / SS;
+    Wp += (SSd - Wp % SSd) % SSd; Hp += (SSd - Hp % SSd) % SSd;
+    const mw = Wp / SSd, mh = Hp / SSd;
     const x0 = Math.round(cx) - Math.floor(mw / 2), y0 = Math.round(cy) - Math.floor(mh / 2);
 
-    // спрайт у великій роздільності
-    const sc = canvas(Wp, Hp), sctx = sc.getContext("2d");
+    const sc = analyze(base, cx, cy, p.size);
+    if (!sc) return null;
+    const g = harmonize(sprite, sc, p);
+
+    // модель: якісне зменшення → підбір тону/кольору → малювання в SSd× роздільності з розмиттям під PSF знімка
+    const lvl = grade(fitSprite(sprite, Math.max(dw, dh)), g);
+    const sctx0 = canvas(Wp, Hp), sctx = sctx0.getContext("2d");
     sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = "high";
     sctx.translate(Wp / 2, Hp / 2); sctx.rotate(ang);
-    if (p.blur > 0) sctx.filter = `blur(${(p.blur * SS).toFixed(1)}px)`;   // під розмитість знімка
-    sctx.drawImage(sprite, -dw / 2, -dh / 2, dw, dh);
+    if (g.blur > 0.05) sctx.filter = `blur(${(g.blur * SSd).toFixed(2)}px)`;
+    sctx.drawImage(lvl, -dw / 2, -dh / 2, dw, dh);
     sctx.filter = "none";
     const spx = sctx.getImageData(0, 0, Wp, Hp).data;
 
-    // ділянка знімка (поза межами — нулі)
     const rpx = base.getContext("2d").getImageData(x0, y0, mw, mh).data;
-    let lr = 0, lg = 0, lb = 0, ln = 0;
-    for (let i = 0; i < rpx.length; i += 4) if (rpx[i + 3]) { lr += rpx[i]; lg += rpx[i + 1]; lb += rpx[i + 2]; ln++; }
+    let ln = 0;
+    for (let i = 3; i < rpx.length; i += 4) if (rpx[i]) ln++;
     if (!ln) return null;
-    lr /= ln; lg /= ln; lb /= ln;
 
-    // видимість (крони): техніка ховається там, де на самому знімку рослинність (крони, кущі).
-    // Чим більший hide, тим слабша зелень уже вкриває техніку. На відкритому місці нічого не обрізається.
-    // Крони: «зелень» знімка (надлишок зеленого) — це те, що лежить поверх техніки.
-    // hideTarget (0…1) — яку частку силуету сховати: поріг підбирається бінарним пошуком.
+    // крони поверх техніки (як і раніше): частка схованого силуету — бінарним пошуком порогу «зелені»
     const Av = new Float32Array(Wp * Hp);
     const hide = Math.min(0.95, p.hide || 0), wantT = p.hideTarget === undefined || p.hideTarget === null ? null : Math.max(0, Math.min(0.95, p.hideTarget));
     let vs = null, meanVeg = 0;
     if (hide > 0 || wantT !== null || p.shade) {
       const vc = canvas(mw, mh), vx = vc.getContext("2d"), vd = vx.createImageData(mw, mh);
       for (let i = 0; i < mw * mh; i++) {
-        const r = rpx[i * 4], g = rpx[i * 4 + 1], b = rpx[i * 4 + 2];
-        const score = Math.max(0, Math.min(1, (2 * g - r - b) / 90));
+        const r = rpx[i * 4], gg = rpx[i * 4 + 1], b = rpx[i * 4 + 2];
+        const score = Math.max(0, Math.min(1, (2 * gg - r - b) / 90));
         vd.data[i * 4] = vd.data[i * 4 + 1] = vd.data[i * 4 + 2] = 255; vd.data[i * 4 + 3] = score * 255;
         meanVeg += score;
       }
@@ -195,7 +349,7 @@
       vx.putImageData(vd, 0, 0);
       const big = canvas(Wp, Hp), bx = big.getContext("2d");
       bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = "high";
-      bx.filter = `blur(${SS * 0.6}px)`; bx.drawImage(vc, 0, 0, Wp, Hp); bx.filter = "none";
+      bx.filter = `blur(${SSd * 0.6}px)`; bx.drawImage(vc, 0, 0, Wp, Hp); bx.filter = "none";
       const vdat = bx.getImageData(0, 0, Wp, Hp).data;
       vs = new Float32Array(Wp * Hp);
       for (let i = 0; i < Wp * Hp; i++) vs[i] = vdat[i * 4 + 3] / 255;
@@ -217,76 +371,61 @@
       Av[i] = a;
     }
     const hiddenFrac = a0 ? 1 - a1 / a0 : 0;
-    const shadeK = 1 - Math.min(0.6, (p.shade || 0) * Math.min(1, meanVeg * 1.6));   // під кронами — в тіні
+    const shadeK = 1 - Math.min(0.6, (p.shade || 0) * Math.min(1, meanVeg * 1.6));
 
-    // тінь
+    // тінь (колір і щільність — як у тіней на цьому знімку) + контактна тінь під корпусом (AO)
+    const sl = p.shadow_len || 0;
     let S = null;
-    if (p.shadow_len > 0 && p.shadow_op > 0) {
-      const [sdx, sdy] = compass(p.shadow_dir);
-      const sx = Math.round(sdx * p.shadow_len * SS), sy = Math.round(sdy * p.shadow_len * SS);
+    if (sl > 0 && g.op > 0) {
+      const [sdx, sdy] = compass(p.shadow_dir || 135);
+      const sx = Math.round(sdx * sl * SSd), sy = Math.round(sdy * sl * SSd);
       const sh0 = new Float32Array(Wp * Hp);
-      for (let y = Math.max(0, sy); y < Math.min(Hp, Hp + sy); y++) for (let x = Math.max(0, sx); x < Math.min(Wp, Wp + sx); x++) sh0[y * Wp + x] = Av[(y - sy) * Wp + (x - sx)];
-      S = gaussBlur(sh0, Wp, Hp, SS * (p.shadow_soft || 0.4));
-      for (let i = 0; i < S.length; i++) S[i] *= 1 - Av[i];
+      // «витягнута» тінь: кілька зсувів уздовж напрямку — без розриву між корпусом і тінню
+      for (let st = 1; st <= 4; st++) {
+        const ox = Math.round(sx * st / 4), oy = Math.round(sy * st / 4);
+        for (let y = Math.max(0, oy); y < Math.min(Hp, Hp + oy); y++) for (let x = Math.max(0, ox); x < Math.min(Wp, Wp + ox); x++) {
+          const v = Av[(y - oy) * Wp + (x - ox)]; if (v > sh0[y * Wp + x]) sh0[y * Wp + x] = v;
+        }
+      }
+      S = gaussBlur(sh0, Wp, Hp, SSd * (0.45 + g.blur * 0.8));
     }
+    const AO = gaussBlur(Av, Wp, Hp, SSd * Math.max(0.7, Math.min(3, p.size * 0.06)));
+    const IN = gaussBlur(Av, Wp, Hp, SSd * 0.7);   // «внутрішність» силуету — для мʼякого краю (light wrap)
+    const aoS = 0.35 * Math.min(1.3, g.op / 0.5) * (p.shadowK === undefined ? 1 : p.shadowK);
 
-    // змішування й усереднення SS×SS
-    const bl = p.blend || 0, dk = (1 - (p.darken || 0)) * shadeK, op = p.shadow_op || 0, sat = p.sat === undefined ? 1 : p.sat;
-    const out = new ImageData(mw, mh), o = out.data, n = SS * SS;
+    const out = new ImageData(mw, mh), o = out.data, n = SSd * SSd, cvr = new Float32Array(mw * mh);
     for (let my = 0; my < mh; my++) for (let mx = 0; mx < mw; mx++) {
       const j = (my * mw + mx) * 4;
       const r0 = rpx[j], g0 = rpx[j + 1], b0 = rpx[j + 2];
-      let sr = 0, sg = 0, sb = 0;
-      for (let yy = my * SS; yy < my * SS + SS; yy++) for (let xx = mx * SS; xx < mx * SS + SS; xx++) {
-        const i = yy * Wp + xx, a = Av[i], k = S ? 1 - op * S[i] : 1;
-        let r = r0 * k, g = g0 * k, b = b0 * k;
+      let sr = 0, sg = 0, sb = 0, ca = 0;
+      for (let yy = my * SSd; yy < my * SSd + SSd; yy++) for (let xx = mx * SSd; xx < mx * SSd + SSd; xx++) {
+        const i = yy * Wp + xx, a = Av[i], out1 = 1 - a;
+        const s = S ? S[i] * out1 : 0, ao = AO[i] * out1 * aoS;
+        let r = r0 * (1 - s * (1 - g.T[0])) * (1 - ao), gg = g0 * (1 - s * (1 - g.T[1])) * (1 - ao), b = b0 * (1 - s * (1 - g.T[2])) * (1 - ao);
         if (a) {
-          const q = i * 4;
-          let cr = spx[q], cg = spx[q + 1], cb = spx[q + 2];
-          if (sat !== 1) { const gr = 0.299 * cr + 0.587 * cg + 0.114 * cb; cr = gr + (cr - gr) * sat; cg = gr + (cg - gr) * sat; cb = gr + (cb - gr) * sat; }
-          r = r * (1 - a) + (cr * (1 - bl) + lr * bl) * dk * a;
-          g = g * (1 - a) + (cg * (1 - bl) + lg * bl) * dk * a;
-          b = b * (1 - a) + (cb * (1 - bl) + lb * bl) * dk * a;
+          const q = i * 4, wrap = Math.max(0, Math.min(1, (1 - IN[i]) * 1.6)) * 0.28;
+          const cr = (spx[q] * (1 - wrap) + r0 * wrap) * shadeK, cg = (spx[q + 1] * (1 - wrap) + g0 * wrap) * shadeK, cb = (spx[q + 2] * (1 - wrap) + b0 * wrap) * shadeK;
+          r = r * (1 - a) + cr * a; gg = gg * (1 - a) + cg * a; b = b * (1 - a) + cb * a;
+          ca += a;
         }
-        sr += r; sg += g; sb += b;
+        sr += r; sg += gg; sb += b;
       }
+      cvr[my * mw + mx] = ca / n;
       o[j] = sr / n; o[j + 1] = sg / n; o[j + 2] = sb / n; o[j + 3] = rpx[j + 3] ? 255 : 0;
     }
-    // «зерно» знімка поверх техніки (шум/стиснення камери), щоб не виглядала вклеєною
-    const gr = p.grain || 0;
-    if (gr > 0) {
-      for (let my = 1; my < mh - 1; my++) for (let mx2 = 1; mx2 < mw - 1; mx2++) {
-        let a = 0; for (let yy = my * SS; yy < my * SS + SS; yy += 2) for (let xx = mx2 * SS; xx < mx2 * SS + SS; xx += 2) a += Av[yy * Wp + xx];
-        a /= SS * SS / 4; if (a < 0.05) continue;
-        const j = (my * mw + mx2) * 4;
-        for (let c = 0; c < 3; c++) {
-          const hpv = rpx[j + c] - (rpx[j - 4 + c] + rpx[j + 4 + c] + rpx[j - mw * 4 + c] + rpx[j + mw * 4 + c]) / 4;
-          o[j + c] = o[j + c] + hpv * gr * a;
-        }
+    // шум сенсора/стиснення як на знімку — лише на техніці (розмиття прибрало її власний)
+    if (g.noise > 0.3) {
+      const R = rng((p.seed || 0) + Math.round(cx) * 73856093 + Math.round(cy) * 19349663);
+      const gauss = () => { const u = R() || 1e-9, v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+      for (let i = 0; i < mw * mh; i++) {
+        const a = cvr[i]; if (a < 0.03) continue;
+        const nL = gauss() * g.noise * a, j = i * 4;
+        o[j] += nL + gauss() * g.noise * 0.25 * a; o[j + 1] += nL; o[j + 2] += nL + gauss() * g.noise * 0.25 * a;
       }
     }
-    // підвищення різкості техніки (unsharp mask), лише там, де вона є
-    const shp = p.sharp === undefined ? 0.7 : p.sharp;
-    if (shp > 0) {
-      const cov = new Float32Array(mw * mh);
-      for (let my = 0; my < mh; my++) for (let mx = 0; mx < mw; mx++) {
-        let s = 0;
-        for (let yy = my * SS; yy < my * SS + SS; yy += 2) for (let xx = mx * SS; xx < mx * SS + SS; xx += 2) s += Av[yy * Wp + xx];
-        cov[my * mw + mx] = s / (SS * SS / 4);
-      }
-      const src = new Uint8ClampedArray(o);
-      for (let my = 1; my < mh - 1; my++) for (let mx = 1; mx < mw - 1; mx++) {
-        const k = cov[my * mw + mx]; if (k < 0.05) continue;
-        const j = (my * mw + mx) * 4;
-        for (let c = 0; c < 3; c++) {
-          const bl = (src[j - 4 + c] + src[j + 4 + c] + src[j - mw * 4 + c] + src[j + mw * 4 + c] + src[j + c] * 4) / 8;
-          o[j + c] = src[j + c] + (src[j + c] - bl) * shp * 1.6 * Math.min(1, k * 1.5);
-        }
-      }
-    }
-    // пікселі поза знімком не чіпаємо: putImageData сам обріже по межах полотна
     dst.getContext("2d").putImageData(out, x0, y0);
-    return {x: x0, y: y0, w: mw, h: mh, hidden: hiddenFrac};
+    return {x: x0, y: y0, w: mw, h: mh, hidden: hiddenFrac,
+      auto: {tone: Math.round((g.mt * (g.hi - g.lo) / 255 + g.lo - g.smean) / 2.55), sat: Math.round(g.sat * 100), blur: Math.round(g.blur * 10) / 10, noise: Math.round(g.noise * 10) / 10, shadow: Math.round(g.op * 100)}};
   }
 
   /* Згладити ламану (Чайкін). */
@@ -391,5 +530,5 @@
     return best;
   }
 
-  window.Compose = {compose, prepareObject, addCage, catapultSprite, canvas, SS, tracks, shadowDir, smooth};
+  window.Compose = {compose, analyze, harmonize, alongEdge, normalizeModel, fitSprite, prepareObject, addCage, catapultSprite, canvas, SS, tracks, shadowDir, smooth};
 })();

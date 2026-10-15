@@ -115,7 +115,7 @@
       if (o.builtin) spr = Models.sprite(o.id);
       else {
         const j = await API.call("object", {id: o.id}, this.pw);
-        spr = Compose.prepareObject(await loadImg(`data:${j.mime || "image/png"};base64,${j.data}`));
+        spr = Compose.prepareObject(await loadImg(`data:${j.mime || "image/png"};base64,${j.data}`));   // збережені моделі вже нормалізовані — тут лише прозорість/обрізка
       }
       this.sprites.set(o.id, spr);
       return spr;
@@ -154,12 +154,7 @@
         const i = q[qi], x = i % w;
         for (const j of [i - 1, i + 1, i - w, i + w]) { if (j < 0 || j >= w * h || (j % w === 0 && x === w - 1) || (x === 0 && j === i - 1)) continue; if (DR[j] > DR[i] + 1) { DR[j] = DR[i] + 1; q.push(j); } }
       }
-      // різкість знімка: середня енергія Лапласа (для підгонки різкості техніки)
-      const g2 = new Float32Array(w * h); for (let i = 0; i < w * h; i++) g2[i] = 0.3 * px[i * 4] + 0.59 * px[i * 4 + 1] + 0.11 * px[i * 4 + 2];
-      const LE = new Float32Array(w * h);
-      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x; LE[i] = Math.abs(4 * g2[i] - g2[i - 1] - g2[i + 1] - g2[i - w] - g2[i + w]); }
-      const ls = Array.from(LE).filter((v, i) => i % 7 === 0).sort((a, b) => a - b), leMed = ls[ls.length >> 1] || 1;
-      const d = {src, W, H, k, w, h, IV, IB, sunDir, DR, LE, leMed};
+      const d = {src, W, H, k, w, h, IV, IB, sunDir, DR};
       this.maps.set(m.id, d);
       return d;
     },
@@ -192,16 +187,6 @@
       const top = cand.slice(0, Math.max(1, Math.min(8, Math.ceil(cand.length * 0.03))));
       const c = pick(top);
       return [Math.round(c[1]), Math.round(c[2])];
-    },
-
-    /* Різкість техніки під ділянку знімка: на розмитій — розмити спрайт, на різкій — легко підточити. */
-    focus(d, at, size) {
-      const gx = Math.round(at[0] / d.k), gy = Math.round(at[1] / d.k), r = Math.max(3, Math.round(size / d.k));
-      let s = 0, n = 0;
-      for (let y = Math.max(1, gy - r); y < Math.min(d.h - 1, gy + r); y++) for (let x = Math.max(1, gx - r); x < Math.min(d.w - 1, gx + r); x++) { s += d.LE[y * d.w + x]; n++; }
-      const ratio = n ? s / n / d.leMed : 1;          // < 1 — ділянка розмитіша за типову
-      const blur = Math.max(0, Math.min(1.6, (1.1 - ratio) * 1.8)) + 0.35;   // спрайт завжди трохи мʼякший за ідеальний рендер
-      return {blur, sharp: ratio > 1.05 ? 0.35 : 0};
     },
 
     /* Накати: від корми техніки — плавно до найближчої дороги/ґрунтовки (або просто назад, якщо дороги нема). */
@@ -268,14 +253,16 @@
           for (const it of items) {
             const size = Math.max(4, (it.o.length_m || 7) / m.gsd), spr = await this.sprite(it.o);
             const want = rnd(L.range[0], L.range[1]);
-            const base = {size, sharp: 0.3, shade: 0.25, shadow_dir: d.sunDir, shadow_len: Math.min(40, Math.max(2, 2.2 / m.gsd)), shadow_op: 0.55, shadow_soft: 0.7,
-              blend: 0.08, darken: 0, sat: 0.9, grain: 0.35, hideTarget: want};
+            // тон, колір, різкість, шум і тінь Compose підбирає сам під ділянку знімка
+            const base = {size, shade: 0.25, shadow_dir: d.sunDir, shadow_len: Math.min(40, Math.max(2, 2.2 / m.gsd)), hideTarget: want};
             // кілька спроб місця: потрібна частка схованого силуету має бути досяжною (є крони поруч)
             let ok = null;
             for (let tries = 0; tries < 6 && !ok; tries++) {
               const at = this.spot(d, size, placed, L.veg);
               if (!at) break;
-              const p = Object.assign({angle: Math.round(rnd(0, 359))}, base, this.focus(d, at, size));
+              // як у реальності: здебільшого паралельно краю посадки (±12°), інколи — довільно
+              const edge = Math.random() < 0.65 ? Compose.alongEdge(cv, at[0], at[1], size) : null;
+              const p = Object.assign({angle: edge === null ? Math.round(rnd(0, 359)) : Math.round((edge + (Math.random() < 0.5 ? 0 : 180) + rnd(-12, 12) + 360) % 360)}, base);
               const r = Compose.compose(cv, scratch, spr, at[0], at[1], p);
               const hid = r ? r.hidden : 0;
               const inRange = hid >= L.range[0] - 0.08 && hid <= L.range[1] + 0.03;
