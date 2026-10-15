@@ -678,3 +678,7 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   .screen.cards .c-form.choice .c-choices { grid-template-columns: minmax(0, 1fr); }
   .screen.cards .c-choices button { min-height: 52px; }
 }
+
+/* підсумок: нова гра / меню / вихід */
+.sum-actions { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; margin-top: .6rem; }
+.sum-actions button { flex: 1 1 9rem; margin: 0; }

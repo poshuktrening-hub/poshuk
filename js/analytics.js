@@ -90,7 +90,7 @@
         ${catRows.length ? `<ul class="an-cats">${catRows.map((c) => `<li><span class="nm">${esc(c.cat)}</span>${bar(c.p)}<b class="${tone(c.p)}">${c.p}%</b><small>${c.ok} з ${c.n}</small></li>`).join("")}</ul>`
           : `<p class="muted small">Ще немає відповідей за цей період.</p>`}
 
-        ${hard.length ? `<h3>Найчастіше помиляються</h3><ul class="an-items">${hard.map((x) => `<li><span class="nm">${esc(x.name)}<small>${x.kind === "cards" ? "картка" : "на знімку"}</small></span><b class="${tone(x.p)}">${x.p}%</b><small>${x.ok} з ${x.n}</small></li>`).join("")}</ul>` : ""}
+        ${hard.length ? `<h3>Найчастіше помиляються</h3><ul class="an-items">${hard.map((x) => `<li><span class="nm">${esc(Logic.dispName(x.name))}<small>${x.kind === "cards" ? "картка" : "на знімку"}</small></span><b class="${tone(x.p)}">${x.p}%</b><small>${x.ok} з ${x.n}</small></li>`).join("")}</ul>` : ""}
 
         <h3>Курсанти</h3>
         ${cadets.length ? `<div class="an-scroll"><table class="an-table"><tr><th>Позивний</th><th class="num">Тестів</th><th class="num">Середній</th><th>Найслабше</th><th class="num">Останній</th></tr>

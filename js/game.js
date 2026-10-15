@@ -40,7 +40,9 @@
       $("g-sound").onclick = () => { $("g-sound").textContent = SFX.toggle() ? "🔊" : "🔇"; };
       $("g-next").onclick = () => this.goNext();
       $("g-quit").onclick = () => { clearInterval(this.nextT); if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
-      $("sum-again").onclick = () => this.showStart();
+      $("sum-again").onclick = () => { SFX.click(); if (this.lastGame === "cards" && window.Cards) Cards.start(); else this.start(); };   // та сама гра з тими ж налаштуваннями
+      $("sum-menu").onclick = () => { SFX.click(); this.lastView = "menu"; this.showStart(); };
+      $("sum-exit").onclick = () => $("logout-btn").click();
       document.addEventListener("keydown", (e) => {
         if ($("s-game").hidden || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
         if (e.key === "+" || e.key === "=") this.viewer.zoomCenter(1.6);
@@ -308,8 +310,8 @@
         else if (o) { const u = await API.objUrl(o.id, this.password).catch(() => null); if (u) pic = `<img src="${u}" alt="" onerror="this.closest('.b-pic').remove()">`; }
         const ttx = Logic.ttxFor(o, t.type, !!t.decoy);
         const len = o && o.length_m ? `<p class="len">Довжина ≈ ${o.length_m} м</p>` : "";
-        const name = o && o.name ? o.name.replace(/\s*\(вбудована\)$/, "") : (t.type || "ціль");
-        const sub = o && o.name && t.type && norm(o.name) !== norm(t.type) ? `<p class="len">${esc(t.type)}</p>` : "";
+        const name = Logic.dispName(o && o.name ? o.name.replace(/\s*\(вбудована\)$/, "") : (t.type || "ціль"));
+        const sub = o && o.name && t.type && !Logic.nameHasType(name, t.type) ? `<p class="len">${esc(t.type)}</p>` : "";   // тип окремим рядком — лише якщо його немає в назві
         return `<div class="b-card">${pic ? `<div class="b-pic">${pic}</div>` : ""}<div class="b-txt"><h3>${esc(name)}</h3>${sub}${len}${ttx ? `<p>${esc(ttx).replace(/\n/g, "<br>")}</p>` : ""}</div></div>`;
       }));
       const n = st.targets.filter((x) => !x.decoy).length;
@@ -542,6 +544,7 @@
     // ---------- підсумок
     summary() {
       show("s-summary");
+      this.lastGame = "search";
       const res = this.results;
       const max = 10 * res.length, total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.round(100 * total / max) : 0, m = this.mode || Logic.MODES.game;

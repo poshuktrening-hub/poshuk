@@ -6,17 +6,15 @@
   const BUILTIN = Models.LIST[0];
 
   // назва, ключ, мін, макс, крок, типове значення
+  // Решту (тон, рівні, колір, насиченість, різкість, шум, колір і щільність тіні) підбирає Compose.harmonize з ділянки знімка.
   const SLIDERS = [
     ["Розмір на знімку, пкс", "size", 3, 120, 0.5, 16],
     ["Куди дивиться (компас), °", "angle", 0, 359, 1, 0],
     ["Сховано силуету під кронами, %", "hide", 0, 85, 5, 0],
+    ["Яскравість (± від авто), %", "bright", -40, 40, 5, 0],
+    ["Тінь: сила (від авто), %", "shadowK", 0, 150, 10, 100],
     ["Тінь: куди падає, °", "shadow_dir", 0, 359, 5, 135],
     ["Тінь: довжина, пкс", "shadow_len", 0, 40, 0.5, 4],
-    ["Тінь: щільність, %", "shadow_op", 0, 90, 5, 55],
-    ["Злиття з фоном, %", "blend", 0, 50, 1, 4],
-    ["Затемнення, %", "darken", 0, 50, 1, 0],
-    ["Насиченість кольору, %", "sat", 0, 150, 5, 95],
-    ["Різкість техніки, %", "sharp", 0, 150, 10, 70],
   ];
 
   function fileToDataURL(blob) {
@@ -75,11 +73,12 @@
           <div class="seg-row"><span>Поворот</span><div class="seg" id="gp-angle">
             <button type="button" data-v="0">↑</button><button type="button" data-v="45">↗</button><button type="button" data-v="90">→</button>
             <button type="button" data-v="135">↘</button><button type="button" data-v="180">↓</button><button type="button" data-v="270">←</button>
-            <button type="button" data-v="rnd">🎲</button></div></div>
+            <button type="button" data-v="rnd" title="Випадково (R)">🎲</button><button type="button" data-v="edge" title="Паралельно краю посадки / крон — як ставлять техніку насправді">🌲 Уздовж посадки</button></div></div>
           <div class="seg-row"><span>Маскування</span><div class="seg" id="gp-hide">
             <button type="button" data-v="0">Відкрито</button><button type="button" data-v="30">Частково</button><button type="button" data-v="55">Під кронами</button><button type="button" data-v="75">Хардкор</button></div> <small class="muted" id="g-hid"></small></div>
-          <p class="status">Тінь за сонцем знімка, різкість і колір підлаштовуються самі.</p>
-          <details class="adv"><summary>Тонке налаштування</summary><div class="sliders" id="g-sliders"></div></details>
+          <p class="status" id="g-auto">Тон, колір, різкість, шум і тінь підбираються під ділянку знімка автоматично.</p>
+          <details class="adv"><summary>Корекція</summary><div class="sliders" id="g-sliders"></div></details>
+          <p class="muted small keys">Тягніть техніку — перемістити, <b>Shift</b>+тягнути — повернути. <b>Q</b>/<b>E</b> — поворот ±15°, <b>[</b> <b>]</b> — розмір, <b>R</b> — випадково, <b>Enter</b> — закріпити, <b>Del</b> — прибрати, <b>Ctrl+Z</b> — скасувати.</p>
         </section>
       </aside>
       <div class="mainpane">
@@ -94,12 +93,16 @@
       const $ = (id) => root.querySelector("#" + id);
       this.$ = $;
       this.viewer = new Viewer($("g-view"), {onLeft: (x, y) => this.place(x, y)});
+      this.viewer.grab = (ph, x, y, e) => this.grab(ph, x, y, e);   // як у редакторах рівнів: схопити й тягнути, Shift — обертати
+      if (this.keyH) document.removeEventListener("keydown", this.keyH);
+      this.keyH = (e) => this.key(e);
+      document.addEventListener("keydown", this.keyH);
       $("g-sliders").innerHTML = SLIDERS.map(([t, k, lo, hi, st, v]) =>
         `<label><span>${esc(t)} <b id="gv-${k}">${v}</b></span><input type="range" id="gs-${k}" min="${lo}" max="${hi}" step="${st}" value="${v}"></label>`).join("");
       SLIDERS.forEach(([, k]) => ($("gs-" + k).oninput = () => { $("gv-" + k).textContent = $("gs-" + k).value; this.syncQuick(); this.schedule(); }));
       $("gq-size-r").oninput = () => { this.setVal("size", $("gq-size-r").value); this.syncQuick(); this.schedule(); };
       const presets = {
-        "gp-angle": (v) => this.setVal("angle", v === "rnd" ? Math.floor(Math.random() * 360) : v),
+        "gp-angle": (v) => this.setVal("angle", v === "rnd" ? Math.floor(Math.random() * 360) : v === "edge" ? this.edgeAngle() : v),
         "gp-hide": (v) => this.setVal("hide", v),
       };
       Object.keys(presets).forEach((id) => $(id).querySelectorAll("button").forEach((b) => (b.onclick = () => {
@@ -136,7 +139,7 @@
       if (admin.sel) this.baseFromStage();
     },
 
-    close() { this.admin.render(); if (this.admin.sel) this.admin.select(this.admin.sel); },
+    close() { document.removeEventListener("keydown", this.keyH); this.admin.render(); if (this.admin.sel) this.admin.select(this.admin.sel); },
 
     hint(t) { this.$("g-hint").textContent = t; },
     loading(t) { this.$("g-loading").hidden = !t; if (t) this.$("g-loading-t").textContent = t; },
@@ -197,9 +200,9 @@
       const st = this.$("g-obj-status");
       st.textContent = "Обробляю…"; st.className = "status";
       try {
-        const spr = Compose.prepareObject(await loadImg(await fileToDataURL(file)));
+        const spr = Compose.normalizeModel(await loadImg(await fileToDataURL(file)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
-        const name = file.name.replace(/\.[^.]+$/, "").slice(0, 40);
+        const name = Logic.dispName(file.name.replace(/\.[^.]+$/, "").replace(/_/g, " ")).slice(0, 40);
         const j = await API.call("object_upload", {name, data, length_m: lenFor(name), type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: Logic.cleanTtx(this.$("g-ttx").value), decoy: this.$("g-decoy").checked || /^муляж/i.test(name) ? 1 : 0}, this.pw);
         this.sprites.set(j.object.id, spr);
         await this.loadObjects(j.object.id);
@@ -228,7 +231,7 @@
     async saveMeta() {
       const o = this.obj(), st = this.$("g-obj-status");
       if (o.builtin) return;
-      const nm = this.$("g-name").value.trim() || o.name;
+      const nm = Logic.dispName(this.$("g-name").value.trim() || o.name);
       Object.assign(o, {name: nm, length_m: Number(this.$("g-len").value) || 7, type: Logic.typeOf(nm.replace(/^муляж\s+/i, "")), ttx: Logic.cleanTtx(this.$("g-ttx").value)});
       o.decoy = this.$("g-decoy").checked ? 1 : 0;
       try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx, decoy: o.decoy}, this.pw); await this.loadObjects(o.id); st.textContent = `Збережено ✓ (тип: ${o.type})`; st.className = "status ok"; }
@@ -245,7 +248,7 @@
     autoSize() {
       const gsd = Number(this.$("g-gsd").value), len = Number(this.$("g-len").value);
       if (gsd > 0 && len > 0) this.setVal("size", Math.min(120, Math.max(3, Math.round(len / gsd * 2) / 2)));
-      if (gsd > 0) { this.setVal("shadow_len", Math.min(40, Math.max(1, Math.round(2.2 / gsd * 2) / 2))); this.setVal("shadow_op", 55); }   // тінь ≈2,2 м
+      if (gsd > 0) this.setVal("shadow_len", Math.min(40, Math.max(1, Math.round(2.2 / gsd * 2) / 2)));   // тінь ≈2,2 м
       this.schedule();
     },
 
@@ -290,9 +293,8 @@
 
     // ---------- рендер
     params() {
-      return {size: this.val("size"), angle: this.val("angle"), hideTarget: this.val("hide") / 100, shade: 0.25, shadow_soft: 0.7, grain: 0.3, sharp: this.val("sharp") / 100,
-        shadow_dir: this.val("shadow_dir"), shadow_len: this.val("shadow_len"), shadow_op: this.val("shadow_op") / 100,
-        blend: this.val("blend") / 100, darken: this.val("darken") / 100, sat: this.val("sat") / 100};
+      return {size: this.val("size"), angle: this.val("angle"), hideTarget: this.val("hide") / 100, shade: 0.25,
+        shadow_dir: this.val("shadow_dir"), shadow_len: this.val("shadow_len"), bright: this.val("bright") / 100, shadowK: this.val("shadowK") / 100};
     },
 
     schedule() { clearTimeout(this.job); this.job = setTimeout(() => this.render(), 60); },
@@ -315,6 +317,8 @@
           this.rect = Compose.compose(this.base, this.work, spr, this.point[0], this.point[1], this.params());
           const hp = Math.round((this.rect && this.rect.hidden || 0) * 100);
           this.$("g-hid").textContent = this.val("hide") ? `сховано ≈${hp}%${hp > 60 ? " · хардкор-етап" : ""}` : "";
+          const a = this.rect && this.rect.auto;
+          if (a) this.$("g-auto").textContent = `Авто під ділянку: тон ${a.tone > 0 ? "+" : ""}${a.tone}%, насиченість ${a.sat}%, розмиття ${a.blur} пкс, шум ${a.noise}, тінь ${a.shadow}%.`;
         } catch (e) { this.hint("Помилка: " + e.message); }
       }
       this.viewer.replaceImage(this.work);
@@ -333,6 +337,46 @@
       this.hint(`Обʼєкт у точці (${this.point[0]}, ${this.point[1]}). Клік — перенести. Готово — «Закріпити й додати ще» або «Зберегти як новий етап».`);
       this.render();
     },
+
+    /* Кут уздовж краю посадки під поточною точкою (або центром знімка). */
+    edgeAngle() {
+      if (!this.base) return this.val("angle");
+      const pt = this.point || [this.base.width / 2, this.base.height / 2];
+      const a = Compose.alongEdge(this.base, pt[0], pt[1], this.val("size"));
+      if (a === null) { this.hint("Тут немає чіткого краю посадки — поворот не змінено."); return this.val("angle"); }
+      return Math.round((a + (Math.random() < 0.5 ? 0 : 180)) % 360);
+    },
+
+    /* Перетягування поставленої техніки: звичайне — перемістити, з Shift — повернути до курсора. */
+    grab(ph, x, y, e) {
+      if (ph === "hit") return !!this.point && Math.hypot(x - this.point[0], y - this.point[1]) < Math.max(6, this.val("size") * 0.6);
+      if (ph === "start") { this.grabD = {dx: this.point[0] - x, dy: this.point[1] - y, rot: e && e.shiftKey}; return; }
+      const g = this.grabD; if (!g) return;
+      if (g.rot) this.setVal("angle", Math.round((Math.atan2(x - this.point[0], -(y - this.point[1])) * 180 / Math.PI + 360) % 360));
+      else if (this.viewer.inside(x + g.dx, y + g.dy)) this.point = [Math.round(x + g.dx), Math.round(y + g.dy)];
+      if (ph === "end" || ph === "cancel") { this.grabD = null; this.schedule(); return; }
+      if (!this.busyR) { this.busyR = true; this.render().finally(() => (this.busyR = false)); }
+    },
+
+    key(e) {
+      if (!this.base || /INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || "")) return;
+      const k = e.key, step = e.shiftKey ? 5 : 15;
+      if ((e.ctrlKey || e.metaKey) && /^[zя]$/i.test(k)) { e.preventDefault(); this.point ? this.drop() : this.undoCommit(); return; }
+      if (!this.point && k !== "Enter") return;
+      let done = true;
+      if (k === "q" || k === "Q" || k === "й" || k === "Й") this.setVal("angle", (this.val("angle") - step + 360) % 360);
+      else if (k === "e" || k === "E" || k === "у" || k === "У") this.setVal("angle", (this.val("angle") + step) % 360);
+      else if (k === "r" || k === "R" || k === "к" || k === "К") this.setVal("angle", Math.floor(Math.random() * 360));
+      else if (k === "[" || k === "х") this.setVal("size", Math.max(3, Math.round(this.val("size") * 0.95 * 2) / 2));
+      else if (k === "]" || k === "ї") this.setVal("size", Math.min(120, Math.round(this.val("size") * 1.05 * 2) / 2));
+      else if (k === "Enter") { this.commit(); }
+      else if (k === "Delete" || k === "Backspace" || k === "Escape") { this.drop(); }
+      else done = false;
+      if (done) { e.preventDefault(); if (k !== "Enter" && this.point) this.schedule(); }
+    },
+
+    /* Прибрати ще не закріплену техніку. */
+    drop() { if (!this.point) return; this.point = null; this.restoreRect(); this.viewer.replaceImage(this.work); this.renderMarks(); this.hint("Прибрано. Клік по знімку — поставити знову."); },
 
     target() {
       return {x: this.point[0], y: this.point[1], r: Math.max(8, Math.round(this.val("size") * 0.6)), type: Logic.typeOf(this.$("g-name").value.replace(/^муляж\s+/i, "")), obj: this.obj().id, ...(this.$("g-decoy").checked ? {decoy: true} : {})};
@@ -438,8 +482,8 @@
       try { have = (await API.call("objects", {}, pw)).objects.map((o) => o.name); } catch (e) { return 0; }
       let n = 0;
       for (const f of files) {
-        const name = f.name.replace(/\.[^.]+$/, "").slice(0, 40);
-        const spr = Compose.prepareObject(await loadImg(await fileToDataURL(f)));
+        const name = Logic.dispName(f.name.replace(/\.[^.]+$/, "").replace(/_/g, " ")).slice(0, 40);
+        const spr = Compose.normalizeModel(await loadImg(await fileToDataURL(f)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
         const decoy = /^муляж/i.test(name), base = name.replace(/^муляж\s+/i, "");
         const len = lenFor(base);
