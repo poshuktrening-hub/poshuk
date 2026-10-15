@@ -651,3 +651,14 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .screen.ref .bar.top #r-count { margin-left: auto; }
 .screen.ref .bar.top #r-count + #r-help { margin-left: 6px; }
 @media (max-height: 560px) { .help-card { gap: 8px; } .help-img { max-height: 38vh; object-fit: contain; } }
+
+/* Топ дня зі званнями */
+.top3 .top-h { display: block; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 1px; }
+.top3 .top-none { display: block; color: var(--muted); font-size: .8rem; }
+.top3 li .tn { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; }
+.top3 li .tn b { font-weight: 600; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%; }
+.top3 li .tn small { display: inline-flex; align-items: center; gap: 3px; color: var(--muted); font-size: .74rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top3 li .tn small .rk-badge { width: 11px; height: 12px; flex: 0 0 auto; align-self: center; }
+.main-menu .mm .top3 li .tn b { font: 600 .9rem var(--body); letter-spacing: 0; max-width: 62%; flex: 0 0 auto; }
+.main-menu .mm .top3 li .tn small { flex: 1 1 auto; }
+.main-menu .mm .top3 .top-h { text-transform: uppercase; font-weight: 700; }

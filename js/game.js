@@ -101,15 +101,21 @@
       this.flushPending().then(() => this.loadTop());
       if (!$("callsign").value) $("callsign").focus();
     },
-    /* Топ-3 курсантів у головному меню (найкращий результат кожного). */
+    /* Топ дня в головному меню: найкращий результат кожного курсанта за поточну добу + звання за цим результатом. */
     async loadTop() {
       const draw = (id, list) => {
         const el = $(id); if (!el) return;
-        el.innerHTML = (list || []).map((x, i) => `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span>${esc(x.name)}</span><em>${x.pct}%</em></li>`).join("");
-        el.hidden = !(list || []).length;
+        list = list || [];
+        el.innerHTML = `<li class="top-h">Топ дня</li>` + (list.length ? list.map((x, i) => { const rk = Logic.rank(x.pct);
+          return `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b><small title="${esc(rk.name)}">${Logic.rankBadge(rk.level)}${esc(rk.name)}</small></span><em>${x.pct}%</em></li>`; }).join("")
+          : `<li class="top-none">Сьогодні ще ніхто не проходив — будьте першим</li>`);
+        el.hidden = false;
       };
-      if (this.top) { draw("top-search", this.top.search); draw("top-cards", this.top.cards); }
-      try { const j = await API.call("top", {}, this.password); this.top = j.top; draw("top-search", j.top.search); draw("top-cards", j.top.cards); } catch (e) { /* без топу — не страшно */ }
+      if (this.top && this.topDay === today()) { draw("top-search", this.top.search); draw("top-cards", this.top.cards); }
+      try {
+        const d = today(), j = await API.call("top", {since: d + " 00:00"}, this.password);
+        this.top = j.top; this.topDay = d; draw("top-search", j.top.search); draw("top-cards", j.top.cards);
+      } catch (e) { /* без топу — не страшно */ }
     },
     /* Головне меню → підменю режиму. */
     view(v) {
@@ -564,5 +570,6 @@
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])); }
 
   window.Game = Game;
+  function today() { const n = new Date(), p2 = (x) => String(x).padStart(2, "0"); return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())}`; }
   window.UI = {show, toast, esc};
 })();

@@ -208,7 +208,7 @@ async function action(env, ctx, req, origin) {
       const {results} = await env.DB.prepare("SELECT id, ord, cat, name, ttx, descr, imgs, updated FROM ref_entries ORDER BY ord").all();
       return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
     }
-    case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env)}; }
+    case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env, String(req.since || "0000"))}; }
   }
   await auth(env, req, "admin");
   switch (a) {
@@ -394,8 +394,8 @@ async function dedupeObjects(env) {
 }
 
 /* Топ-3 для головного меню: найкращий результат кожного позивного окремо для «Пошуку цілей» і «Карток». */
-async function top3(env) {
-  const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results WHERE COALESCE(archived,0)=0 ORDER BY ts DESC LIMIT 5000").all();
+async function top3(env, since = "0000") {   // since — початок доби за часом курсанта («YYYY-MM-DD 00:00»)
+  const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results WHERE COALESCE(archived,0)=0 AND ts >= ? ORDER BY ts DESC LIMIT 5000").bind(since).all();
   const out = {search: new Map(), cards: new Map()};
   for (const r of results) {
     const name = String(r.callsign || "").trim(); if (!name) continue;
