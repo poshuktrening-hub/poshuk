@@ -33,6 +33,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS answers_ts ON answers (ts)`,
   `CREATE TABLE IF NOT EXISTS ref_entries (id TEXT PRIMARY KEY, ord INTEGER, cat TEXT, name TEXT, ttx TEXT, descr TEXT, imgs TEXT, updated TEXT)`,
   `CREATE TABLE IF NOT EXISTS ref_images (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
+  // бекап знімка етапу перед перерендером: частини лежать у blobs під id "bak_<етап>", тут — цілі й розмір
+  `CREATE TABLE IF NOT EXISTS stage_backups (id TEXT PRIMARY KEY, targets TEXT, size INTEGER, chunks INTEGER, created TEXT)`,
 ];
 
 class HttpError extends Error { constructor(msg, status = 200) { super(msg); this.status = status; } }
@@ -228,6 +230,7 @@ async function action(env, ctx, req, origin) {
       const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind(String(req.id)).first();
       if (c.n !== st.chunks) throw new HttpError(`Завантажено ${c.n} з ${st.chunks} частин — спробуйте ще раз`);
       await env.DB.prepare("UPDATE stages SET ready=1 WHERE id=?").bind(String(req.id)).run();
+      await purgeImgCache(origin, String(req.id));
       const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id=?").bind(String(req.id)).first();
       return {ok: true, stage: rowToStage(r)};
     }
@@ -252,8 +255,45 @@ async function action(env, ctx, req, origin) {
     }
     case "delete_stage":
       await env.DB.batch([env.DB.prepare("DELETE FROM stages WHERE id=?").bind(String(req.id)),
-        env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(String(req.id))]);
+        env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(String(req.id)),
+        env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("bak_" + String(req.id)),
+        env.DB.prepare("DELETE FROM stage_backups WHERE id=?").bind(String(req.id))]);
       return {ok: true};
+    case "backups_list": {
+      const {results} = await env.DB.prepare("SELECT id, created FROM stage_backups").all();
+      return {ok: true, backups: results};
+    }
+    case "stage_reimage_begin": {
+      // новий знімок для наявного етапу (той самий id — аналітика кліків лишається). Спершу — бекап, якщо його ще немає.
+      const id = String(req.id), size = Number(req.size) || 0;
+      const st = await env.DB.prepare("SELECT id,targets,size,chunks,ready FROM stages WHERE id=?").bind(id).first();
+      if (!st) throw new HttpError("Етап не знайдено");
+      if (!size || size > 60e6) throw new HttpError("Знімок завеликий (понад 60 МБ)");
+      const bak = await env.DB.prepare("SELECT id FROM stage_backups WHERE id=?").bind(id).first();
+      if (!bak) {
+        if (!st.ready) throw new HttpError("Етап не готовий — бекап неможливий");
+        await env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("bak_" + id).run();
+        await env.DB.prepare("INSERT INTO blobs (id,part,data) SELECT ?, part, data FROM blobs WHERE id=?").bind("bak_" + id, id).run();
+        const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind("bak_" + id).first();
+        if (c.n !== st.chunks) throw new HttpError("Бекап не вдався — етап не змінено");
+        await env.DB.prepare("INSERT INTO stage_backups (id,targets,size,chunks,created) VALUES (?,?,?,?,?)").bind(id, st.targets, st.size, st.chunks, new Date().toISOString()).run();
+      }
+      const chunks = Math.ceil(size / CHUNK);
+      await env.DB.batch([env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(id),
+        env.DB.prepare("UPDATE stages SET size=?, chunks=?, ready=0 WHERE id=?").bind(size, chunks, id)]);
+      return {ok: true, id, chunk: CHUNK, chunks, token: await makeToken(env, "admin")};
+    }
+    case "stage_restore": {
+      const id = String(req.id);
+      const b = await env.DB.prepare("SELECT targets,size,chunks FROM stage_backups WHERE id=?").bind(id).first();
+      if (!b) throw new HttpError("Бекапу для цього етапу немає");
+      await env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(id).run();
+      await env.DB.prepare("INSERT INTO blobs (id,part,data) SELECT ?, part, data FROM blobs WHERE id=?").bind(id, "bak_" + id).run();
+      await env.DB.prepare("UPDATE stages SET targets=?, size=?, chunks=?, ready=1 WHERE id=?").bind(b.targets, b.size, b.chunks, id).run();
+      await purgeImgCache(origin, id);
+      const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id=?").bind(id).first();
+      return {ok: true, stage: rowToStage(r)};
+    }
     case "heat": {
       const {results} = await env.DB.prepare("SELECT x,y,hit FROM clicks WHERE stage=? AND COALESCE(archived,0)=0").bind(String(req.id)).all();
       const pl = await env.DB.prepare("SELECT COUNT(DISTINCT who) AS n FROM clicks WHERE stage=? AND COALESCE(archived,0)=0").bind(String(req.id)).first();
@@ -391,6 +431,9 @@ async function objData(env, id) {
   const {results} = await env.DB.prepare("SELECT part, data FROM blobs WHERE id=? ORDER BY part").bind("obj_" + id).all();
   if (results.length !== Number(m[1])) return null;
   return results.map((x) => typeof x.data === "string" ? x.data : new TextDecoder().decode(new Uint8Array(x.data))).join("");
+}
+async function purgeImgCache(origin, id) {
+  try { await caches.default.delete(new Request(new URL(`/api/img/${id}`, origin).toString())); } catch (e) { /* кеш не критичний */ }
 }
 async function purgeObjCache(origin, id) {
   try { await caches.default.delete(new Request(new URL(`/api/obj/${id}`, origin).toString())); } catch (e) { /* кеш не критичний */ }

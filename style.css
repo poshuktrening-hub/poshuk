@@ -682,3 +682,15 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 /* підсумок: нова гра / меню / вихід */
 .sum-actions { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; margin-top: .6rem; }
 .sum-actions button { flex: 1 1 9rem; margin: 0; }
+
+/* оновлення етапів (перерендер з бекапом) */
+.rs-list li { display: flex; align-items: center; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.rs-list .rs-btns { display: flex; gap: .6rem; white-space: nowrap; }
+.tag.ok { color: var(--hit); }
+.rs-prev { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; }
+.rs-prev p { flex-basis: 100%; margin: 0; }
+.rs-prev figure { margin: 0; }
+.rs-prev canvas { display: block; max-width: 100%; border-radius: 8px; image-rendering: pixelated; }
+.rs-prev figcaption { font-size: .8rem; color: var(--muted, #9aa); margin-top: 2px; }
+.rs-bar { display: flex; gap: 1rem; align-items: center; margin: 6px 0; }
+.rs-bar b { margin-right: auto; font-weight: 600; }

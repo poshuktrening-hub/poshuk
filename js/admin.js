@@ -53,6 +53,7 @@
           <button type="button" class="primary" id="a-auto" title="Сам розставляє техніку на картах і створює етапи">⚡ Автогенератор</button>
           <button type="button" id="a-add" title="Знімки без техніки: масштаб, напрямок і пора року визначаються самі">＋ Карти</button>
           <button type="button" id="a-gen" title="Поставити техніку вручну">✎ Генератор</button>
+          <button type="button" id="a-restage" title="Перемалювати техніку на вже створених етапах новою обробкою (з бекапом)">♻ Оновити етапи</button>
           <button type="button" id="a-cards" title="Фото для режиму «Картки цілей»">🃏 Картки</button>
           <button type="button" id="a-stats" title="Слабкі місця групи й кожного курсанта">📊 Аналітика</button>
           <button type="button" id="a-ref" title="Довідник техніки для курсантів">📘 Довідник</button>
@@ -143,6 +144,7 @@
       $("a-stats").onclick = () => Analytics.open(this);
       $("a-ref").onclick = () => RefAdmin.open(this);
       $("a-auto").onclick = () => { this.heatOn = false; AutoGen.open(this); };
+      $("a-restage").onclick = () => { this.heatOn = false; ReStage.open(this); };
       $("a-gen").onclick = async () => { await this.flushSave(); this.heatOn = false; Gen.open(this); };
       $("a-settings-btn").onclick = () => this.settings();
       document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !document.getElementById("s-admin").hidden) this.selectTarget(null); });
