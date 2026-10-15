@@ -14,7 +14,8 @@
       this.raf = null;
     }
     resize() {
-      const dpr = window.devicePixelRatio || 1, W = this.v.W, H = this.v.H;
+      // ефектам не потрібна «ретина»: на телефонах (dpr 3) полотно в 9 разів більше — саме це й давало підвисання
+      const dpr = Math.min(1.25, window.devicePixelRatio || 1), W = this.v.W, H = this.v.H;
       if (this.c.width !== Math.round(W * dpr) || this.c.height !== Math.round(H * dpr)) {
         this.c.width = Math.round(W * dpr); this.c.height = Math.round(H * dpr);
         this.c.style.width = W + "px"; this.c.style.height = H + "px";
@@ -65,7 +66,7 @@
     const debris = Array.from({length: small ? 14 : 40}, () => ({a: rnd(0, 6.283), sp: rnd(0.5, 2.2), life: rnd(0.7, 1.4), s: rnd(0.8, 2.2)}));
     const fires = Array.from({length: small ? 4 : 7}, (_, i) => ({a: rnd(0, 6.283), d: rnd(0, 0.45), s: rnd(0.75, 1.15), rot: rnd(0, 6.283), sp: rnd(-1, 1), seed: i + 1}));
     const wind = rnd(0, 6.283);
-    const smokes = Array.from({length: small ? 6 : 12}, (_, i) => ({a: rnd(0, 6.283), d: rnd(0.15, 0.9), s: rnd(0.7, 1.15), rot: rnd(0, 6.283), sp: rnd(-0.4, 0.4), delay: 0.12 + i * 0.04 + rnd(0, 0.15), seed: (i % 6) + 1}));
+    const smokes = Array.from({length: small ? 5 : 9}, (_, i) => ({a: rnd(0, 6.283), d: rnd(0.15, 0.9), s: rnd(0.7, 1.15), rot: rnd(0, 6.283), sp: rnd(-0.4, 0.4), delay: 0.12 + i * 0.04 + rnd(0, 0.15), seed: (i % 6) + 1}));
     const DUR = reduce() ? 1.5 : 4.2;
     const drawSpr = (ctx, img, x, y, size, rot, alpha) => {
       if (alpha <= 0.003) return;
@@ -77,7 +78,7 @@
         const t = (now - this.t0) / 1000;
         if (t > DUR) return false;
         const cx = v.tx + ix * v.s, cy = v.ty + iy * v.s;
-        const R = Math.max(small ? 22 : 38, Math.min(260, r * v.s * 2.1)) * (small ? 0.75 : 1);
+        const R = Math.max(small ? 22 : 38, Math.min(200, Math.min(v.W, v.H) * 0.16, r * v.s * 2.1)) * (small ? 0.75 : 1);
         ctx.save();
         // кільце пилу від ударної хвилі (по землі, повільне)
         if (t < 1.5) {
@@ -147,8 +148,14 @@
   }
 
   const layers = new WeakMap();
+  /* Спрайти — заздалегідь, у вільний час (а не в момент першого влучання). */
+  function warm() { ["fire", "smokeD", "smokeL"].forEach((k) => { for (let s = 1; s <= 7; s++) puff(k, s); }); }
+  if (window.requestIdleCallback) requestIdleCallback(warm, {timeout: 4000}); else setTimeout(warm, 1500);
+
   const FX = {
     _blast: makeBlast,   // для перевірки покадрово
+    /* шар ефектів створюється разом зі знімком, а не в момент влучання */
+    prepare(viewer) { if (viewer && !layers.get(viewer)) { const L = new FXLayer(viewer); layers.set(viewer, L); L.resize(); } },
     explode(viewer, ix, iy, r, opts = {}) {
       if (!viewer || !viewer.img) return;
       let L = layers.get(viewer);
@@ -161,9 +168,10 @@
 
   function shake(el, amp) {
     const t0 = performance.now();
+    el.style.willChange = "transform";
     const step = (now) => {
       const t = (now - t0) / 380;
-      if (t >= 1) { el.style.transform = ""; return; }
+      if (t >= 1) { el.style.transform = ""; el.style.willChange = ""; return; }
       const a = amp * Math.pow(1 - t, 2);
       el.style.transform = `translate(${rnd(-a, a).toFixed(1)}px,${rnd(-a, a).toFixed(1)}px)`;
       requestAnimationFrame(step);

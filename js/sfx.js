@@ -38,8 +38,10 @@
     }
     return master;
   }
+  const NB = {};   // шумові буфери генеруються один раз — інакше кожен вибух «гальмує» потік на десятки мс
   function noiseBuf(c, dur, brown) {
-    const n = Math.floor(c.sampleRate * dur), b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0);
+    const key = dur + (brown ? "b" : "w"); if (NB[key]) return NB[key];
+    const n = Math.floor(c.sampleRate * dur), b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0); NB[key] = b;
     let last = 0;
     for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; if (brown) { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w; }
     return b;
@@ -81,7 +83,12 @@
     pop() { boom(0.45); },
     get on() { return on; },
     toggle() { on = !on; try { localStorage.setItem("poshuk_sound", on ? "on" : "off"); } catch (e) { /* ок */ } if (on) SFX.click(); return on; },
-    unlock() { ac(); },
+    unlock() {
+      const c = ac();
+      // шум для вибуху — заздалегідь, у вільний час, щоб перше влучання не «гальмувало»
+      if (c && !NB._warm) { NB._warm = 1; const w = () => { [[0.08], [1.8], [3.2, true], [0.03]].forEach(([d, b]) => noiseBuf(c, d, b)); bus(); };
+        if (window.requestIdleCallback) requestIdleCallback(w, {timeout: 3000}); else setTimeout(w, 800); }
+    },
     click() { tone(1400, 0.035, {type: "square", vol: 0.04}); },
     zoom() { tone(520, 0.09, {type: "sine", vol: 0.05, slide: 260}); },
     hit() { tone(660, 0.09, {type: "triangle", vol: 0.16}); tone(990, 0.16, {type: "triangle", vol: 0.16, at: 0.08}); },
