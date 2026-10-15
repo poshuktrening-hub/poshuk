@@ -78,7 +78,7 @@
     async loadConfig() {
       const j = await API.call("config", {}, this.password);
       this.cfg = j.settings;
-      this.stages = j.stages;
+      this.stages = j.stages; API.noteStages(j.stages);
       this.objects = j.objects || [];
       this.cardPhotos = new Map(j.cardPhotos || []);
       this.cardCredits = new Map(j.cardCredits || []);

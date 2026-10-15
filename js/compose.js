@@ -220,11 +220,77 @@
     nz.sort((a, b) => a - b);
     const noise = nz.length ? Math.min(12, nz[nz.length >> 2] / (0.3186 * 6)) : 0;
     // різкість: як слабне 95-й перцентиль градієнта після розмиття σ=1 → σ PSF знімка
-    const g95 = (A) => { const v = []; for (let y = 1; y < h - 1; y += 2) for (let x = 1; x < w - 1; x += 2) { const i = y * w + x; v.push(Math.hypot(A[i + 1] - A[i - 1], A[i + w] - A[i - w])); } v.sort((a, b) => a - b); return v[Math.floor(v.length * 0.95)] || 0; };
-    const G1 = g95(L), G2 = g95(gaussBlur(L, w, h, 1));
-    const rho = Math.max(0.3, Math.min(0.96, G1 ? G2 / G1 : 0.5));
+    const rho = edgeRho(L, w, h);
     const psf = Math.sqrt(rho * rho / (1 - rho * rho));
-    return {mean, std, p1, p5, p50, p99, sat: sS / N, cast, env: [mCb / N, mCr / N], shadowT: tr, dark: p50 ? p5 / p50 : 0.5, noise, psf};
+    // дрібний локальний контраст (фактура): std високих частот — щоб деталі моделі були не «чистіші» за знімок
+    const Lb = gaussBlur(L, w, h, 1.5);
+    let hp = 0; for (let i = 0; i < N; i++) hp += (L[i] - Lb[i]) ** 2;
+    return {mean, std, p1, p5, p50, p99, sat: sS / N, cast, env: [mCb / N, mCr / N], shadowT: tr, dark: p50 ? p5 / p50 : 0.5, noise, psf, rho, hp: Math.sqrt(hp / N)};
+  }
+
+  /* Різкість: наскільки слабнуть найсильніші перепади (верхні 5% градієнтів) після розмиття σ=1.
+     Та сама міра для знімка і для моделі — тож розмиття моделі підбирається «у замкненому циклі», без припущень про обробку знімка. */
+  function edgeRho(L, w, h, mask) {
+    const top = (A) => {
+      const v = [];
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x; if (mask && !mask[i]) continue; v.push(Math.hypot(A[i + 1] - A[i - 1], A[i + w] - A[i - w])); }
+      if (!v.length) return 0;
+      v.sort((a, b) => b - a);
+      const n = Math.max(1, Math.floor(v.length * 0.05)); let s = 0; for (let i = 0; i < n; i++) s += v[i]; return s / n;
+    };
+    const G1 = top(L), G2 = top(gaussBlur(L, w, h, 1));
+    return Math.max(0.3, Math.min(0.97, G1 ? G2 / G1 : 0.5));
+  }
+
+  /* Обʼєм: світлотінь за сонцем знімка. Висота — розмита маска силуету (борти нижче, дах вище) + трохи яскравості
+     (панелі, люки); нормаль → освітлення з боку сонця, протилежний бік у півтіні. Плюс легка нерівномірність фарби/пилу. */
+  function relief(cv, angRad, shadowDir, seed) {
+    const w = cv.width, h = cv.height, x = cv.getContext("2d"), id = x.getImageData(0, 0, w, h), d = id.data, N = w * h;
+    const A = new Float32Array(N), Lm = new Float32Array(N);
+    for (let i = 0; i < N; i++) { A[i] = d[i * 4 + 3] / 255; Lm[i] = lum(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]) / 255 * A[i]; }
+    const sg = Math.max(1.2, Math.max(w, h) * 0.045);
+    const Hb = gaussBlur(A, w, h, sg), Hm = gaussBlur(Lm, w, h, Math.max(0.8, sg * 0.25));
+    const [sx, sy] = compass(shadowDir);
+    const vx = -sx, vy = -sy;   // напрям на сонце в координатах знімка
+    const lx = vx * Math.cos(angRad) + vy * Math.sin(angRad), ly = -vx * Math.sin(angRad) + vy * Math.cos(angRad);
+    const el = 45 * Math.PI / 180, Lx = lx * Math.cos(el), Ly = ly * Math.cos(el), Lz = Math.sin(el);
+    const k = sg * 2.2, km = sg * 0.9;
+    const R = rng(seed || 1), cells = Math.max(4, Math.round(Math.max(w, h) / Math.max(6, sg * 1.5)));
+    const nz = canvas(cells, Math.max(2, Math.round(cells * h / w))), nx = nz.getContext("2d"), nd = nx.createImageData(nz.width, nz.height);
+    for (let i = 0; i < nd.data.length; i += 4) { const v = 96 + R() * 64; nd.data[i] = nd.data[i + 1] = nd.data[i + 2] = v; nd.data[i + 3] = 255; }
+    nx.putImageData(nd, 0, 0);
+    const big = canvas(w, h), bx = big.getContext("2d"); bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = "high"; bx.drawImage(nz, 0, 0, w, h);
+    const wn = bx.getImageData(0, 0, w, h).data;
+    for (let y = 1; y < h - 1; y++) for (let xx = 1; xx < w - 1; xx++) {
+      const i = y * w + xx, j = i * 4; if (!d[j + 3]) continue;
+      const gx = (Hb[i + 1] - Hb[i - 1]) * k + (Hm[i + 1] - Hm[i - 1]) * km, gy = (Hb[i + w] - Hb[i - w]) * k + (Hm[i + w] - Hm[i - w]) * km;
+      const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1);
+      const sh = (-gx * Lx - gy * Ly + Lz) * inv / Lz;           // 1 — рівний дах
+      const f = Math.max(0.68, Math.min(1.25, 1 + 0.42 * (sh - 1))) * (1 + (wn[j] - 128) / 128 * 0.06);
+      d[j] = Math.min(255, d[j] * f); d[j + 1] = Math.min(255, d[j + 1] * f); d[j + 2] = Math.min(255, d[j + 2] * f);
+    }
+    x.putImageData(id, 0, 0);
+    return cv;
+  }
+
+  /* Розмиття, за якого модель (у масштабі знімка) має ту саму «різкість країв», що й ділянка знімка. */
+  function matchBlur(lvl, sc, size) {
+    const k = size / Math.max(lvl.width, lvl.height), w = Math.max(6, Math.ceil(lvl.width * k) + 6), h = Math.max(6, Math.ceil(lvl.height * k) + 6);
+    const cv = canvas(w, h), x = cv.getContext("2d");
+    let best = 0, bd = Infinity;
+    for (const b of [0, 0.25, 0.5, 0.75, 1, 1.3, 1.7, 2.2]) {
+      x.filter = "none"; x.fillStyle = `rgb(${sc.mean | 0},${sc.mean | 0},${sc.mean | 0})`; x.fillRect(0, 0, w, h);
+      x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
+      if (b) x.filter = `blur(${b}px)`;
+      x.drawImage(lvl, 3, 3, w - 6, h - 6);
+      x.filter = "none";
+      const d = x.getImageData(0, 0, w, h).data, L = new Float32Array(w * h);
+      for (let i = 0; i < w * h; i++) L[i] = lum(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]);
+      const r = edgeRho(L, w, h), dd = Math.abs(r - sc.rho);
+      if (dd < bd) { bd = dd; best = b; }
+      if (r > sc.rho) break;   // далі тільки розмитіше
+    }
+    return best;
   }
 
   /* Статистика самої моделі (кешується). */
@@ -248,17 +314,17 @@
   function harmonize(sprite, sc, p = {}) {
     const sp = spriteStats(sprite);
     // рівні: чорне на знімку не чорне (серпанок), біле — не біле; модель частково переводиться в ці рівні
-    const lo = Math.min(70, sc.p1 * 0.6), hi = Math.max(lo + 120, 255 - (255 - Math.min(255, sc.p99 + 4)) * 0.6);
+    const lo = Math.min(60, sc.p1 * 0.55), hi = Math.max(lo + 150, Math.min(255, Math.max(235, sc.p99 + 12)));
     // середній тон: трохи до тону місцевості (освітлення одне), але техніка лишається собою
-    const mt = Math.max(sc.p5, Math.min(sc.p99 - 10, sp.mean * 0.7 + sc.mean * 0.92 * 0.3 + (p.bright || 0) * 60));
-    const gain = Math.max(0.8, Math.min(1.2, 1 + (sc.std / sp.std - 1) * 0.25));
+    const mt = Math.max(sc.p5, Math.min(sc.p99 - 10, sp.mean * 0.8 + sc.mean * 0.2 + (p.bright || 0) * 60));
+    const gain = Math.max(0.92, Math.min(1.2, 1 + (sc.std / sp.std - 1) * 0.2));
     const sat = Math.max(0.6, Math.min(1.05, Math.sqrt((sc.sat + 2) / (sp.sat + 2))));
     const op = Math.max(0.4, Math.min(0.72, (1 - sc.dark) * 0.95)) * (p.shadowK === undefined ? 1 : p.shadowK);
     const tl = lum(...sc.shadowT) || 0.5;
     const T = sc.shadowT.map((t) => Math.max(0.15, Math.min(0.98, (1 - op) * t / tl)));
     return {lo, hi, mt: (mt - lo) * 255 / (hi - lo), smean: sp.mean, gain, sat, cast: sc.cast, env: sc.env,
       // знімки зазвичай уже підшарплені — розмиваємо лише на різницю, мʼякше за «фізичну» оцінку
-      blur: Math.max(0, Math.min(1.6, (sc.psf - 0.55) * 0.75)), noise: sc.noise, op, T};
+      blur: Math.max(0, Math.min(1.6, (sc.psf - 0.55) * 0.75)), noise: sc.noise, op, T};   // blur — запасне; основне підбирає matchBlur
   }
 
   function grade(src, g) {
@@ -319,7 +385,8 @@
     const g = harmonize(sprite, sc, p);
 
     // модель: якісне зменшення → підбір тону/кольору → малювання в SSd× роздільності з розмиттям під PSF знімка
-    const lvl = grade(fitSprite(sprite, Math.max(dw, dh)), g);
+    const lvl = relief(grade(fitSprite(sprite, Math.max(dw, dh)), g), ang, p.shadow_dir || 135, (p.seed || 0) + Math.round(cx * 7 + cy * 13));
+    try { g.blur = matchBlur(lvl, sc, p.size); } catch (e) { /* лишається оцінка з PSF */ }
     const sctx0 = canvas(Wp, Hp), sctx = sctx0.getContext("2d");
     sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = "high";
     sctx.translate(Wp / 2, Hp / 2); sctx.rotate(ang);
@@ -371,7 +438,8 @@
       Av[i] = a;
     }
     const hiddenFrac = a0 ? 1 - a1 / a0 : 0;
-    const shadeK = 1 - Math.min(0.6, (p.shade || 0) * Math.min(1, meanVeg * 1.6));
+    // притінення кронами — лише коли техніку справді ховають під ними (на відкритому місці її не темнимо)
+    const shadeK = 1 - Math.min(0.6, (p.shade || 0) * Math.min(1, meanVeg * 1.6) * Math.min(1, Math.max(hide, wantT || 0) / 0.3));
 
     // тінь (колір і щільність — як у тіней на цьому знімку) + контактна тінь під корпусом (AO)
     const sl = p.shadow_len || 0;

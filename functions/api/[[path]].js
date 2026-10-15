@@ -173,7 +173,7 @@ function rowToStage(r) {
   try { targets = JSON.parse(r.targets || "[]"); } catch (e) { targets = []; }
   let meta = {};
   try { meta = JSON.parse(r.meta || "{}"); } catch (e) { meta = {}; }
-  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, task: meta.task || "", direction: meta.direction || "", season: meta.season || "", gsd: Number(meta.gsd) || 0, hard: !!meta.hard};
+  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, task: meta.task || "", direction: meta.direction || "", season: meta.season || "", gsd: Number(meta.gsd) || 0, hard: !!meta.hard, v: meta.v || ""};
 }
 
 async function stages(env, all) {
@@ -230,6 +230,7 @@ async function action(env, ctx, req, origin) {
       const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind(String(req.id)).first();
       if (c.n !== st.chunks) throw new HttpError(`Завантажено ${c.n} з ${st.chunks} частин — спробуйте ще раз`);
       await env.DB.prepare("UPDATE stages SET ready=1 WHERE id=?").bind(String(req.id)).run();
+      if (await env.DB.prepare("SELECT id FROM stage_backups WHERE id=?").bind(String(req.id)).first()) await bumpStageVer(env, String(req.id));
       await purgeImgCache(origin, String(req.id));
       const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id=?").bind(String(req.id)).first();
       return {ok: true, stage: rowToStage(r)};
@@ -290,6 +291,7 @@ async function action(env, ctx, req, origin) {
       await env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(id).run();
       await env.DB.prepare("INSERT INTO blobs (id,part,data) SELECT ?, part, data FROM blobs WHERE id=?").bind(id, "bak_" + id).run();
       await env.DB.prepare("UPDATE stages SET targets=?, size=?, chunks=?, ready=1 WHERE id=?").bind(b.targets, b.size, b.chunks, id).run();
+      await bumpStageVer(env, id);
       await purgeImgCache(origin, id);
       const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id=?").bind(id).first();
       return {ok: true, stage: rowToStage(r)};
@@ -432,6 +434,13 @@ async function objData(env, id) {
   if (results.length !== Number(m[1])) return null;
   return results.map((x) => typeof x.data === "string" ? x.data : new TextDecoder().decode(new Uint8Array(x.data))).join("");
 }
+/* Нова версія знімка етапу (після перерендеру/відновлення): адреса знімка змінюється — браузери не покажуть старий з кешу. */
+async function bumpStageVer(env, id) {
+  const cur = await env.DB.prepare("SELECT meta FROM stages WHERE id=?").bind(id).first();
+  let m = {}; try { m = JSON.parse((cur && cur.meta) || "{}"); } catch (e) { m = {}; }
+  m.v = Date.now().toString(36);
+  await env.DB.prepare("UPDATE stages SET meta=? WHERE id=?").bind(JSON.stringify(m), id).run();
+}
 async function purgeImgCache(origin, id) {
   try { await caches.default.delete(new Request(new URL(`/api/img/${id}`, origin).toString())); } catch (e) { /* кеш не критичний */ }
 }
@@ -562,10 +571,10 @@ async function getObject(env, ctx, request, id, t) {
 }
 
 // ------------------------------------------------------------------ знімки
-async function getImage(env, ctx, request, id, t) {
+async function getImage(env, ctx, request, id, t, v) {
   if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
   const cache = caches.default;
-  const key = new Request(new URL(`/api/img/${id}`, request.url).toString());
+  const key = new Request(new URL(`/api/img/${id}${v ? `?v=${encodeURIComponent(v)}` : ""}`, request.url).toString());
   let res = await cache.match(key);
   if (!res) {
     const st = await env.DB.prepare("SELECT chunks, size, ready FROM stages WHERE id=?").bind(id).first();
@@ -601,7 +610,7 @@ export async function onRequest(context) {
   const path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
   try {
     await db(env);
-    if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], url.searchParams.get("t"));
+    if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], url.searchParams.get("t"));
     if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "ref" && path[1]) return await getRefImage(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));

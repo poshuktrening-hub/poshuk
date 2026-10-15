@@ -61,10 +61,15 @@
     return p;
   }
 
+  /* Версії знімків (після перерендеру етапу змінюється v → нова адреса, кеш браузера не віддасть старий знімок). */
+  const imgVer = {};
+  function noteStages(list) {
+    for (const s of list || []) { const v = s.v || ""; if (imgVer[s.id] !== undefined && imgVer[s.id] !== v) imgCache.delete(s.id); imgVer[s.id] = v; }
+  }
   async function loadPack(id, password) {
     const t = await token(password);
     let res;
-    try { res = await fetch(`${url}/img/${encodeURIComponent(id)}?t=${encodeURIComponent(t)}`); } catch (e) { throw new Error("Немає зв'язку з сервером."); }
+    try { res = await fetch(`${url}/img/${encodeURIComponent(id)}?t=${encodeURIComponent(t)}${imgVer[id] ? `&v=${encodeURIComponent(imgVer[id])}` : ""}`); } catch (e) { throw new Error("Немає зв'язку з сервером."); }
     if (res.status === 403) { delete tokens[password]; throw new Error("Сесія застаріла — оновіть сторінку"); }
     if (!res.ok) throw new Error("Знімок не знайдено");
     return Tiles.open(await res.arrayBuffer());
@@ -117,5 +122,5 @@
     return `${url}/ref/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}&t=${encodeURIComponent(await token(password))}`;
   }
 
-  window.API = {call, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
+  window.API = {call, noteStages, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
 })();
