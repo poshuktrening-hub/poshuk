@@ -139,6 +139,7 @@
       $("a-tdel").onclick = () => this.deleteTarget(this.tsel);
       $("a-heat").onclick = () => this.toggleHeat();
       $("a-cards").onclick = () => CardsAdmin.open(this);
+      if (!this._fixed) { this._fixed = true; setTimeout(() => CardsAdmin.autoFix(this), 3000); }
       $("a-stats").onclick = () => Analytics.open(this);
       $("a-ref").onclick = () => RefAdmin.open(this);
       $("a-auto").onclick = () => { this.heatOn = false; AutoGen.open(this); };

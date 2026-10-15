@@ -215,7 +215,7 @@ Object.assign(window.CARD_COMMONS, {
   "su27": ["Su-27", "Su-27_on_landing.jpg"],
   "mig31k": ["MiG-31K"],
   "tu22m3": ["Tu-22M3"],
-  "tu95ms": ["Tu-95MS"],
+  "tu95ms": ["Tu-95MS bomber", "Tupolev_Tu-95MS_RF-94126_12_red_at_ARMY-2022.jpg", "Tupolev_Tu-95MS,_Ukraine_-_Air_Force_AN1777045.jpg"],
   "tu160": ["Tu-160"],
   "a50": ["A-50 Beriev"],
   "il76": ["Il-76MD"],

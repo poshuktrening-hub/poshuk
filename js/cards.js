@@ -76,9 +76,9 @@
   /* Схожі типи — щоб хибні варіанти були правдоподібними (танк серед танків, ППО серед ППО). */
   const GROUPS = [["Танк"], ["БМП", "БМД", "БМПТ", "БТР", "БРДМ", "БРМ", "РХМ", "Бронеавтомобіль", "Тягач"],
     ["САУ", "Гаубиця", "Гармата", "Міномет", "Гаубиця-гармата", "Гармата-гаубиця-міномет"],
-    ["РСЗВ", "ОТРК", "БРК"], ["ЗРК", "ЗРГК", "ЗРС", "ЗСУ", "ЗУ", "ЗАК"], ["РЕБ", "РЛС", "АРК", "КШМ", "Машина"],
+    ["РСЗВ", "ОТРК", "БРК"], ["ЗРК", "ЗРГК", "ЗРС", "ЗСУ", "ЗУ", "ЗАК", "КП", "ПЗУ"], ["РЕБ", "РЛС", "АРК", "КШМ", "Машина"],
     ["Вантажівка", "Автомобіль", "Паливозаправник", "ТЗМ", "Сідельний", "Багі"],
-    ["ІМР", "БАТ", "Мінний", "ПТС", "БРЕМ", "Мостоукладач", "Понтонний", "Паром", "ПЗМ", "МДК", "Робот", "Екскаватор"],
+    ["ІМР", "БАТ", "Мінний", "ПТС", "БРЕМ", "Мостоукладач", "Понтонний", "Паром", "ПЗМ", "МДК", "Робот", "Екскаватор", "БМР", "ТМК-2", "БТС", "РЕМ-КЛ", "МТП-А2", "МТО-УБ1"],
     ["БпЛА", "Катапульта"], ["Гелікоптер", "Літак"], ["ПТРК"]];
   const typeOf = (c) => c.name.split(" ")[0];
   const quoted = (c) => (c.name.match(/«([^»]+)»/) || [])[1] || "";
@@ -93,7 +93,13 @@
   const Cards = {
     MODES, check, norm,
     deck() { return (window.CARDS || []).map(([id, name, al, p1, p2]) => ({id, name, aliases: al.split("|").map((x) => x.trim()).filter(Boolean), p1, p2})); },
-    withPhoto() { const ph = (window.Game && Game.cardPhotos) || new Map(); return this.deck().filter((c) => ph.has(c.id)); },
+    withPhoto() { const ph = (window.Game && Game.cardPhotos) || new Map(), ref = window.CARD_REF || {}; return this.deck().filter((c) => ph.has(c.id) || ref[c.id]); },
+    /* адреса фото картки: своє/Вікісховище, інакше — зображення з довідника */
+    photoUrl(id) {
+      if (Game.cardPhotos.has(id)) return API.cardUrl(id, Game.cardPhotos.get(id), Game.password);
+      const r = (window.CARD_REF || {})[id];
+      return r ? API.refUrl(r, "1", Game.password) : Promise.resolve(null);
+    },
 
     renderMenu() {
       let mode = LS.get("poshuk_cmode", "game"); if (!MODES[mode]) mode = "game";
@@ -152,13 +158,13 @@
         $("c-choices").querySelectorAll("button").forEach((b) => (b.onclick = () => this.choose(opts[+b.dataset.ci])));
       }
       const img = $("c-img"); img.removeAttribute("src"); $("c-loading").hidden = false;
-      const url = await API.cardUrl(c.id, Game.cardPhotos.get(c.id), Game.password).catch(() => null);
+      const url = await this.photoUrl(c.id).catch(() => null);
       await new Promise((res) => { img.onload = img.onerror = res; img.src = url || ""; });
       $("c-loading").hidden = true;
       if (this.cur !== c) return;
       // наступне фото — заздалегідь
       const nx = this.rounds[this.idx + 1];
-      if (nx) API.cardUrl(nx.id, Game.cardPhotos.get(nx.id), Game.password).then((u) => { const p = new Image(); p.src = u; }).catch(() => {});
+      if (nx) this.photoUrl(nx.id).then((u) => { if (u) { const p = new Image(); p.src = u; } }).catch(() => {});
       this.t0 = performance.now();
       this.tick(); this.tT = setInterval(() => this.tick(), 200);
       if (!this.mode.choice && !matchMedia("(pointer: coarse)").matches) $("c-answer").focus();
@@ -209,7 +215,7 @@
       const verdict = r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +10</p>`
         : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
       $("c-choices").innerHTML = "";
-      const cr = Game.cardCredits && Game.cardCredits.get(c.id);
+      const cr = (Game.cardCredits && Game.cardCredits.get(c.id)) || (!Game.cardPhotos.has(c.id) && (window.CARD_REF || {})[c.id] ? "навчальний довідник ВОС276" : "");
       $("c-reveal").innerHTML = `${verdict}<h3>${esc(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
       const last = this.idx === this.rounds.length - 1;

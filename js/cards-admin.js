@@ -121,7 +121,10 @@
     async wikiPut(id, skip = 0) {
       const list = await candidates(id);
       if (!list.length) return false;
-      const c = list[skip % list.length];
+      const cur = (this.credits && this.credits.get(id)) || "";
+      let c = list[skip % list.length];
+      // 🔎 має давати інше фото, а не те саме, що вже стоїть
+      for (let k = 0; k < list.length && cur && cur.includes(c.page); k++) c = list[(skip + k + 1) % list.length];
       const data = await urlToJpeg(c.url);
       const credit = `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}`;
       await this.upload(id, null, credit, data);
@@ -134,7 +137,7 @@
       catch (e) { this.say(e.message, "no"); }
     },
     async wikiAll() {
-      const todo = Cards.deck().filter((c) => !this.photos.has(c.id));
+      const todo = Cards.deck().filter((c) => !this.photos.has(c.id) && !(window.CARD_REF || {})[c.id]);   // картки з фото довідника не чіпаємо
       if (!todo.length) { this.say("У всіх карток уже є фото.", "ok"); return; }
       this.busy = true; let ok = 0; const miss = [];
       for (let i = 0; i < todo.length; i++) {
@@ -158,6 +161,15 @@
       this.render();
       this.say(`Додано фото: ${ok}.${miss.length ? ` Не впізнано: ${miss.join(", ")} — перейменуйте файл як у «Списку назв» або завантажте кнопкою «Фото…» в рядку картки.` : ""}`, miss.length ? "no" : "ok");
     },
+  };
+  /* Разові виправлення фото карток (виконуються тихо при вході в адмінку, якщо стоїть невдале фото). */
+  const FIXES = [{id: "tu95ms", bad: /AN1744941/}];
+  CardsAdmin.autoFix = async function (admin) {
+    try {
+      this.pw = admin.pw;
+      const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []);
+      for (const f of FIXES) { const cr = this.credits.get(f.id) || ""; if (f.bad.test(decodeURIComponent(cr))) await this.wikiPut(f.id, 0); }
+    } catch (e) { /* не критично */ }
   };
   window.CardsAdmin = CardsAdmin;
 })();
