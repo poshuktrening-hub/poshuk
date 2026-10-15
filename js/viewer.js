@@ -201,7 +201,7 @@
       const oldW = this.W || r.width, oldH = this.H || r.height;
       this.W = Math.max(50, r.width);
       this.H = Math.max(50, r.height);
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);   // 3× на телефонах — у 2,25 раза більше пікселів на кадр без помітної різниці
       this.canvas.width = Math.round(this.W * dpr);
       this.canvas.height = Math.round(this.H * dpr);
       this.canvas.style.width = this.W + "px";
@@ -231,7 +231,7 @@
     }
 
     _render() {
-      const ctx = this.ctx, dpr = window.devicePixelRatio || 1;
+      const ctx = this.ctx, dpr = Math.min(2, window.devicePixelRatio || 1);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, this.W, this.H);
       if (!this.img) return;

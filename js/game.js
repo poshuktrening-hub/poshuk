@@ -250,6 +250,7 @@
       $("g-loading").hidden = true;
       this.preload(this.idx + 1);
       this.viewer.setImage(img);
+      if (window.FX && FX.prepare) FX.prepare(this.viewer);
       this.viewer.setGrid(this.cfg.grid_cols);
       if (!this.mode.blind) { this.msg("Брифінг: запам'ятайте, що шукаєте."); await this.brief(st); }
       if (this.cur !== st) return;
@@ -438,10 +439,11 @@
       }
       if (this.mode.blind) {   // спершу картка «що це було», потім розбір
         const st = this.cur;
-        this.brief(st, true).then(() => { if (this.cur === st) { this.showAllMarks(); this.debrief(); } });
+        setTimeout(() => { if (this.cur === st) this.brief(st, true).then(() => { if (this.cur === st) { this.showAllMarks(); this.debrief(); } }); }, this.found.size ? 1200 : 0);
         return;
       }
-      this.outroT = setTimeout(() => this.showAllMarks(), OUTRO_DELAY);
+      // після влучання камера рушає, коли вогняна куля вже згасла — інакше анімації накладаються й кадри «підвисають»
+      this.outroT = setTimeout(() => this.showAllMarks(), this.found.size ? 1500 : OUTRO_DELAY);
       this.debrief();
     },
 
