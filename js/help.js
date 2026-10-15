@@ -1,0 +1,48 @@
+/* Візуальна інструкція: показується гравцю один раз при першому відкритті режиму (далі — кнопкою «Як грати?»). */
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const DATA = {
+    search: {title: "Пошук цілей — як грати", img: "media/help-search.svg", steps: [
+      "Наближайте й рухайте знімок: двома пальцями (на ПК — колесо миші й перетягування).",
+      "Знайшли техніку — торкніться її. Влучання підтвердить вибух.",
+      "Стежте за верхньою панеллю: час, знайдені цілі й промахи. Промахів — обмежена кількість.",
+      "Після етапу — розбір і кнопка «Далі» (сама спрацює через 5 с).",
+    ]},
+    cards: {title: "Картки цілей — як грати", img: "media/help-cards.svg", steps: [
+      "Уважно роздивіться фото техніки.",
+      "Ігровий режим — оберіть 1 з 4 назв. Іспит — впишіть назву самі (одруківки й латиниця не страшні).",
+      "💡 50/50 прибирає два хибні варіанти (лише в ігровому режимі).",
+      "На відповідь — 30 с, потім 15 с опис техніки: ТТХ і ознаки.",
+    ]},
+    ref: {title: "Довідник техніки — як користуватись", img: "media/help-ref.svg", steps: [
+      "Шукайте за назвою — можна й латиницею (t72, buk).",
+      "Фільтруйте за розділами: танки, ППО, РЕБ…",
+      "Відкрийте запис: фото гортаються вбік, торкніться — збільшиться.",
+      "Кнопки ‹ › — попередній і наступний запис.",
+    ]},
+  };
+  const key = (m) => "poshuk_help_" + m;
+
+  const Help = {
+    seen(m) { return !!API.LS.get(key(m), false); },
+    /* Показати, якщо ще не бачив: повертає true і викликає then() після «Зрозуміло». Якщо вже бачив — false, then() не викликається. */
+    maybe(m, then) { if (this.seen(m)) return false; this.show(m, then); return true; },
+    show(m, then) {
+      const d = DATA[m]; if (!d) { if (then) then(); return; }
+      let box = $("help"); if (!box) { box = document.createElement("div"); box.id = "help"; box.className = "modal help-modal"; document.body.appendChild(box); }
+      box.innerHTML = `<div class="m-card help-card" role="dialog" aria-modal="true" aria-labelledby="help-t">
+        <h2 id="help-t">${UI.esc(d.title)}</h2>
+        <img class="help-img" src="${d.img}?v=1" alt="Схема інтерфейсу з пронумерованими кроками">
+        <ol class="help-steps">${d.steps.map((s) => `<li>${UI.esc(s)}</li>`).join("")}</ol>
+        <button type="button" class="primary" id="help-ok">Зрозуміло</button></div>`;
+      box.hidden = false;
+      const close = () => { box.hidden = true; API.LS.set(key(m), true); document.removeEventListener("keydown", onKey); if (then) then(); };
+      const onKey = (e) => { if (e.key === "Escape" || e.key === "Enter") { e.preventDefault(); close(); } };
+      $("help-ok").onclick = close;
+      box.onclick = (e) => { if (e.target === box) close(); };
+      document.addEventListener("keydown", onKey);
+      setTimeout(() => $("help-ok") && $("help-ok").focus(), 50);
+    },
+  };
+  window.Help = Help;
+})();

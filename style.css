@@ -595,3 +595,59 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .r-zoom.full img { max-width: none; max-height: none; width: 220vw; cursor: zoom-out; }
 @media (min-width: 900px) { .r-zoom.full img { width: auto; } }
 .r-zx { position: fixed; top: 10px; right: 10px; width: 42px; height: 42px; border-radius: 50%; font-size: 1.1rem; padding: 0; }
+
+/* Адмінка · записи довідника */
+.ra-card { width: min(760px, calc(100vw - 24px)); }
+.ra-filt { gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.ra-filt input { flex: 1 1 180px; min-width: 0; }
+.ra-filt select { flex: 1 1 160px; }
+.ra-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.ra-list li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
+.ra-list .r-th { width: 64px; height: 46px; }
+.ra-list .nm { min-width: 0; display: grid; overflow: hidden; }
+.ra-list .nm small { color: var(--muted); font-size: .76rem; }
+.ra-list button { padding: .45rem .6rem; }
+.ra-form { display: grid; gap: 10px; margin-top: 10px; }
+.ra-form label { display: grid; gap: 4px; font-size: .86rem; color: var(--muted); }
+.ra-form input, .ra-form select, .ra-form textarea { font-size: 16px; color: var(--text, #e8edf0); }
+.ra-form textarea { width: 100%; resize: vertical; line-height: 1.45; padding: .6rem .7rem; border-radius: 10px; background: rgba(8,11,14,.6); border: 1px solid var(--line); font-family: inherit; }
+.re-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.re-ph { position: relative; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; aspect-ratio: 4 / 3; }
+.re-ph img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.re-ph-b { position: absolute; left: 4px; right: 4px; bottom: 4px; display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+.re-ph-b button { padding: .2rem .5rem; font-size: .85rem; background: rgba(10,13,16,.8); }
+.re-main { font-size: .7rem; padding: 2px 6px; border-radius: 6px; background: var(--accent); color: #17120a; font-weight: 700; }
+/* довідник · телефони */
+.r-item, .ra-list button { white-space: normal; }
+.r-nm b { overflow-wrap: anywhere; }
+.r-gal { align-items: flex-start; }
+.r-ph { max-height: none; }
+@media (max-width: 480px) {
+  .r-item { grid-template-columns: 84px minmax(0, 1fr); gap: 9px; padding: 7px; }
+  .r-th { width: 84px; height: 62px; }
+  .r-body { padding: 10px 12px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .r-body h2 { font-size: 1.2rem; }
+  .r-sec { padding: 10px 12px; }
+  .r-txt { font-size: .93rem; }
+  .screen.ref .bar.top { flex-wrap: wrap; row-gap: 2px; }
+}
+/* галерея: однакова висота фото, наступне видно краєм — зрозуміло, що можна гортати */
+.r-gal { align-items: center; }
+.r-ph { width: 90%; height: auto; max-width: 640px; }
+.r-ph img { width: 100%; height: auto; max-height: 60vh; object-fit: contain; }
+.r-gal .r-ph:only-child { width: 100%; }
+
+/* Інструкція при першому відкритті режиму */
+.help-modal { z-index: 40; place-items: center; }
+.help-card { width: min(560px, calc(100vw - 24px)); display: grid; gap: 12px; padding: 18px 18px 16px; }
+.help-card h2 { font: 700 1.1rem var(--display); margin: 0; }
+.help-img { width: 100%; height: auto; border-radius: 12px; border: 1px solid var(--line); background: #0f1317; }
+.help-steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 8px; }
+.help-steps li { counter-increment: st; display: grid; grid-template-columns: 26px 1fr; gap: 10px; align-items: start; line-height: 1.4; font-size: .95rem; }
+.help-steps li::before { content: counter(st); width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #17120a; font-weight: 800; display: grid; place-items: center; font-size: .9rem; }
+.help-card .primary { padding: .8rem; border-radius: 12px; font-weight: 700; }
+.help-link { justify-self: center; margin-top: 4px; font-size: .9rem; }
+#r-help { margin-left: auto; }
+.screen.ref .bar.top #r-count { margin-left: auto; }
+.screen.ref .bar.top #r-count + #r-help { margin-left: 6px; }
+@media (max-height: 560px) { .help-card { gap: 8px; } .help-img { max-height: 38vh; object-fit: contain; } }

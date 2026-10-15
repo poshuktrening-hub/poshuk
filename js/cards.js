@@ -111,6 +111,7 @@
     start() {
       if (!Game.callsignOk()) return;
       SFX.unlock();
+      if (window.Help && Help.maybe("cards", () => this.start())) return;   // перший раз — інструкція
       const pool = Logic.shuffle(this.withPhoto());
       this.rounds = pool.slice(0, ROUNDS); this.idx = -1; this.results = [];
       UI.show("s-cards");

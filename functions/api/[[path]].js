@@ -206,7 +206,7 @@ async function action(env, ctx, req, origin) {
     case "ref_list": {
       await auth(env, req, "player");
       const {results} = await env.DB.prepare("SELECT id, ord, cat, name, ttx, descr, imgs, updated FROM ref_entries ORDER BY ord").all();
-      return {ok: true, entries: results.map((r) => ({id: r.id, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
+      return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
     }
     case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env)}; }
   }
@@ -319,10 +319,22 @@ async function action(env, ctx, req, origin) {
         if (!/^[a-z0-9_-]+$/i.test(iid) || !im.data || im.data.length > 1_900_000) throw new HttpError("Зображення завелике або без id");
         st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_images (id,data,mime,updated) VALUES (?,?,?,?)").bind(iid, String(im.data), String(im.mime || "image/jpeg"), up));
       }
+      // фото, які адміністратор прибрав із запису, — видалити з бази
+      const old = await env.DB.prepare("SELECT imgs FROM ref_entries WHERE id=?").bind(id).first();
+      const now = new Set((e.imgs || []).map(String));
+      if (old) JSON.parse(old.imgs || "[]").filter((x) => !now.has(x)).forEach((x) => st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(x)));
       st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_entries (id,ord,cat,name,ttx,descr,imgs,updated) VALUES (?,?,?,?,?,?,?,?)")
         .bind(id, Number(e.ord) || 0, String(e.cat || "").slice(0, 80), String(e.name || "").slice(0, 200), String(e.ttx || "").slice(0, 8000),
           String(e.desc || "").slice(0, 20000), JSON.stringify((e.imgs || []).map(String).slice(0, 12)), up));
       await env.DB.batch(st);
+      return {ok: true};
+    }
+    case "ref_delete": {
+      const id = String(req.id || "");
+      const old = await env.DB.prepare("SELECT imgs FROM ref_entries WHERE id=?").bind(id).first();
+      if (!old) throw new HttpError("Запис не знайдено");
+      await env.DB.batch([env.DB.prepare("DELETE FROM ref_entries WHERE id=?").bind(id),
+        ...JSON.parse(old.imgs || "[]").map((x) => env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(String(x)))]);
       return {ok: true};
     }
     case "ref_prune": {   // після імпорту: прибрати позиції й зображення, яких немає в новій версії довідника
