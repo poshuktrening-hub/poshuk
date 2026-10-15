@@ -15,7 +15,7 @@ const CHUNK = 1_500_000; // < 2 МБ — ліміт рядка D1
 const TOKEN_HOURS = 12;
 const DEFAULTS = {
   player_password: "змініть-мене-курсант", admin_password: "змініть-мене-адмін",
-  rounds_per_game: "5", time_limit_sec: "180", misses_allowed: "1", grid_cols: "8", zoom_click: "5", report: "TRUE",
+  rounds_per_game: "10", time_limit_sec: "180", misses_allowed: "1", grid_cols: "8", zoom_click: "5", report: "TRUE",
 };
 
 const SCHEMA = [
@@ -65,6 +65,11 @@ async function metaGet(env, k) { const r = await env.DB.prepare("SELECT v FROM m
 async function metaSet(env, k, v) { await env.DB.prepare("INSERT INTO meta (k,v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, String(v)).run(); }
 
 async function settings(env) {
+  // одноразово: у грі — до 10 етапів (раніше типово 5, і частина етапів у гру просто не потрапляла)
+  if (!await metaGet(env, "mig_rounds10")) {
+    await env.DB.prepare("UPDATE settings SET v='10' WHERE k='rounds_per_game' AND CAST(v AS INTEGER) < 10").run();
+    await metaSet(env, "mig_rounds10", "1");
+  }
   const {results} = await env.DB.prepare("SELECT k, v FROM settings").all();
   const out = Object.assign({}, DEFAULTS);
   results.forEach((r) => (out[r.k] = r.v));
@@ -75,7 +80,7 @@ async function settings(env) {
 function publicSettings(s) {
   const n = (v, d) => (isNaN(Number(v)) || v === "" ? d : Number(v));
   return {
-    rounds_per_game: Math.max(1, Math.min(MAX_ROUNDS, n(s.rounds_per_game, 5))),
+    rounds_per_game: Math.max(1, Math.min(MAX_ROUNDS, n(s.rounds_per_game, MAX_ROUNDS))),
     time_limit_sec: Math.max(10, n(s.time_limit_sec, 60)),
     misses_allowed: Math.max(0, n(s.misses_allowed, 1)),
     grid_cols: Math.max(3, Math.min(20, n(s.grid_cols, 8))),
