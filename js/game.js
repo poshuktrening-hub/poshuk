@@ -97,8 +97,18 @@
       this.view(this.lastView || "menu");
       document.querySelectorAll("#s-start [data-go]").forEach((b) => (b.onclick = () => { SFX.click(); this.view(b.dataset.go); }));
       this.refreshPending();
-      this.flushPending();
+      this.flushPending().then(() => this.loadTop());
       if (!$("callsign").value) $("callsign").focus();
+    },
+    /* Топ-3 курсантів у головному меню (найкращий результат кожного). */
+    async loadTop() {
+      const draw = (id, list) => {
+        const el = $(id); if (!el) return;
+        el.innerHTML = (list || []).map((x, i) => `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span>${esc(x.name)}</span><em>${x.pct}%</em></li>`).join("");
+        el.hidden = !(list || []).length;
+      };
+      if (this.top) { draw("top-search", this.top.search); draw("top-cards", this.top.cards); }
+      try { const j = await API.call("top", {}, this.password); this.top = j.top; draw("top-search", j.top.search); draw("top-cards", j.top.cards); } catch (e) { /* без топу — не страшно */ }
     },
     /* Головне меню → підменю режиму. */
     view(v) {
