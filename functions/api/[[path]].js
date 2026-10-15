@@ -50,6 +50,8 @@ async function db(env) {
     try { await env.DB.prepare("ALTER TABLE stages ADD COLUMN meta TEXT").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE results ADD COLUMN mode TEXT").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE card_photos ADD COLUMN credit TEXT").run(); } catch (e) { /* колонка вже є */ }
+    // архів: записи не видаляються, а позначаються archived=1 і більше не рахуються в аналітиці, топі й теплових картах
+    for (const t of ["results", "answers", "clicks"]) { try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN archived INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
     schemaReady = true;
   }
   return env.DB;
@@ -246,8 +248,8 @@ async function action(env, ctx, req, origin) {
         env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(String(req.id))]);
       return {ok: true};
     case "heat": {
-      const {results} = await env.DB.prepare("SELECT x,y,hit FROM clicks WHERE stage=?").bind(String(req.id)).all();
-      const pl = await env.DB.prepare("SELECT COUNT(DISTINCT who) AS n FROM clicks WHERE stage=?").bind(String(req.id)).first();
+      const {results} = await env.DB.prepare("SELECT x,y,hit FROM clicks WHERE stage=? AND COALESCE(archived,0)=0").bind(String(req.id)).all();
+      const pl = await env.DB.prepare("SELECT COUNT(DISTINCT who) AS n FROM clicks WHERE stage=? AND COALESCE(archived,0)=0").bind(String(req.id)).first();
       return {ok: true, clicks: results.map((r) => [r.x, r.y, !!r.hit]), players: pl ? pl.n : 0};
     }
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
@@ -284,17 +286,22 @@ async function action(env, ctx, req, origin) {
     }
     case "analytics": {
       const since = String(req.since || "0000");
-      const {results: ans} = await env.DB.prepare("SELECT callsign, kind, cat, name, SUM(ok) ok, COUNT(*) n FROM answers WHERE ts >= ? GROUP BY callsign, kind, cat, name").bind(since).all();
-      const {results: res} = await env.DB.prepare("SELECT callsign, mode, COUNT(*) n, AVG(pct) avg, MAX(ts) last FROM results WHERE ts >= ? GROUP BY callsign, mode").bind(since).all();
-      const {results: list} = await env.DB.prepare("SELECT ts, callsign, mode, total, max, pct, conclusion FROM results WHERE ts >= ? ORDER BY ts DESC LIMIT 500").bind(since).all();
-      const first = await env.DB.prepare("SELECT MIN(ts) t FROM answers").first();
+      const {results: ans} = await env.DB.prepare("SELECT callsign, kind, cat, name, SUM(ok) ok, COUNT(*) n FROM answers WHERE ts >= ? AND COALESCE(archived,0)=0 GROUP BY callsign, kind, cat, name").bind(since).all();
+      const {results: res} = await env.DB.prepare("SELECT callsign, mode, COUNT(*) n, AVG(pct) avg, MAX(ts) last FROM results WHERE ts >= ? AND COALESCE(archived,0)=0 GROUP BY callsign, mode").bind(since).all();
+      const {results: list} = await env.DB.prepare("SELECT ts, callsign, mode, total, max, pct, conclusion FROM results WHERE ts >= ? AND COALESCE(archived,0)=0 ORDER BY ts DESC LIMIT 500").bind(since).all();
+      const first = await env.DB.prepare("SELECT MIN(ts) t FROM answers WHERE COALESCE(archived,0)=0").first();
       return {ok: true, answers: ans, results: res, list, since: first ? first.t : null};
     }
-    case "clear_history": {
-      if (req.confirm !== "ОЧИСТИТИ") throw new HttpError("Не підтверджено");
-      const n = await env.DB.prepare("SELECT (SELECT COUNT(*) FROM results) r, (SELECT COUNT(*) FROM answers) a, (SELECT COUNT(*) FROM clicks) c").first();
-      await env.DB.batch(["DELETE FROM results", "DELETE FROM answers", "DELETE FROM clicks"].map((q) => env.DB.prepare(q)));
-      return {ok: true, deleted: n};
+    case "archive_history": {
+      const A = "COALESCE(archived,0)=0";
+      const n = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM results WHERE ${A}) r, (SELECT COUNT(*) FROM answers WHERE ${A}) a, (SELECT COUNT(*) FROM clicks WHERE ${A}) c`).first();
+      await env.DB.batch(["results", "answers", "clicks"].map((t) => env.DB.prepare(`UPDATE ${t} SET archived=1 WHERE ${A}`)));
+      // Google-таблиця: рядки результатів переносяться на сусідній аркуш «Архів»
+      let sheet = null;
+      if (env.SHEETS_URL && env.SHEETS_SECRET) {
+        try { sheet = await gas(env, {action: "archive", secret: env.SHEETS_SECRET}); } catch (e) { sheet = {ok: false, error: String(e.message || e)}; }
+      }
+      return {ok: true, archived: n, sheet};
     }
     case "card_photos": {
       const {results} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
@@ -344,7 +351,7 @@ async function dedupeObjects(env) {
 
 /* Топ-3 для головного меню: найкращий результат кожного позивного окремо для «Пошуку цілей» і «Карток». */
 async function top3(env) {
-  const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results ORDER BY ts DESC LIMIT 5000").all();
+  const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results WHERE COALESCE(archived,0)=0 ORDER BY ts DESC LIMIT 5000").all();
   const out = {search: new Map(), cards: new Map()};
   for (const r of results) {
     const name = String(r.callsign || "").trim(); if (!name) continue;
