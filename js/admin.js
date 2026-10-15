@@ -38,7 +38,7 @@
 
     async load() {
       const j = await API.call("admin_stages", {}, this.pw);
-      this.stages = j.stages;
+      this.stages = j.stages; API.noteStages(j.stages);
       try { this.cols = Number((await API.call("get_settings", {}, this.pw)).settings.grid_cols) || 8; } catch (e) { this.cols = 8; }
     },
 

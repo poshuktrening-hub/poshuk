@@ -120,53 +120,52 @@
       const crop = (src) => { const c = Compose.canvas(w, h); c.getContext("2d").drawImage(src, x0, y0, w, h, 0, 0, w, h); return c; };
       const cl = crop(clean), ol = crop(out), sc = Compose.canvas(w, h), sx = sc.getContext("2d");
       const cd = cl.getContext("2d").getImageData(0, 0, w, h).data, od = ol.getContext("2d").getImageData(0, 0, w, h).data;
-      const rr = size * 0.75 + slen * 0.6, pts = [];
-      for (let y = Math.max(0, Math.floor(cy - rr)); y < Math.min(h, Math.ceil(cy + rr)); y++) for (let x = Math.max(0, Math.floor(cx - rr)); x < Math.min(w, Math.ceil(cx + rr)); x++)
-        if ((x - cx) ** 2 + (y - cy) ** 2 <= rr * rr) pts.push((y * w + x) * 4);
       const base = {size, sharp: 0.3, shade: 0.25, shadow_dir: sun, shadow_len: slen, shadow_op: 0.55, shadow_soft: 0.7, blend: 0.08, darken: 0, sat: 0.9, grain: 0.35, blur: 0.35};
-      // збіг форми (IoU масок «відрізняється від чистої карти»), а не кольору: працює, навіть якщо модель відтоді замінили
-      const dif = (d, i) => Math.max(Math.abs(d[i] - cd[i]), Math.abs(d[i + 1] - cd[i + 1]), Math.abs(d[i + 2] - cd[i + 2]));
-      const oldM = pts.map((i) => dif(od, i) > 14);
-      const err = (angle, hide) => {
-        sx.drawImage(cl, 0, 0);
-        ComposeLegacy.compose(cl, sc, spr, cx, cy, Object.assign({}, base, {angle, hideTarget: hide}));
-        const d = sx.getImageData(0, 0, w, h).data;
-        let I = 0, U = 0;
-        pts.forEach((i, k) => { const a = dif(d, i) > 14, b = oldM[k]; if (a && b) I++; if (a || b) U++; });
-        return U ? 1 - I / U : 1;
+      const dif3 = (d, e, i) => Math.max(Math.abs(d[i] - e[i]), Math.abs(d[i + 1] - e[i + 1]), Math.abs(d[i + 2] - e[i + 2]));
+      // ---- підбір старих параметрів — у зменшеній копії (техніка ≈24 пкс): у десятки разів швидше, точності досить
+      const f = Math.min(1, 24 / size), fw = Math.max(16, Math.round(w * f)), fh = Math.max(16, Math.round(h * f)), fk = fw / w;
+      const down = (c) => { const d = Compose.canvas(fw, fh), x = d.getContext("2d"); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high"; x.drawImage(c, 0, 0, fw, fh); return d; };
+      const clS = down(cl), scS = Compose.canvas(fw, fh), sxS = scS.getContext("2d");
+      const cdS = clS.getContext("2d").getImageData(0, 0, fw, fh).data, odS = down(ol).getContext("2d").getImageData(0, 0, fw, fh).data;
+      const fcx = cx * fk, fcy = cy * fk, rr = (size * 0.75 + slen * 0.6) * fk, pts = [];
+      for (let y = Math.max(0, Math.floor(fcy - rr)); y < Math.min(fh, Math.ceil(fcy + rr)); y++) for (let x = Math.max(0, Math.floor(fcx - rr)); x < Math.min(fw, Math.ceil(fcx + rr)); x++)
+        if ((x - fcx) ** 2 + (y - fcy) ** 2 <= rr * rr) pts.push((y * fw + x) * 4);
+      const renderS = (o) => {
+        sxS.drawImage(clS, 0, 0);
+        ComposeLegacy.compose(clS, scS, spr, fcx, fcy, Object.assign({}, base, o, {size: (o.size || base.size) * fk, shadow_len: slen * fk}));
+        return sxS.getImageData(0, 0, fw, fh).data;
       };
-      // підбір: розмір (у старих етапах радіус цілі рахувався інакше) × кут × тінь (ранні етапи — без тіні)
+      // збіг форми (IoU масок «відрізняється від чистої карти»), а не кольору: працює, навіть якщо модель відтоді замінили
+      const oldM = pts.map((i) => dif3(odS, cdS, i) > 14);
       const h0 = t.hidden || 0, s0 = size;
-      const tryP = (sz, op, a) => { base.size = sz; base.shadow_op = op; const e = err(a, h0); if (this.debug) this.debug.push([sz, op, a, Math.round(e * 1000) / 1000]); return e; };
-      let best = [Infinity, s0, 0, 0];   // [похибка, розмір, тінь, кут]
-      for (const k of [0.6, 0.75, 0.9, 1.05, 1.2]) for (let a = 0; a < 360; a += 20) { const e = tryP(s0 * k, 0, a); if (e < best[0]) best = [e, s0 * k, 0, a]; }
-      for (const op of [0, 0.55]) for (let a = 0; a < 360; a += 10) { const e = tryP(best[1], op, a); if (e < best[0]) best = [e, best[1], op, a]; }
-      for (const k of [0.92, 0.96, 1.04, 1.08]) { const e = tryP(best[1] * k, best[2], best[3]); if (e < best[0]) best = [e, best[1] * k, best[2], best[3]]; }
-      for (const da of [-6, -3, 3, 6]) { const a = (best[3] + da + 360) % 360, e = tryP(best[1], best[2], a); if (e < best[0]) best = [e, best[1], best[2], a]; }
-      base.size = size = best[1]; base.shadow_op = best[2];
-      best = [best[0], best[3]];
-      // перед/корма: форма майже симетрична — вирішує збіг яскравості (кабіна, пакет, башта)
-      const lumErr = (ang) => {
-        sx.drawImage(cl, 0, 0);
-        ComposeLegacy.compose(cl, sc, spr, cx, cy, Object.assign({}, base, {angle: ang, hideTarget: h0}));
-        const d = sx.getImageData(0, 0, w, h).data;
-        let e = 0; for (const i of pts) e += Math.abs(lumOf(d, i) - lumOf(od, i));
+      const err = (sz, op, a) => {
+        const d = renderS({size: sz, shadow_op: op, angle: a, hideTarget: h0});
+        let I = 0, U = 0;
+        pts.forEach((i, k) => { const p = dif3(d, cdS, i) > 14, q = oldM[k]; if (p && q) I++; if (p || q) U++; });
+        const e = U ? 1 - I / U : 1;
+        if (this.debug) this.debug.push([sz, op, a, Math.round(e * 1000) / 1000]);
         return e;
       };
-      const flip = (best[1] + 180) % 360;
-      if (tryP(size, base.shadow_op, flip) - best[0] < 0.04 && lumErr(flip) < lumErr(best[1])) best = [best[0], flip];
-      base.size = size;
-      const angle = best[1];
+      // розмір (у старих етапах радіус цілі рахувався інакше) × кут × тінь (ранні етапи — без тіні)
+      let best = [Infinity, s0, 0, 0];   // [похибка, розмір, тінь, кут]
+      for (const k of [0.6, 0.75, 0.9, 1.05, 1.2]) for (let a = 0; a < 360; a += 20) { const e = err(s0 * k, 0, a); if (e < best[0]) best = [e, s0 * k, 0, a]; }
+      for (const op of [0, 0.55]) for (let a = 0; a < 360; a += 10) { const e = err(best[1], op, a); if (e < best[0]) best = [e, best[1], op, a]; }
+      for (const k of [0.92, 0.96, 1.04, 1.08]) { const e = err(best[1] * k, best[2], best[3]); if (e < best[0]) best = [e, best[1] * k, best[2], best[3]]; }
+      for (const da of [-6, -3, 3, 6]) { const a = (best[3] + da + 360) % 360, e = err(best[1], best[2], a); if (e < best[0]) best = [e, best[1], best[2], a]; }
+      base.size = size = best[1]; base.shadow_op = best[2];
+      let angle = best[3];
+      // перед/корма: форма майже симетрична — вирішує збіг яскравості (кабіна, пакет, башта)
+      const lumErr = (ang) => { const d = renderS({angle: ang, hideTarget: h0}); let e = 0; for (const i of pts) e += Math.abs(lumOf(d, i) - lumOf(odS, i)); return e; };
+      const flip = (angle + 180) % 360;
+      if (err(size, base.shadow_op, flip) - best[0] < 0.04 && lumErr(flip) < lumErr(angle)) angle = flip;
       // маскування: яка частка силуету (без тіні) справді відрізняється від чистої карти — решта була під кронами.
       // Не через підгонку: модель у бібліотеці могли замінити новою версією, і тоді «сховати більше» хибно виглядає краще.
-      sx.drawImage(cl, 0, 0);
-      ComposeLegacy.compose(cl, sc, spr, cx, cy, Object.assign({}, base, {angle, hideTarget: 0, shadow_op: 0, grain: 0, shade: 0}));
-      const vd = sx.getImageData(0, 0, w, h).data;
+      const vd = renderS({angle, hideTarget: 0, shadow_op: 0, grain: 0, shade: 0});
       let nS = 0, nV = 0;
-      for (let i = 0; i < w * h * 4; i += 4) {
-        const dv = dif(vd, i); if (dv <= 10) continue;
+      for (let i = 0; i < fw * fh * 4; i += 4) {
+        const dv = dif3(vd, cdS, i); if (dv <= 10) continue;
         nS++;
-        if (dif(od, i) >= Math.max(6, dv * 0.4)) nV++;
+        if (dif3(odS, cdS, i) >= Math.max(6, dv * 0.4)) nV++;
       }
       let hide = nS ? Math.max(0, Math.min(0.85, 1 - nV / nS - 0.12)) : 0;
       hide = hide < 0.15 ? 0 : Math.round(hide * 20) / 20;   // дрібні «сховано» — це шум порівняння, не крони
@@ -241,7 +240,8 @@
             }
             if (!ok) throw new Error(err || "не вдалось вивантажити");
           }
-          await API.call("stage_end", {id: s.id}, this.pw);
+          const fin = await API.call("stage_end", {id: s.id}, this.pw);
+          s.v = fin.stage && fin.stage.v; API.noteStages([s]);
           await API.call("save_stage", {id: s.id, targets: r.targets}, this.pw);
           s.targets = r.targets;
           API.imgCache.set(s.id, Tiles.open(pack.bytes.buffer.slice(pack.bytes.byteOffset, pack.bytes.byteOffset + pack.bytes.byteLength)));
@@ -260,7 +260,7 @@
       this.busy = true;
       try {
         const j = await API.call("stage_restore", {id}, this.pw);
-        s.targets = j.stage.targets; API.imgCache.delete(id);
+        s.targets = j.stage.targets; s.v = j.stage.v; API.imgCache.delete(id); API.noteStages([s]);
         this.say(`«${s.title}» повернуто до оригіналу. Бекап лишився.`, "ok");
       } catch (e) { this.say(e.message, "no"); }
       this.busy = false;
