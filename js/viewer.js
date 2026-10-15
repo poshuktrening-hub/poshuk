@@ -366,7 +366,9 @@
       }
       this.anim = null;
       const [x, y] = this._local(e);
-      this.drag = {x, y, moved: 0};
+      // поріг «клік чи перетягування» — від точки натискання, а не сума всіх дрібних рухів:
+      // раніше тремтіння пальця/миші на 4–5 пкс з'їдало клік, і влучання спрацьовувало лише з другої спроби
+      this.drag = {x, y, sx: x, sy: y, moved: 0, pan: false, th: e.pointerType === "mouse" ? 8 : 14};
       if (this.sketch && this.img) { this.drag.sketch = true; this.sketch("start", ...this.toImage(x, y)); }   // режим малювання: тягнення малює, а не рухає мапу
     }
 
@@ -385,8 +387,9 @@
       if (!dr) return;
       if (dr.sketch) { this.sketch("move", ...this.toImage(p[0], p[1])); return; }
       const dx = p[0] - dr.x, dy = p[1] - dr.y;
-      dr.moved += Math.abs(dx) + Math.abs(dy);
-      if (dr.moved > 4 && this.img) {
+      dr.moved = Math.max(dr.moved, Math.hypot(p[0] - dr.sx, p[1] - dr.sy));
+      if (!dr.pan && dr.moved > dr.th) dr.pan = true;
+      if (dr.pan && this.img) {
         this.canvas.classList.add("dragging");
         [this.s, this.tx, this.ty] = this._clamped(this.s, this.tx + dx, this.ty + dy);
         this.draw();
@@ -405,7 +408,7 @@
       const dr = this.drag;
       this.drag = null;
       if (dr && dr.sketch) { this.sketch(cancel ? "cancel" : "end", ...this.toImage(...this._local(e))); return; }
-      if (!cancel && dr && dr.moved <= 4 && this.onLeft && this.img) this.onLeft(...this._local(e));
+      if (!cancel && dr && !dr.pan && this.onLeft && this.img) this.onLeft(dr.sx, dr.sy);   // точка натискання — точніше за точку відпускання
     }
   }
 
