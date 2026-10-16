@@ -26,6 +26,7 @@
         this.viewer.grab = (ph, x, y, e) => this.grab(ph, x, y, e);
         $("d-quit").onclick = () => this.quit();
         $("d-ready").onclick = () => this.ready();
+        $("d-hint").onclick = () => this.hint();
         $("d-tabs").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => this.showMap(b.dataset.v)));
         document.addEventListener("keydown", (e) => this.key(e));
       }
@@ -34,7 +35,7 @@
 
     reset() {
       clearTimeout(this.pollT); clearInterval(this.tickT); clearTimeout(this.switchT);
-      $("d-turnbar").hidden = true;
+      $("d-turnbar").hidden = true; $("d-units").hidden = true; $("d-hint").hidden = true;
       Object.assign(this, {autoDone: false, lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
       $("d-tabs").hidden = true; $("d-ready").hidden = true; $("d-msg").textContent = "";
       $("d-title").textContent = "⚔ Дуель"; ["d-turn", "d-time", "d-me", "d-opp"].forEach((id) => ($(id).textContent = "—"));
@@ -104,7 +105,9 @@
       if (!this.code) return;
       try { this.apply(await API.call("duel_state", {code: this.code, secret: this.secret}, this.pw)); }
       catch (e) { this.msg(e.message, "no"); }
-      if (this.code && (!this.st || this.st.state !== "done")) this.pollT = setTimeout(() => this.poll(), POLL_MS);
+      // опитуємо частіше лише коли чекаємо на суперника; у свій хід сервер і так відповідає на удар
+      const st = this.st, wait = !st ? POLL_MS : st.state === "battle" ? (st.turn === st.me ? 3000 : POLL_MS) : st.state === "place" ? 2000 : 2000;
+      if (this.code && (!this.st || this.st.state !== "done")) this.pollT = setTimeout(() => this.poll(), wait);
     },
 
     /* Новий стан із сервера → екран. */
@@ -142,13 +145,19 @@
         const cr = j.map.crop || {k: 1, fx: 0, fy: 0};
         const cw = Math.min(full.width, Math.max(Math.round(full.width * cr.k), 700)), ch = Math.min(full.height, Math.max(Math.round(full.height * cr.k), 500));
         const sx = Math.round(cr.fx * (full.width - cw)), sy = Math.round(cr.fy * (full.height - ch));
-        const src = Compose.canvas(cw, ch); src.getContext("2d").drawImage(full, sx, sy, cw, ch, 0, 0, cw, ch);
+        // ділянку збільшуємо (до ~2×): техніка малюється з удвічі більшою деталізацією — на зумі її добре видно
+        const UP = Math.max(1, Math.min(2, 4096 / Math.max(cw, ch)));
+        const src = Compose.canvas(Math.round(cw * UP), Math.round(ch * UP)), sctx = src.getContext("2d");
+        sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = "high";
+        sctx.drawImage(full, sx, sy, cw, ch, 0, 0, src.width, src.height);
+        this.up = UP;
         this.base = Compose.canvas(src.width, src.height); this.base.getContext("2d").drawImage(src, 0, 0);
         this.work = Compose.canvas(src.width, src.height); this.work.getContext("2d").drawImage(src, 0, 0);
         try { this.sun = Compose.shadowDir(this.base); } catch (e) { this.sun = 135; }
-        this.gsd = j.map.gsd || 0.25;
-        this.units = j.kit.map((k) => ({k, x: null, y: null, angle: Math.floor(Math.random() * 360), size: Math.max(6, Math.min(120, (k.length_m || 7) / this.gsd)), rect: null}));
+        this.gsd = (j.map.gsd || 0.25) / (this.up || 1);
+        this.units = j.kit.map((k) => ({k, x: null, y: null, angle: Math.floor(Math.random() * 360), size: Math.max(8, Math.min(240, (k.length_m || 7) / this.gsd)), rect: null}));
         this.sel = 0;
+        this.makeThumbs(j.kit);
         this.viewer.setImage(this.work);
         this.mapView = "mine";
         this.renderKit();
@@ -159,11 +168,28 @@
       this.loading(null);
     },
 
+    /* Мініатюри техніки з набору (для переліку й панелі розстановки). */
+    async makeThumbs(kit) {
+      this.thumbs = this.thumbs || {};
+      for (const k of kit) {
+        const key = k.obj + (k.decoy ? ":d" : "");
+        if (this.thumbs[key]) continue;
+        try {
+          const spr = await this.sprite(k), S = 48, c = Compose.canvas(S, S), x = c.getContext("2d");
+          const sc = S * 0.92 / Math.max(spr.width, spr.height);
+          x.imageSmoothingQuality = "high"; x.drawImage(Compose.fitSprite(spr, S), (S - spr.width * sc) / 2, (S - spr.height * sc) / 2, spr.width * sc, spr.height * sc);
+          this.thumbs[key] = c.toDataURL("image/png");
+        } catch (e) { /* без мініатюри */ }
+      }
+      if (this.st && this.st.state === "place") this.renderKit(); else this.unitList();
+    },
+    thumb(k) { const u = (this.thumbs || {})[k.obj + (k.decoy ? ":d" : "")]; return u ? `<img src="${u}" alt="">` : `<i class="d-nothumb"></i>`; },
+
     renderKit() {
       const all = this.units.every((u) => u.x !== null);
       if (!this.st || this.st.state !== "place") return;
-      const p = this.panel(`<div class="d-kit"><b>Сховайте техніку</b>${this.units.map((u, i) => `<button type="button" data-u="${i}" class="${i === this.sel ? "on" : ""}${u.x !== null ? " done" : ""}">${u.k.decoy ? "◇" : "■"} ${esc(u.k.name)}${u.x !== null ? " ✓" : ""}</button>`).join("")}
-        <div class="d-rot"><button type="button" data-rot="-45">⟲ Повернути</button><button type="button" data-rot="45">⟳ Повернути</button></div>
+      const p = this.panel(`<div class="d-kit"><b>Сховайте техніку</b>${this.units.map((u, i) => `<button type="button" data-u="${i}" class="${i === this.sel ? "on" : ""}${u.x !== null ? " done" : ""}">${this.thumb(u.k)}<span>${esc(u.k.name)}</span>${u.x !== null ? "<em>✓</em>" : ""}</button>`).join("")}
+        <div class="d-rot"><button type="button" data-rot="-45" title="Повернути проти годинникової">⟲ 45°</button><button type="button" data-rot="45" title="Повернути за годинниковою">⟳ 45°</button></div>
         <p class="muted small">Під кронами й біля посадок техніку видно гірше. Не ставте все в одному місці.</p></div>`, "side");
       p.querySelectorAll("[data-rot]").forEach((b) => (b.onclick = () => { const u = this.units[this.sel]; if (!u || u.x === null || this.st.ready[this.me - 1]) return; u.angle = (u.angle + Number(b.dataset.rot) + 360) % 360; this.redraw(); }));
       p.querySelectorAll("[data-u]").forEach((b) => (b.onclick = () => { this.sel = Number(b.dataset.u); this.renderKit(); this.marksPlace(); }));
@@ -195,7 +221,7 @@
         if (u.x === null) continue;
         const spr = await this.sprite(u.k);
         // крони ховають природно: де густа зелень — частина корпусу під нею
-        u.rect = Compose.compose(this.base, this.work, spr, u.x, u.y, {size: u.size, angle: u.angle, hide: 0.5, shade: 0.25, shadow_dir: this.sun, shadow_len: Math.min(40, 2.2 / this.gsd), seed: 7});
+        u.rect = Compose.compose(this.base, this.work, spr, u.x, u.y, {size: u.size, angle: u.angle, hide: 0.3, shade: 0.2, shadow_dir: this.sun, shadow_len: Math.min(60, 2.2 / this.gsd), blurFix: 0.3, seed: 7});
       }
       this.viewer.replaceImage(this.work);
       this.marksPlace();
@@ -253,6 +279,7 @@
         while (this.drawing) await sleep(50);
         const pack = await Tiles.build(this.work);
         const b = await API.call("duel_place_begin", {code: this.code, secret: this.secret, size: pack.bytes.byteLength,
+          w: this.work.width, h: this.work.height,
           units: this.units.map((u) => ({x: u.x, y: u.y, r: Math.max(8, Math.round(u.size * 0.6)), type: Logic.typeOf(u.k.name.replace(/^муляж\s+/i, ""))}))}, this.pw);
         for (let i = 0; i < b.chunks; i++) {
           this.loading(`Відправляю вашу карту… ${i + 1}/${b.chunks}`);
@@ -297,12 +324,28 @@
       $("d-tabs").querySelectorAll("[data-v]").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
       const img = v === "opp" ? this.oppImg : this.work;
       if (img) { this.viewer.setImage(img); if (window.FX && FX.prepare) FX.prepare(this.viewer); }
+      this.viewer.setGrid((this.st && this.st.grid) || 8);
+      this.viewer.toggleGrid(v === "opp" && !!(this.st && this.st.hint));
       this.marksBattle();
+    },
+
+    /* Ліворуч унизу — перелік техніки тієї карти, що зараз на екрані; знищена — закреслена. */
+    unitList() {
+      const j = this.st, box = $("d-units"); if (!j || !box) return;
+      if (j.state !== "battle" && j.state !== "done") { box.hidden = true; return; }
+      const kit = j.kit || [];
+      if (!this.thumbs) this.makeThumbs(kit);
+      const deadOpp = (i) => !!(j.reveal.find((r) => r.i === i) || {}).dead, deadMine = (i) => !!(j.mine[i] && j.mine[i].dead);
+      const col = (title, dead, cls) => `<div class="d-ucol ${cls}"><b>${title} · ${kit.filter((k, i) => !dead(i)).length}/${kit.length}</b>` +
+        kit.map((k, i) => `<span class="${dead(i) ? "dead" : ""}">${this.thumb(k)}<s>${esc(k.name)}</s></span>`).join("") + "</div>";
+      box.hidden = false;
+      box.innerHTML = col("Моя", deadMine, this.mapView === "mine" ? "cur" : "") + col("Ворога", deadOpp, this.mapView === "opp" ? "cur" : "");
     },
 
     marksBattle() {
       const j = this.st; if (!j) return;
       const marks = [];
+      if (this.mapView === "opp" && j.hint) marks.push({rect: [j.hint.x, j.hint.y, j.hint.w, j.hint.h], color: C.accent});
       if (this.mapView === "opp") {
         for (const s of j.shots.filter((x) => x.by === j.me && x.res !== "timeout")) {
           const u = s.i >= 0 && j.reveal.find((r) => r.i === s.i);
@@ -319,6 +362,7 @@
         }
       }
       this.viewer.setMarks(marks);
+      this.unitList();
     },
 
     battle(j, prev) {
@@ -355,6 +399,7 @@
       }
       this.turnBanner(j);
       this.marksBattle();
+      const hb = $("d-hint"); hb.hidden = j.state !== "battle"; hb.disabled = !!j.hint || !myTurn; hb.textContent = j.hint ? "💡 Використано" : "💡 Підказка (1)";
       $("d-turn").textContent = j.state === "done" ? "кінець" : myTurn ? "ВАШ" : "суперника";
       $("d-turn").parentElement.classList.toggle("d-my", myTurn); $("d-turn").parentElement.classList.toggle("d-their", j.state === "battle" && !myTurn);
       if (j.state === "done") return this.finish(j);
@@ -432,6 +477,20 @@
       if (j.turn === j.me && sec <= 5 && sec > 0 && sec !== this.lastSec) { this.lastSec = sec; SFX.tick(sec <= 3); }
     },
 
+    /* Одна підказка на гру: район 8 квадратів, де стоїть одна з цілей суперника. */
+    async hint() {
+      const j = this.st; if (!j || j.state !== "battle" || j.hint || j.turn !== j.me) return;
+      try {
+        const r = await API.call("duel_hint", {code: this.code, secret: this.secret}, this.pw);
+        this.apply(r);
+        if (this.mapView !== "opp") this.showMap("opp");
+        this.viewer.toggleGrid(true);
+        const h = r.hint, v = this.viewer;
+        if (h) { v.zoomTo(Math.max(1, Math.min(v.W / h.w, v.H / h.h) * 0.85 / v.minS), h.x + h.w / 2, h.y + h.h / 2); this.msg("💡 Одна з цілей — у виділеному районі з 8 квадратів."); }
+        SFX.click();
+      } catch (e) { this.msg(e.message, "no"); }
+    },
+
     async click(cx, cy) {
       const j = this.st; if (!j) return;
       const [x, y] = this.viewer.toImage(cx, cy);
@@ -455,7 +514,7 @@
       const mine = j.shots.filter((s) => s.by === j.me && s.res !== "timeout"), hits = mine.filter((s) => s.res === "hit").length;
       this.panel(`<div class="d-card result ${win ? "win" : "lose"}"><h2>${win ? "🏆 Перемога" : "Поразка"}</h2><p>${esc(why)}</p>
         <p class="muted">Ваші удари: ${mine.length}, влучань: ${hits}${mine.length ? ` (${Math.round(hits / mine.length * 100)}%)` : ""}. На карті суперника показано, де стояла його техніка.</p>
-        <div class="row"><button type="button" class="primary" id="d-again">Нова дуель</button><button type="button" id="d-menu">В меню</button></div></div>`, "side");
+        <div class="row"><button type="button" class="primary" id="d-again">Нова дуель</button><button type="button" id="d-menu">В меню</button></div></div>`, "side res");
       $("d-ready").hidden = true;
       $("d-again").onclick = () => { this.reset(); this.lobby(); };
       $("d-menu").onclick = () => this.quit(true);

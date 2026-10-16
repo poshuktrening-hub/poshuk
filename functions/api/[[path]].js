@@ -60,7 +60,7 @@ async function db(env) {
     try { await env.DB.prepare("ALTER TABLE card_photos ADD COLUMN credit TEXT").run(); } catch (e) { /* колонка вже є */ }
     // архів: записи не видаляються, а позначаються archived=1 і більше не рахуються в аналітиці, топі й теплових картах
     for (const c of ["l1", "l2"]) { try { await env.DB.prepare(`ALTER TABLE duels ADD COLUMN ${c} INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
-    try { await env.DB.prepare("ALTER TABLE duels ADD COLUMN crop TEXT").run(); } catch (e) { /* колонка вже є */ }
+    for (const c of ["crop", "dims", "hints"]) { try { await env.DB.prepare(`ALTER TABLE duels ADD COLUMN ${c} TEXT`).run(); } catch (e) { /* колонка вже є */ } }
     for (const t of ["results", "answers", "clicks"]) { try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN archived INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
     schemaReady = true;
   }
@@ -238,7 +238,7 @@ async function action(env, ctx, req, origin) {
       return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
     }
     case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env, String(req.since || "0000"))}; }
-    case "duel_create": case "duel_join": case "duel_state": case "duel_loaded": case "duel_place_begin": case "duel_place_end": case "duel_shot": case "duel_leave":
+    case "duel_create": case "duel_join": case "duel_state": case "duel_loaded": case "duel_hint": case "duel_place_begin": case "duel_place_end": case "duel_shot": case "duel_leave":
       await auth(env, req, "player");
       return duel(env, req, a);
   }
@@ -660,6 +660,7 @@ async function putBlob(env, request, id, part) {
 }
 
 // ------------------------------------------------------------------ дуель (морський бій на знімку)
+const HINT_COLS = 8;   // сітка поля бою для підказки: 8 квадратів по ширині
 const TURN_MS = 15000, PLACE_MS = 30000, PLACE_GRACE = 45000, GONE_MS = 90000;
 const jp = (s, d) => { try { return JSON.parse(s || ""); } catch (e) { return d; } };
 const rnd4 = () => String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
@@ -674,7 +675,8 @@ function whoAmI(r, secret) { if (secret && secret === r.s1) return 1; if (secret
 /* Лінива «годинникова» логіка: прострочений хід передається, зниклий гравець програє. */
 async function duelTick(env, r, me) {
   const now = Date.now(), sets = {};
-  sets["seen" + me] = now;
+  // «я на звʼязку» пишемо не частіше ніж раз на 15 с — запис у D1 на безкоштовному плані обмежений (100 тис./добу)
+  if (now - (r["seen" + me] || 0) > 15000) sets["seen" + me] = now;
   if (r.state === "place" && r.until && now > r.until + PLACE_GRACE) {
     // час розстановки давно минув, а хтось так і не відправив карту
     Object.assign(sets, {state: "done", winner: r.r1 && !r.r2 ? 1 : r.r2 && !r.r1 ? 2 : 0, reason: "noplace"});
@@ -689,6 +691,7 @@ async function duelTick(env, r, me) {
     }
   }
   const keys = Object.keys(sets);
+  if (!keys.length) return r;
   await env.DB.prepare(`UPDATE duels SET ${keys.map((k) => k + "=?").join(",")} WHERE code=?`).bind(...keys.map((k) => sets[k]), r.code).run();
   Object.assign(r, sets);
   return r;
@@ -702,7 +705,8 @@ function duelView(r, me) {
   return {ok: true, code: r.code, state: r.state, me, turn: r.turn, left: r.state === "place" && !r.until ? PLACE_MS : Math.max(0, r.until - Date.now()),
     loaded: [!!r.l1, !!r.l2], placeMs: PLACE_MS, turnMs: TURN_MS, names: [r.p1 || "", r.p2 || ""],
     kit: jp(r.kit, []), map: {id: r.map, gsd: r.gsd, crop: jp(r.crop, null)}, mine, ready: [!!r.r1, !!r.r2], reveal, shots,
-    alive: {me: alive(mine), opp: r["r" + other] ? alive(opp) : null}, winner: r.winner, reason: r.reason || ""};
+    alive: {me: alive(mine), opp: r["r" + other] ? alive(opp) : null}, winner: r.winner, reason: r.reason || "",
+    hint: (jp(r.hints, {}) || {})[me] || null, grid: HINT_COLS};
 }
 
 async function duel(env, req, a) {
@@ -758,7 +762,7 @@ async function duel(env, req, a) {
     if (!size || size > 60e6) throw new HttpError("Знімок завеликий");
     const chunks = Math.ceil(size / CHUNK);
     await env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${r.code}_${me}`).run();
-    await env.DB.prepare(`UPDATE duels SET u${me}=?, c${me}=?, r${me}=0 WHERE code=?`).bind(JSON.stringify(us), chunks, r.code).run();
+    await env.DB.prepare(`UPDATE duels SET u${me}=?, c${me}=?, r${me}=0, dims=COALESCE(dims, ?) WHERE code=?`).bind(JSON.stringify(us), chunks, JSON.stringify({w: Number(req.w) || 0, h: Number(req.h) || 0}), r.code).run();
     return {ok: true, id: `duel_${r.code}_${me}`, chunk: CHUNK, chunks, token: await makeToken(env, "player")};
   }
   if (a === "duel_place_end") {
@@ -771,6 +775,24 @@ async function duel(env, req, a) {
       await env.DB.prepare("UPDATE duels SET state='battle', turn=?, until=? WHERE code=? AND state='place'").bind(1 + (crypto.getRandomValues(new Uint8Array(1))[0] & 1), now + TURN_MS + 5000, r.code).run();
     }
     return duelView(await duelRow(env, r.code), me);
+  }
+  if (a === "duel_hint") {
+    // одна підказка на гру: район 8 квадратів (4×2), де стоїть одна з живих цілей суперника
+    if (r.state !== "battle") throw new HttpError("Підказка — лише під час бою");
+    const hints = jp(r.hints, {}) || {};
+    if (hints[me]) return duelView(r, me);
+    const dims = jp(r.dims, {}) || {}, opp = (jp(r["u" + (3 - me)], []) || []).filter((u) => !u.dead && !u.decoy);
+    if (!dims.w || !opp.length) throw new HttpError("Підказка недоступна");
+    const c = dims.w / HINT_COLS, cols = HINT_COLS, rows = Math.max(1, Math.ceil(dims.h / c));
+    const u = opp[Math.floor(Math.random() * opp.length)];
+    const col = Math.min(cols - 1, Math.floor(u.x / c)), row = Math.min(rows - 1, Math.floor(u.y / c));
+    const cw = rows >= 2 ? 4 : 8, ch = rows >= 2 ? 2 : 1;
+    const rnd = (n) => Math.floor(Math.random() * n);
+    const c0 = Math.max(0, Math.min(cols - cw, col - rnd(cw))), r0 = Math.max(0, Math.min(rows - ch, row - rnd(ch)));
+    hints[me] = {x: c0 * c, y: r0 * c, w: Math.min(cw * c, dims.w - c0 * c), h: Math.min(ch * c, dims.h - r0 * c), c};
+    await env.DB.prepare("UPDATE duels SET hints=? WHERE code=?").bind(JSON.stringify(hints), r.code).run();
+    r.hints = JSON.stringify(hints);
+    return duelView(r, me);
   }
   if (a === "duel_shot") {
     if (r.state !== "battle") throw new HttpError("Бій не йде");
