@@ -342,6 +342,17 @@ async function action(env, ctx, req, origin) {
       return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
     }
     case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env, String(req.since || "0000"))}; }
+    case "mistakes": {   // робота над помилками: етапи й картки, де ОСТАННЯ спроба курсанта була з помилкою
+      await auth(env, req, "player");
+      const cs = String(req.callsign || "").trim().slice(0, 40);
+      if (!cs) return {ok: true, stages: [], cards: []};
+      const {results} = await env.DB.prepare("SELECT kind, item, ts, MIN(ok) ok FROM answers WHERE callsign=? AND COALESCE(archived,0)=0 AND kind IN ('search','cards') GROUP BY kind, item, ts").bind(cs).all();
+      const last = new Map();
+      for (const r of results) { const k = r.kind + "|" + r.item, p = last.get(k); if (!p || r.ts >= p.ts) last.set(k, r); }
+      const out = {ok: true, stages: [], cards: []};
+      for (const r of last.values()) if (!r.ok) (r.kind === "search" ? out.stages : out.cards).push(r.item);
+      return out;
+    }
     case "duel_create": case "duel_join": case "duel_state": case "duel_loaded": case "duel_hint": case "duel_place_begin": case "duel_place_end": case "duel_shot": case "duel_leave":
       await auth(env, req, "player");
       return duel(env, req, a);

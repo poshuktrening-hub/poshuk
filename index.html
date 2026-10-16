@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Пошук техніки</title>
 <link rel="preload" href="fonts/geologica-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="fonts.css?v=202610161700">
-<link rel="stylesheet" href="style.css?v=202610161700">
+<link rel="stylesheet" href="fonts.css?v=202610161730">
+<link rel="stylesheet" href="style.css?v=202610161730">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f1317'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23ffb23e' stroke-width='2.5'/%3E%3Cpath d='M16 3v8M16 21v8M3 16h8M21 16h8' stroke='%23ffb23e' stroke-width='2.5'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -40,6 +40,7 @@
     <div class="main-menu" id="main-menu">
       <button type="button" class="mm" data-go="search"><b>Пошук цілей</b><ol class="top3" id="top-search"></ol></button>
       <button type="button" class="mm" data-go="cards"><b>Картки цілей</b><ol class="top3" id="top-cards"></ol></button>
+      <button type="button" class="mm mm-fix" data-go="fix" id="mm-fix" hidden><b>🔁 Робота над помилками</b><span id="fix-info"></span></button>
       <button type="button" class="mm mm-duel" data-go="duel"><b>⚔ Дуель на двох</b><span>Морський бій на знімку: сховай свою техніку, знайди чужу</span></button>
       <button type="button" class="mm mm-ref" data-go="ref"><b>Довідник техніки</b><span>Фото, ТТХ і характерні ознаки</span></button>
     </div>
@@ -51,6 +52,15 @@
       <p class="muted" id="start-info"></p>
       <button class="primary" type="submit" id="start-btn">Почати</button>
       <button type="button" class="link help-link" data-help="search">Як грати?</button>
+    </div>
+    <div class="sub" id="sub-fix" hidden>
+      <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Робота над помилками</h2></div>
+      <p class="muted">Тут лише етапи й картки, де ви востаннє помилились. Пройшли правильно — вони зникають зі списку. Режим ігровий: з підказкою й розбором.</p>
+      <div class="fix-btns">
+        <button class="primary" type="button" id="fix-search">Етапи з помилками</button>
+        <button class="primary" type="button" id="fix-cards">Картки з помилками</button>
+      </div>
+      <p class="muted" id="fix-none" hidden>Помилок немає — усе виправлено 💪</p>
     </div>
     <div class="sub" id="sub-cards" hidden>
       <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Картки цілей</h2></div>
@@ -187,33 +197,33 @@
 
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="config.js?v=202610161700"></script>
-<script src="js/sfx.js?v=202610161700"></script>
-<script src="js/fx.js?v=202610161700"></script>
-<script src="js/api.js?v=202610161700"></script>
-<script src="js/tiles.js?v=202610161700"></script>
-<script src="js/viewer.js?v=202610161700"></script>
-<script src="js/logic.js?v=202610161700"></script>
-<script src="js/game.js?v=202610161700"></script>
-<script src="js/cards-data.js?v=202610161700"></script>
-<script src="js/cards-data2.js?v=202610161700"></script>
-<script src="js/cards.js?v=202610161700"></script>
-<script src="js/ref.js?v=202610161700"></script>
-<script src="js/help.js?v=202610161700"></script>
-<script src="js/cards-commons.js?v=202610161700"></script>
-<script src="js/cards-admin.js?v=202610161700"></script>
-<script src="js/analytics.js?v=202610161700"></script>
-<script src="js/compose.js?v=202610161700"></script>
-<script src="js/scale.js?v=202610161700"></script>
-<script src="js/crop.js?v=202610161700"></script>
-<script src="js/models.js?v=202610161700"></script>
-<script src="js/generator.js?v=202610161700"></script>
-<script src="js/autogen.js?v=202610161700"></script>
-<script src="js/compose-legacy.js?v=202610161700"></script>
-<script src="js/restage.js?v=202610161700"></script>
-<script src="js/variants.js?v=202610161700"></script>
-<script src="js/duel.js?v=202610161700"></script>
-<script src="js/admin.js?v=202610161700"></script>
-<script src="js/main.js?v=202610161700"></script>
+<script src="config.js?v=202610161730"></script>
+<script src="js/sfx.js?v=202610161730"></script>
+<script src="js/fx.js?v=202610161730"></script>
+<script src="js/api.js?v=202610161730"></script>
+<script src="js/tiles.js?v=202610161730"></script>
+<script src="js/viewer.js?v=202610161730"></script>
+<script src="js/logic.js?v=202610161730"></script>
+<script src="js/game.js?v=202610161730"></script>
+<script src="js/cards-data.js?v=202610161730"></script>
+<script src="js/cards-data2.js?v=202610161730"></script>
+<script src="js/cards.js?v=202610161730"></script>
+<script src="js/ref.js?v=202610161730"></script>
+<script src="js/help.js?v=202610161730"></script>
+<script src="js/cards-commons.js?v=202610161730"></script>
+<script src="js/cards-admin.js?v=202610161730"></script>
+<script src="js/analytics.js?v=202610161730"></script>
+<script src="js/compose.js?v=202610161730"></script>
+<script src="js/scale.js?v=202610161730"></script>
+<script src="js/crop.js?v=202610161730"></script>
+<script src="js/models.js?v=202610161730"></script>
+<script src="js/generator.js?v=202610161730"></script>
+<script src="js/autogen.js?v=202610161730"></script>
+<script src="js/compose-legacy.js?v=202610161730"></script>
+<script src="js/restage.js?v=202610161730"></script>
+<script src="js/variants.js?v=202610161730"></script>
+<script src="js/duel.js?v=202610161730"></script>
+<script src="js/admin.js?v=202610161730"></script>
+<script src="js/main.js?v=202610161730"></script>
 </body>
 </html>
