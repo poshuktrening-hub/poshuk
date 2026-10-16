@@ -117,10 +117,20 @@
           : `<li class="top-none">Сьогодні ще ніхто не проходив — будьте першим</li>`);
         el.hidden = false;
       };
-      if (this.top && this.topDay === today()) { draw("top-search", this.top.search); draw("top-cards", this.top.cards); }
+      const drawDuel = (list) => {
+        const el = $("top-duel"); if (!el) return;
+        list = list || [];
+        const word = (n) => (n % 10 === 1 && n % 100 !== 11 ? "перемога" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "перемоги" : "перемог");
+        el.innerHTML = `<li class="top-h">Топ дня · перемоги</li>` + (list.length ? list.map((x, i) =>
+          `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b></span><em>${x.wins} ${word(x.wins)}</em></li>`).join("")
+          : `<li class="top-none">Сьогодні ще ніхто не перемагав — будьте першим</li>`);
+        el.hidden = false;
+      };
+      if (this.top && this.topDay === today()) { draw("top-search", this.top.search); draw("top-cards", this.top.cards); drawDuel(this.top.duel); }
       try {
-        const d = today(), j = await API.call("top", {since: d + " 00:00"}, this.password);
-        this.top = j.top; this.topDay = d; draw("top-search", j.top.search); draw("top-cards", j.top.cards);
+        const d = today(), mid = new Date(); mid.setHours(0, 0, 0, 0);
+        const j = await API.call("top", {since: d + " 00:00", sinceMs: mid.getTime()}, this.password);
+        this.top = j.top; this.topDay = d; draw("top-search", j.top.search); draw("top-cards", j.top.cards); drawDuel(j.top.duel);
       } catch (e) { /* без топу — не страшно */ }
     },
     /* Робота над помилками: що курсант востаннє пройшов з помилкою (етапи — лише ті, що зараз у грі; картки — з фото). */
