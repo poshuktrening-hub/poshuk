@@ -825,7 +825,7 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 @keyframes d-aim { 0% { transform: scale(.4); opacity: 1; } 60% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.08); opacity: 0; } }
 
 /* Офлайн-версія */
-.off-badge { margin: 0 0 12px; padding: 10px 12px; text-align: center; color: #3ddc97; border: 2px solid rgba(61,220,151,.55); border-radius: 12px; background: rgba(61,220,151,.08); }
+.off-badge { cursor: pointer; margin: 0 0 12px; padding: 10px 12px; text-align: center; color: #3ddc97; border: 2px solid rgba(61,220,151,.55); border-radius: 12px; background: rgba(61,220,151,.08); }
 .off-badge b { display: block; font-family: var(--display, inherit); font-size: 2rem; font-weight: 800; letter-spacing: .18em; line-height: 1.1; }
 .off-badge span { display: block; font-size: .8rem; opacity: .85; margin-top: 2px; }
 .support { margin: 10px 0 4px; text-align: center; font-size: .82rem; color: var(--muted); }

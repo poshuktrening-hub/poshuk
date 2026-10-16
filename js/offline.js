@@ -3,7 +3,7 @@
    Дані — в IndexedDB «poshuk-offline» (сховище files): snap — налаштування й списки, img:<етап> — пакет знімка,
    obj:/card:/ref:<id> — зображення. Позначка «увімкнено» — localStorage poshuk_offline. */
 (function () {
-  const LS = API.LS, KEY = "poshuk_offline", RES = "poshuk_off_results";
+  const LS = API.LS, KEY = "poshuk_offline", RES = "poshuk_off_results", PAUSE = "poshuk_off_paused";
   const DB_NAME = "poshuk-offline", STORE = "files";
   let dbp = null;
   function idb() {
@@ -54,7 +54,10 @@
   }
 
   const Offline = {
-    get on() { return !!LS.get(KEY, null); },
+    get ready() { return !!LS.get(KEY, null); },                 // офлайн-дані завантажено на пристрій
+    get on() { return this.ready && !LS.get(PAUSE, false); },    // і зараз працюємо в офлайні
+    goOnline() { LS.set(PAUSE, true); },
+    goOffline() { LS.del(PAUSE); },
     info() { return LS.get(KEY, null); },
     snap: null,
     async snapshot() { if (!this.snap) this.snap = await get("snap"); return this.snap; },
@@ -158,10 +161,11 @@
       await cacheShell();
       LS.set(KEY, {at: new Date().toISOString(), stages: stages.length, cards: (cfg.cardPhotos || []).length, ref: ref.length, bytes, pw: await sha(password),
         ver: Object.fromEntries(stages.map((s) => [s.id, s.v || ""]))});
+      LS.del(PAUSE);   // після завантаження — одразу в офлайн
       progress("Готово", 1);
     },
     async disable() {
-      LS.del(KEY); LS.del(RES);
+      LS.del(KEY); LS.del(RES); LS.del(PAUSE);
       this.snap = null; urls.forEach((u) => URL.revokeObjectURL(u)); urls.clear();
       try { await clearAll(); } catch (e) { /* ок */ }
     },
