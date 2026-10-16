@@ -695,3 +695,29 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .rs-bar { display: flex; gap: 1rem; align-items: center; margin: 6px 0; }
 .rs-bar b { margin-right: auto; font-weight: 600; }
 .b-cond { margin: 6px 0 0; padding: 8px 12px; border-radius: 10px; background: rgba(120,170,255,.1); color: #bcd3ff; font-size: .9rem; }
+
+/* дуель */
+.mm-duel b { color: var(--accent); }
+.duel .d-tabs { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; }
+.duel .d-panel { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: 16px; background: rgba(5,7,9,.55); }
+.duel .d-panel[hidden] { display: none; }
+.duel .d-panel.side { inset: auto 10px 10px auto; background: none; padding: 0; display: block; width: min(320px, calc(100% - 20px)); }
+.duel .d-card { width: min(460px, 100%); background: var(--panel); border: 1px solid var(--glass-line); border-radius: 18px; padding: 20px; display: grid; gap: 10px; }
+.duel .d-card h2 { margin: 0; font: 700 1.2rem var(--display); }
+.duel .d-card p { margin: 0; }
+.duel .d-card input { flex: 1; font-size: 1.2rem; letter-spacing: .3em; text-align: center; }
+.duel .d-or { text-align: center; color: var(--muted, #9aa); font-size: .85rem; }
+.duel .d-code { font-family: var(--mono, monospace); letter-spacing: .25em; color: var(--accent); font-size: 1.6rem; }
+.duel .d-card.result.win h2 { color: var(--hit); }
+.duel .d-card.result.lose h2 { color: var(--miss); }
+.duel .d-kit { background: var(--panel); border: 1px solid var(--glass-line); border-radius: 14px; padding: 10px; display: grid; gap: 6px; }
+.duel .d-kit button { text-align: left; }
+.duel .d-kit button.on { outline: 2px solid var(--accent); }
+.duel .d-kit button.done { color: var(--hit); }
+.duel .bar.bottom #d-ready { margin-left: 8px; }
+@media (max-width: 600px) { .duel .d-panel.side { inset: auto 8px 8px 8px; width: auto; } .duel .stats .lbl { display: none; } }
+@media (max-width: 600px) {
+  .duel .d-kit { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; }
+  .duel .d-kit > b, .duel .d-kit p { display: none; }
+  .duel .d-kit button { flex: 1 1 45%; padding: 6px 8px; font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}

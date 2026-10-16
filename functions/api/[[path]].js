@@ -34,6 +34,10 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS ref_entries (id TEXT PRIMARY KEY, ord INTEGER, cat TEXT, name TEXT, ttx TEXT, descr TEXT, imgs TEXT, updated TEXT)`,
   `CREATE TABLE IF NOT EXISTS ref_images (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
   // бекап знімка етапу перед перерендером: частини лежать у blobs під id "bak_<етап>", тут — цілі й розмір
+  // дуель на двох: кімната за 4-значним кодом; uN — техніка гравця N (координати бачить лише сервер), shots — усі удари
+  `CREATE TABLE IF NOT EXISTS duels (code TEXT PRIMARY KEY, created INTEGER, state TEXT, map TEXT, gsd REAL, kit TEXT,
+     p1 TEXT, p2 TEXT, s1 TEXT, s2 TEXT, u1 TEXT, u2 TEXT, c1 INTEGER DEFAULT 0, c2 INTEGER DEFAULT 0, r1 INTEGER DEFAULT 0, r2 INTEGER DEFAULT 0,
+     seen1 INTEGER DEFAULT 0, seen2 INTEGER DEFAULT 0, turn INTEGER DEFAULT 0, until INTEGER DEFAULT 0, shots TEXT, winner INTEGER DEFAULT 0, reason TEXT)`,
   `CREATE TABLE IF NOT EXISTS stage_backups (id TEXT PRIMARY KEY, targets TEXT, size INTEGER, chunks INTEGER, created TEXT)`,
 ];
 
@@ -232,6 +236,9 @@ async function action(env, ctx, req, origin) {
       return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
     }
     case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env, String(req.since || "0000"))}; }
+    case "duel_create": case "duel_join": case "duel_state": case "duel_place_begin": case "duel_place_end": case "duel_shot": case "duel_leave":
+      await auth(env, req, "player");
+      return duel(env, req, a);
   }
   await auth(env, req, "admin");
   switch (a) {
@@ -632,6 +639,7 @@ async function getImage(env, ctx, request, id, t, v) {
 }
 
 async function putBlob(env, request, id, part) {
+  if (id.startsWith("duel_")) return putDuelBlob(env, request, id, part);
   if (!await checkToken(env, request.headers.get("X-Token"), "admin")) return json({ok: false, error: "Потрібен вхід адміністратора"}, 403);
   let st;
   if (id.startsWith("new_")) { try { st = JSON.parse(await metaGet(env, "reimg_" + id.slice(4)) || "null"); } catch (e) { st = null; } }
@@ -641,6 +649,151 @@ async function putBlob(env, request, id, part) {
   if (buf.byteLength > CHUNK) return json({ok: false, error: "Частина завелика"}, 400);
   await env.DB.prepare("INSERT INTO blobs (id,part,data) VALUES (?,?,?) ON CONFLICT(id,part) DO UPDATE SET data=excluded.data").bind(id, part, buf).run();
   return json({ok: true});
+}
+
+// ------------------------------------------------------------------ дуель (морський бій на знімку)
+const TURN_MS = 30000, GONE_MS = 90000;
+const jp = (s, d) => { try { return JSON.parse(s || ""); } catch (e) { return d; } };
+const rnd4 = () => String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
+
+async function duelRow(env, code) {
+  const r = await env.DB.prepare("SELECT * FROM duels WHERE code=?").bind(String(code || "")).first();
+  if (!r) throw new HttpError("Кімнату не знайдено — перевірте код");
+  return r;
+}
+function whoAmI(r, secret) { if (secret && secret === r.s1) return 1; if (secret && secret === r.s2) return 2; throw new HttpError("Ви не в цій кімнаті"); }
+
+/* Лінива «годинникова» логіка: прострочений хід передається, зниклий гравець програє. */
+async function duelTick(env, r, me) {
+  const now = Date.now(), sets = {};
+  sets["seen" + me] = now;
+  if (r.state === "battle") {
+    const other = 3 - me;
+    if (r["seen" + other] && now - r["seen" + other] > GONE_MS) { Object.assign(sets, {state: "done", winner: me, reason: "left"}); }
+    else if (now > r.until + 1500) {
+      const shots = jp(r.shots, []);
+      shots.push({by: r.turn, res: "timeout", at: now});
+      Object.assign(sets, {turn: 3 - r.turn, until: now + TURN_MS, shots: JSON.stringify(shots)});
+    }
+  }
+  const keys = Object.keys(sets);
+  await env.DB.prepare(`UPDATE duels SET ${keys.map((k) => k + "=?").join(",")} WHERE code=?`).bind(...keys.map((k) => sets[k]), r.code).run();
+  Object.assign(r, sets);
+  return r;
+}
+
+function duelView(r, me) {
+  const other = 3 - me, shots = jp(r.shots, []), opp = jp(r["u" + other], []) || [], mine = jp(r["u" + me], []) || [];
+  const done = r.state === "done";
+  const reveal = opp.map((u, i) => (done || u.dead || u.seen ? {i, x: u.x, y: u.y, r: u.r, type: u.type, decoy: !!u.decoy, dead: !!u.dead} : null)).filter(Boolean);
+  const alive = (us) => us.filter((u) => !u.decoy && !u.dead).length;
+  return {ok: true, code: r.code, state: r.state, me, turn: r.turn, left: Math.max(0, r.until - Date.now()), names: [r.p1 || "", r.p2 || ""],
+    kit: jp(r.kit, []), map: {id: r.map, gsd: r.gsd}, mine, ready: [!!r.r1, !!r.r2], reveal, shots,
+    alive: {me: alive(mine), opp: r["r" + other] ? alive(opp) : null}, winner: r.winner, reason: r.reason || ""};
+}
+
+async function duel(env, req, a) {
+  const now = Date.now();
+  if (a === "duel_create") {
+    // прибрати старі кімнати (понад 6 год) разом зі знімками
+    const {results: old} = await env.DB.prepare("SELECT code FROM duels WHERE created < ?").bind(now - 6 * 3600e3).all();
+    for (const o of old) await env.DB.batch([env.DB.prepare("DELETE FROM duels WHERE code=?").bind(o.code), env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${o.code}_%`)]);
+    // карта: чистий знімок з масштабом (етап без цілей)
+    const {results: maps} = await env.DB.prepare("SELECT id, meta FROM stages WHERE ready=1 AND (targets IS NULL OR targets='[]' OR targets='')").all();
+    const ok = maps.filter((m) => Number(jp(m.meta, {}).gsd) > 0 && !jp(m.meta, {}).cond);
+    if (!ok.length) throw new HttpError("Немає карт для дуелі: адміністратору — додати чисті карти з масштабом");
+    const m = ok[Math.floor(Math.random() * ok.length)];
+    const kit = (Array.isArray(req.kit) ? req.kit : []).slice(0, 6).map((k) => ({obj: String(k.obj || "").slice(0, 60), name: String(k.name || "").slice(0, 60), length_m: Number(k.length_m) || 7, decoy: !!k.decoy}));
+    if (!kit.length) throw new HttpError("Немає техніки для дуелі");
+    let code = rnd4();
+    for (let k = 0; k < 20 && await env.DB.prepare("SELECT code FROM duels WHERE code=?").bind(code).first(); k++) code = rnd4();
+    const secret = newId() + newId();
+    await env.DB.prepare("INSERT INTO duels (code,created,state,map,gsd,kit,p1,s1,shots,seen1) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .bind(code, now, "lobby", m.id, Number(jp(m.meta, {}).gsd), JSON.stringify(kit), String(req.callsign || "Гравець 1").slice(0, 40), secret, "[]", now).run();
+    return Object.assign(duelView(await duelRow(env, code), 1), {secret});
+  }
+  const r = await duelRow(env, req.code);
+  if (a === "duel_join") {
+    if (r.s2) throw new HttpError("Кімната вже зайнята");
+    const secret = newId() + newId();
+    await env.DB.prepare("UPDATE duels SET p2=?, s2=?, state='place', seen2=? WHERE code=? AND s2 IS NULL").bind(String(req.callsign || "Гравець 2").slice(0, 40), secret, now, r.code).run();
+    const r2 = await duelRow(env, r.code);
+    if (r2.s2 !== secret) throw new HttpError("Кімната вже зайнята");
+    return Object.assign(duelView(r2, 2), {secret});
+  }
+  const me = whoAmI(r, req.secret);
+  await duelTick(env, r, me);
+  if (a === "duel_state") return duelView(r, me);
+  if (a === "duel_leave") {
+    if (r.state !== "done") await env.DB.prepare("UPDATE duels SET state='done', winner=?, reason='left' WHERE code=?").bind(r.s2 ? 3 - me : 0, r.code).run();
+    return {ok: true};
+  }
+  if (a === "duel_place_begin") {
+    if (r.state !== "place") throw new HttpError("Зараз не етап розстановки");
+    const kit = jp(r.kit, []), units = Array.isArray(req.units) ? req.units : [];
+    if (units.length !== kit.length) throw new HttpError("Розставте всю техніку");
+    const us = units.map((u, i) => ({x: Math.round(Number(u.x) || 0), y: Math.round(Number(u.y) || 0), r: Math.max(6, Math.min(200, Number(u.r) || 12)), type: String(u.type || kit[i].name || "").slice(0, 60), decoy: !!kit[i].decoy}));
+    const size = Number(req.size) || 0;
+    if (!size || size > 60e6) throw new HttpError("Знімок завеликий");
+    const chunks = Math.ceil(size / CHUNK);
+    await env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${r.code}_${me}`).run();
+    await env.DB.prepare(`UPDATE duels SET u${me}=?, c${me}=?, r${me}=0 WHERE code=?`).bind(JSON.stringify(us), chunks, r.code).run();
+    return {ok: true, id: `duel_${r.code}_${me}`, chunk: CHUNK, chunks, token: await makeToken(env, "player")};
+  }
+  if (a === "duel_place_end") {
+    const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind(`duel_${r.code}_${me}`).first();
+    if (c.n !== r["c" + me]) throw new HttpError(`Завантажено ${c.n} з ${r["c" + me]} частин — спробуйте ще раз`);
+    await env.DB.prepare(`UPDATE duels SET r${me}=1 WHERE code=?`).bind(r.code).run();
+    const r2 = await duelRow(env, r.code);
+    if (r2.r1 && r2.r2 && r2.state === "place") {
+      // перший хід — випадково; першому трохи більше часу (завантажити знімок суперника)
+      await env.DB.prepare("UPDATE duels SET state='battle', turn=?, until=? WHERE code=? AND state='place'").bind(1 + (crypto.getRandomValues(new Uint8Array(1))[0] & 1), now + TURN_MS + 10000, r.code).run();
+    }
+    return duelView(await duelRow(env, r.code), me);
+  }
+  if (a === "duel_shot") {
+    if (r.state !== "battle") throw new HttpError("Бій не йде");
+    if (r.turn !== me) throw new HttpError("Зараз хід суперника");
+    const other = 3 - me, opp = jp(r["u" + other], []), shots = jp(r.shots, []);
+    const x = Number(req.x), y = Number(req.y);
+    if (!isFinite(x) || !isFinite(y)) throw new HttpError("Некоректний удар");
+    let best = -1, bd = Infinity;
+    opp.forEach((u, i) => { if (u.dead || (u.decoy && u.seen)) return; const d = Math.hypot(x - u.x, y - u.y); if (d <= u.r && d < bd) { bd = d; best = i; } });
+    let res = "miss", turn = other, state = "battle", winner = 0;
+    if (best >= 0 && !opp[best].decoy) { res = "hit"; opp[best].dead = true; turn = me; if (!opp.some((u) => !u.decoy && !u.dead)) { state = "done"; winner = me; } }
+    else if (best >= 0) { res = "decoy"; opp[best].seen = true; }
+    shots.push({by: me, x: Math.round(x), y: Math.round(y), res, i: best, at: now});
+    await env.DB.prepare(`UPDATE duels SET u${other}=?, shots=?, turn=?, until=?, state=?, winner=? WHERE code=?`)
+      .bind(JSON.stringify(opp), JSON.stringify(shots), turn, now + TURN_MS, state, winner, r.code).run();
+    return Object.assign(duelView(await duelRow(env, r.code), me), {res});
+  }
+  throw new HttpError("Невідома дія");
+}
+
+async function putDuelBlob(env, request, id, part) {
+  if (!await checkToken(env, request.headers.get("X-Token"), "player")) return json({ok: false, error: "Потрібен вхід"}, 403);
+  const m = /^duel_(\d{4})_([12])$/.exec(id);
+  if (!m) return json({ok: false, error: "Невірна частина"}, 400);
+  const r = await env.DB.prepare("SELECT * FROM duels WHERE code=?").bind(m[1]).first();
+  if (!r || request.headers.get("X-Duel") !== r["s" + m[2]] || part < 0 || part >= r["c" + m[2]]) return json({ok: false, error: "Невірна частина"}, 400);
+  const buf = await request.arrayBuffer();
+  if (buf.byteLength > CHUNK) return json({ok: false, error: "Частина завелика"}, 400);
+  await env.DB.prepare("INSERT INTO blobs (id,part,data) VALUES (?,?,?) ON CONFLICT(id,part) DO UPDATE SET data=excluded.data").bind(id, part, buf).run();
+  return json({ok: true});
+}
+
+async function getDuelImage(env, code, n, t, secret) {
+  if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
+  const r = await env.DB.prepare("SELECT * FROM duels WHERE code=?").bind(String(code)).first();
+  if (!r || (secret !== r.s1 && secret !== r.s2) || (n !== 1 && n !== 2)) return new Response("Не знайдено", {status: 404});
+  if (!r["r" + n] || (r.state !== "battle" && r.state !== "done" && secret !== r["s" + n])) return new Response("Ще не готово", {status: 404});
+  const parts = [];
+  for (let i = 0; i < r["c" + n]; i++) {
+    const b = await env.DB.prepare("SELECT data FROM blobs WHERE id=? AND part=?").bind(`duel_${r.code}_${n}`, i).first();
+    if (!b) return new Response("Знімок пошкоджено", {status: 500});
+    parts.push(new Uint8Array(b.data));
+  }
+  return new Response(new Blob(parts), {headers: {"Content-Type": "application/octet-stream", "Cache-Control": "private, max-age=3600"}});
 }
 
 // ------------------------------------------------------------------ точка входу
@@ -654,6 +807,7 @@ export async function onRequest(context) {
     if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], url.searchParams.get("t"));
     if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "ref" && path[1]) return await getRefImage(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
+    if (request.method === "GET" && path[0] === "duel" && path[1] && path[2]) return await getDuelImage(env, path[1], Number(path[2]), url.searchParams.get("t"), url.searchParams.get("s"));
     if (request.method === "PUT" && path[0] === "blob" && path[1]) return await putBlob(env, request, path[1], Number(path[2]));
     if (request.method === "GET") return json({ok: true, app: "poshuk", version: VERSION});
     if (request.method !== "POST") return json({ok: false, error: "Метод не підтримується"}, 405);
