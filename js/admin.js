@@ -482,6 +482,10 @@
         `</div><p class="status muted">Паролі — щонайменше 6 символів. Після зміни пароля курсантам потрібно ввести новий.</p>
         <div class="row"><button class="primary" type="button" id="st-save">Зберегти</button><button type="button" id="st-close">Закрити</button></div>
         <p class="status" id="st-status"></p>
+        <h3>Іконка в підписі автора</h3>
+        <p class="status muted">Показується над меню замість слова «wolverine». Зберігається в базі сайту, не в публічному репозиторії.</p>
+        <div class="row"><span class="credit-icon big" id="st-icon-prev"></span><button type="button" id="st-icon-up">Завантажити…</button><button type="button" id="st-icon-del">Прибрати</button><input type="file" id="st-icon-file" accept="image/*" hidden></div>
+        <p class="status" id="st-icon-status"></p>
         <h3>Історія гри</h3>
         <p class="status muted">Переносить усі поточні результати в архів: в аналітиці, топі меню й теплових картах вони більше не рахуються. Нічого не видаляється — у Google-таблиці рядки переїжджають на сусідній аркуш «Архів».</p>
         <div class="row"><button type="button" id="st-archive">📦 Перенести історію в архів</button></div>
@@ -497,6 +501,27 @@
             (!sh ? "Google-таблиця не підключена." : sh.ok ? `У таблиці перенесено рядків: ${sh.moved || 0} → аркуш «${sh.sheet || "Архів"}».` : `Таблиця: ${sh.error || "не вдалося перенести"}.`);
           out.className = sh && !sh.ok ? "status no" : "status ok";
         } catch (e) { out.textContent = e.message; out.className = "status no"; }
+      };
+      const prev = box.querySelector("#st-icon-prev"), ist = box.querySelector("#st-icon-status");
+      const showIcon = (u) => { prev.innerHTML = u ? `<img src="${u}" alt="">` : "—"; };
+      API.call("config", {}, this.pw).then((j) => showIcon(j.brandIcon)).catch(() => showIcon(""));
+      box.querySelector("#st-icon-up").onclick = () => box.querySelector("#st-icon-file").click();
+      box.querySelector("#st-icon-file").onchange = async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        try {
+          const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Це не зображення")); i.src = URL.createObjectURL(f); });
+          const k = Math.min(1, 96 / Math.max(img.width, img.height)), c = document.createElement("canvas");
+          c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+          const x = c.getContext("2d"); x.imageSmoothingQuality = "high"; x.drawImage(img, 0, 0, c.width, c.height);
+          const u = c.toDataURL("image/png");
+          await API.call("brand_icon", {icon: u}, this.pw);
+          showIcon(u); ist.textContent = "Збережено ✓"; ist.className = "status ok";
+        } catch (er) { ist.textContent = er.message; ist.className = "status no"; }
+        e.target.value = "";
+      };
+      box.querySelector("#st-icon-del").onclick = async () => {
+        try { await API.call("brand_icon", {icon: ""}, this.pw); showIcon(""); ist.textContent = "Прибрано — показується слово."; ist.className = "status ok"; }
+        catch (er) { ist.textContent = er.message; ist.className = "status no"; }
       };
       box.querySelector("#st-close").onclick = () => { box.hidden = true; this.renderStage(); };
       box.querySelector("#st-save").onclick = async () => {
