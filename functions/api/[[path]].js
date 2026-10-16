@@ -931,7 +931,9 @@ async function duel(env, req, a) {
     const x = Number(req.x), y = Number(req.y);
     if (!isFinite(x) || !isFinite(y)) throw new HttpError("Некоректний удар");
     let best = -1, bd = Infinity;
-    opp.forEach((u, i) => { if (u.dead || (u.decoy && u.seen)) return; const d = Math.hypot(x - u.x, y - u.y); if (d <= u.r && d < bd) { bd = d; best = i; } });
+    // зона ураження: радіус техніки × 1,4 + допуск на палець/курсор (до ще одного радіуса) — щоб не треба було цілитись у піксель
+    const tol = Math.max(0, Math.min(Number(req.tol) || 0, 200));
+    opp.forEach((u, i) => { if (u.dead || (u.decoy && u.seen)) return; const d = Math.hypot(x - u.x, y - u.y); if (d <= u.r * 1.4 + Math.min(tol, u.r) && d < bd) { bd = d; best = i; } });
     let res = "miss", turn = other, state = "battle", winner = 0;
     if (best >= 0 && !opp[best].decoy) { res = "hit"; opp[best].dead = true; turn = me; if (!opp.some((u) => !u.decoy && !u.dead)) { state = "done"; winner = me; } }
     else if (best >= 0) { res = "decoy"; opp[best].seen = true; }

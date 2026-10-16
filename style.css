@@ -817,3 +817,9 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .mm-fix b { color: #ff8a6e; }
 .main-menu .mm-fix > span { font-size: .84rem; color: var(--muted); }
 .fix-btns { display: grid; gap: 10px; margin: 14px 0 8px; }
+
+/* ---------- дуель: зона удару */
+.d-aim { position: absolute; border-radius: 50%; border: 3px solid #ffb23e; box-shadow: 0 0 0 2px rgba(0,0,0,.55), inset 0 0 0 2px rgba(0,0,0,.35);
+  pointer-events: none; z-index: 5; animation: d-aim .9s ease-out forwards; }
+.d-aim::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: #ffb23e; }
+@keyframes d-aim { 0% { transform: scale(.4); opacity: 1; } 60% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.08); opacity: 0; } }
