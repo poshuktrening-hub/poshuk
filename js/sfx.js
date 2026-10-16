@@ -96,6 +96,20 @@
     decoy() { tone(300, 0.12, {type: "square", vol: 0.07}); tone(220, 0.22, {type: "square", vol: 0.07, at: 0.12}); },
     tick(last) { tone(last ? 1250 : 1000, 0.04, {type: "square", vol: last ? 0.07 : 0.045}); },
     timeout() { tone(440, 0.18, {type: "square", vol: 0.08}); tone(330, 0.32, {type: "square", vol: 0.08, at: 0.2}); },
+    /* «Пук» на промах у дуелі: низький пилкоподібний тон з тремтінням, приглушений фільтром. */
+    fart() {
+      const c = ac(); if (!c || !on) return;
+      const t = c.currentTime + 0.01, d = 0.75;
+      const o = c.createOscillator(), lfo = c.createOscillator(), lg = c.createGain(), am = c.createOscillator(), ag = c.createGain(), f = c.createBiquadFilter(), g = c.createGain();
+      o.type = "sawtooth"; o.frequency.setValueAtTime(105, t); o.frequency.exponentialRampToValueAtTime(62, t + d);
+      lfo.type = "sine"; lfo.frequency.value = 23; lg.gain.value = 16; lfo.connect(lg).connect(o.frequency);
+      am.type = "square"; am.frequency.setValueAtTime(15, t); am.frequency.linearRampToValueAtTime(9, t + d); ag.gain.value = 0.35; am.connect(ag).connect(g.gain);
+      f.type = "lowpass"; f.frequency.setValueAtTime(700, t); f.frequency.exponentialRampToValueAtTime(260, t + d); f.Q.value = 5;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.03); g.gain.setValueAtTime(0.5, t + d * 0.7); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      o.connect(f).connect(g).connect(c.destination);
+      [o, lfo, am].forEach((x) => { x.start(t); x.stop(t + d + 0.05); });
+      noise(0.25, {vol: 0.05, at: d * 0.6, band: 300, q: 1.2});
+    },
     win() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.16, {type: "triangle", vol: 0.12, at: i * 0.1})); },
     /* «Радіоефір» на брифінгу: шум, клацання тангенти, морзянка-сигнал */
     radio() {

@@ -60,6 +60,7 @@ async function db(env) {
     try { await env.DB.prepare("ALTER TABLE card_photos ADD COLUMN credit TEXT").run(); } catch (e) { /* колонка вже є */ }
     // архів: записи не видаляються, а позначаються archived=1 і більше не рахуються в аналітиці, топі й теплових картах
     for (const c of ["l1", "l2"]) { try { await env.DB.prepare(`ALTER TABLE duels ADD COLUMN ${c} INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
+    try { await env.DB.prepare("ALTER TABLE duels ADD COLUMN crop TEXT").run(); } catch (e) { /* колонка вже є */ }
     for (const t of ["results", "answers", "clicks"]) { try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN archived INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
     schemaReady = true;
   }
@@ -700,7 +701,7 @@ function duelView(r, me) {
   const alive = (us) => us.filter((u) => !u.decoy && !u.dead).length;
   return {ok: true, code: r.code, state: r.state, me, turn: r.turn, left: r.state === "place" && !r.until ? PLACE_MS : Math.max(0, r.until - Date.now()),
     loaded: [!!r.l1, !!r.l2], placeMs: PLACE_MS, turnMs: TURN_MS, names: [r.p1 || "", r.p2 || ""],
-    kit: jp(r.kit, []), map: {id: r.map, gsd: r.gsd}, mine, ready: [!!r.r1, !!r.r2], reveal, shots,
+    kit: jp(r.kit, []), map: {id: r.map, gsd: r.gsd, crop: jp(r.crop, null)}, mine, ready: [!!r.r1, !!r.r2], reveal, shots,
     alive: {me: alive(mine), opp: r["r" + other] ? alive(opp) : null}, winner: r.winner, reason: r.reason || ""};
 }
 
@@ -720,8 +721,10 @@ async function duel(env, req, a) {
     let code = rnd4();
     for (let k = 0; k < 20 && await env.DB.prepare("SELECT code FROM duels WHERE code=?").bind(code).first(); k++) code = rnd4();
     const secret = newId() + newId();
-    await env.DB.prepare("INSERT INTO duels (code,created,state,map,gsd,kit,p1,s1,shots,seen1) VALUES (?,?,?,?,?,?,?,?,?,?)")
-      .bind(code, now, "lobby", m.id, Number(jp(m.meta, {}).gsd), JSON.stringify(kit), String(req.callsign || "Гравець 1").slice(0, 40), secret, "[]", now).run();
+    // поле бою — випадкова чверть карти (вдвічі менша по кожній стороні): шукати швидше, ходи коротші
+    const crop = JSON.stringify({k: 0.5, fx: Math.random(), fy: Math.random()});
+    await env.DB.prepare("INSERT INTO duels (code,created,state,map,gsd,kit,p1,s1,shots,seen1,crop) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(code, now, "lobby", m.id, Number(jp(m.meta, {}).gsd), JSON.stringify(kit), String(req.callsign || "Гравець 1").slice(0, 40), secret, "[]", now, crop).run();
     return Object.assign(duelView(await duelRow(env, code), 1), {secret});
   }
   const r = await duelRow(env, req.code);

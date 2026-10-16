@@ -33,7 +33,7 @@
     },
 
     reset() {
-      clearTimeout(this.pollT); clearInterval(this.tickT);
+      clearTimeout(this.pollT); clearInterval(this.tickT); clearTimeout(this.switchT);
       $("d-turnbar").hidden = true;
       Object.assign(this, {autoDone: false, lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
       $("d-tabs").hidden = true; $("d-ready").hidden = true; $("d-msg").textContent = "";
@@ -137,7 +137,12 @@
       this.panel("");
       this.loading("Завантажую карту…");
       try {
-        const src = await Tiles.toCanvas(await API.loadImage(j.map.id, this.pw));
+        const full = await Tiles.toCanvas(await API.loadImage(j.map.id, this.pw));
+        // поле бою — та сама для обох чверть карти (½ ширини × ½ висоти), але не менше ~700×500 пкс
+        const cr = j.map.crop || {k: 1, fx: 0, fy: 0};
+        const cw = Math.min(full.width, Math.max(Math.round(full.width * cr.k), 700)), ch = Math.min(full.height, Math.max(Math.round(full.height * cr.k), 500));
+        const sx = Math.round(cr.fx * (full.width - cw)), sy = Math.round(cr.fy * (full.height - ch));
+        const src = Compose.canvas(cw, ch); src.getContext("2d").drawImage(full, sx, sy, cw, ch, 0, 0, cw, ch);
         this.base = Compose.canvas(src.width, src.height); this.base.getContext("2d").drawImage(src, 0, 0);
         this.work = Compose.canvas(src.width, src.height); this.work.getContext("2d").drawImage(src, 0, 0);
         try { this.sun = Compose.shadowDir(this.base); } catch (e) { this.sun = 135; }
@@ -326,22 +331,29 @@
       // мій хід → карта суперника; хід суперника → моя карта (з його ударами). Перемикається щоразу, як змінюється хід.
       const want = j.state === "done" ? "opp" : myTurn ? "opp" : "mine";
       const turnKey = j.state + ":" + j.turn;
-      if (turnKey !== this.lastTurn || !this.mapView) {
-        const mineStarts = myTurn && this.lastTurn && this.lastTurn !== turnKey;
+      const turnChanged = turnKey !== this.lastTurn;
+      // спершу показати результат удару на тій карті, куди били, і лише потім перемкнути
+      for (const s of fresh) {
+        const mineShot = s.by === j.me;
+        if (s.res === "timeout") { if (mineShot) this.float(null, null, "ЧАС ВИЙШОВ", "miss"); continue; }
+        const onScreen = mineShot === (this.mapView === "opp");
+        const u = mineShot ? j.reveal.find((r) => r.i === s.i) : j.mine[s.i];
+        if (s.res === "hit" && u) {
+          if (onScreen) FX.explode(this.viewer, u.x, u.y, u.r);
+          SFX.boom(); this.float(onScreen ? u.x : null, onScreen ? u.y : null, mineShot ? "ВЛУЧАННЯ!" : "ВАШУ ТЕХНІКУ ЗНИЩЕНО", mineShot ? "hit" : "lost");
+        } else if (s.res === "miss") {
+          SFX.fart(); this.float(onScreen ? s.x : null, onScreen ? s.y : null, mineShot ? "ПРОМАХ" : "СУПЕРНИК ПРОМАХНУВСЯ", mineShot ? "miss" : "ok");
+        }
+      }
+      if (turnChanged || !this.mapView) {
+        const mineStarts = myTurn && this.lastTurn && turnChanged;
+        const wasShown = !!this.mapView && this.lastTurn;
         this.lastTurn = turnKey;
-        this.showMap(want);
-        if (mineStarts) { SFX.radio(); try { navigator.vibrate && navigator.vibrate(180); } catch (e) { /* ок */ } }
+        clearTimeout(this.switchT);
+        const go = () => { this.showMap(want); if (mineStarts) { SFX.radio(); try { navigator.vibrate && navigator.vibrate(180); } catch (e) { /* ок */ } } };
+        if (wasShown && fresh.length) this.switchT = setTimeout(go, 1800); else go();
       }
       this.turnBanner(j);
-      for (const s of fresh) {
-        if (s.res === "timeout") continue;
-        const onScreen = (s.by === j.me) === (this.mapView === "opp");
-        if (!onScreen) continue;
-        const u = s.by === j.me ? j.reveal.find((r) => r.i === s.i) : j.mine[s.i];
-        if (s.res === "hit" && u) { FX.explode(this.viewer, u.x, u.y, u.r); SFX.boom(); }
-        else if (s.res === "decoy" && u) { FX.explode(this.viewer, u.x, u.y, u.r, {small: true}); SFX.pop(); }
-        else SFX.miss();
-      }
       this.marksBattle();
       $("d-turn").textContent = j.state === "done" ? "кінець" : myTurn ? "ВАШ" : "суперника";
       $("d-turn").parentElement.classList.toggle("d-my", myTurn); $("d-turn").parentElement.classList.toggle("d-their", j.state === "battle" && !myTurn);
@@ -351,6 +363,16 @@
         : last && last.by === j.me ? (last.res === "hit" ? "Влучання! Ходіть ще. " : last.res === "decoy" ? "Це був муляж — хід переходить. " : last.res === "timeout" ? "Час вийшов — хід переходить. " : "Мимо — хід переходить. ") : "";
       this.msg(lastTxt.trim(), last && last.by !== j.me && last.res === "hit" ? "no" : "");
       this.deadline = performance.now() + j.left;
+    },
+
+    /* Напис над місцем удару (або по центру, якщо місце не на екрані), що спливає й зникає. */
+    float(x, y, text, cls) {
+      const host = $("d-view").parentElement, el = document.createElement("div"), v = this.viewer;
+      el.className = "d-float " + cls; el.textContent = text;
+      if (x != null) { el.style.left = (v.tx + x * v.s) + "px"; el.style.top = (v.ty + y * v.s) + "px"; }
+      else { el.style.left = "50%"; el.style.top = "45%"; }
+      host.appendChild(el);
+      setTimeout(() => el.remove(), 1900);
     },
 
     /* Великий напис угорі: чий зараз хід (мій — яскраво, суперника — приглушено) + таймер. */
