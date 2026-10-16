@@ -909,3 +909,7 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .main-menu { grid-template-rows: 1fr 1fr; }
 .main-menu .mm-duel { --c: 180,140,255; }
 .main-menu .mm:not(.mm-wide) { min-height: 118px; }
+/* помітна кнопка «← Меню» в усіх підменю */
+.sub-h .back { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); color: var(--fg); font-size: .85rem; flex: 0 0 auto; }
+.sub-h .back:hover { border-color: var(--accent); color: var(--accent); }
+.off-back { width: 100%; margin-top: 12px; padding: .75rem; border-radius: 12px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); font-weight: 600; }

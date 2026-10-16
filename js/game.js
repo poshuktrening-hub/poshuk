@@ -43,6 +43,7 @@
       $("sum-again").onclick = () => { SFX.click(); if (this.lastFix) return this.againFix(this.lastGame); if (this.lastGame === "cards" && window.Cards) Cards.start(); else this.start(); };   // та сама гра з тими ж налаштуваннями
       $("sum-menu").onclick = () => { SFX.click(); this.lastView = "menu"; this.showStart(); };
       $("sum-exit").onclick = () => $("logout-btn").click();
+      window.addEventListener("popstate", () => { if (!$("s-start").hidden && this.lastView !== "menu") this.view("menu", true); });
       document.addEventListener("keydown", (e) => {
         if ($("s-game").hidden || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
         if (e.key === "+" || e.key === "=") this.viewer.zoomCenter(1.6);
@@ -144,21 +145,22 @@
       const install = standalone ? "" : `<div class="off-inst"><b>Встановити як застосунок</b>
           ${this.installEvt ? `<button type="button" id="off-install">📲 Встановити на головний екран</button>` : ""}
           <p class="muted small">${ios ? "iPhone: відкрийте сайт у <b>Safari</b> → «Поділитися» → «На екран „Додому“»." : "Android: Chrome → меню ⋮ → «Встановити застосунок» або «Додати на головний екран»."}</p></div>`;
+      const back = `<button type="button" class="off-back" id="off-back">← Повернутися в меню</button>`;
       box.innerHTML = on
         ? `<p>Офлайн-версія <b>увімкнена</b>: тренажер працює без інтернету й не звертається до сервера.</p>
            <p class="muted">Дані від ${new Date(inf.at).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"})}: етапів — ${inf.stages}, фото карток — ${inf.cards}, записів довідника — ${inf.ref} (≈ ${mb(inf.bytes)} МБ).</p>
            <p class="muted small">Результати й «Робота над помилками» зберігаються лише на цьому пристрої. Дуель і «Топ дня» офлайн недоступні.</p>
            <div class="fix-btns"><button class="primary" type="button" id="off-online">🌐 Перейти в онлайн</button><button type="button" id="off-update">🔄 Оновити дані</button><button type="button" id="off-disable">Видалити офлайн-версію</button></div>
-           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}`
+           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}${back}`
         : ready
         ? `<p>Зараз <b>онлайн</b>. Офлайн-дані збережено на пристрої — перейти в офлайн можна будь-коли, навіть без інтернету.</p>
            <p class="muted">Дані від ${new Date(inf.at).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"})}: етапів — ${inf.stages}, фото карток — ${inf.cards}, записів довідника — ${inf.ref} (≈ ${mb(inf.bytes)} МБ).</p>
            <div class="fix-btns"><button class="primary" type="button" id="off-offline">📴 Перейти в офлайн</button><button type="button" id="off-update">🔄 Оновити дані</button><button type="button" id="off-disable">Видалити офлайн-версію</button></div>
-           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}`
+           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}${back}`
         : `<p>Тренажер один раз завантажує етапи, картки й довідник на пристрій і далі працює <b>без інтернету</b> — у полі й без витрат сервера.</p>
            <p class="muted small">Результати в офлайн-версії бачите лише ви — інструктору вони не надсилаються. Дуель і «Топ дня» офлайн недоступні. Потрібно вільне місце — зазвичай 50–300 МБ.</p>
            <div class="fix-btns"><button class="primary" type="button" id="off-dl">📥 Завантажити офлайн-версію</button></div>
-           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}`;
+           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}${back}`;
       const prog = (t, f) => { $("off-prog").hidden = false; $("off-st").textContent = t; $("off-bar").style.width = Math.round(100 * f) + "%"; };
       const run = async (btn) => {
         btn.disabled = true;
@@ -183,6 +185,7 @@
           setTimeout(() => location.reload(), 800);
         } catch (e) { prog("Помилка: " + e.message, 0); btn.disabled = false; }
       };
+      $("off-back").onclick = () => { SFX.click(); this.view("menu"); };
       if ($("off-dl")) $("off-dl").onclick = () => run($("off-dl"));
       if ($("off-update")) $("off-update").onclick = () => run($("off-update"));
       if ($("off-online")) $("off-online").onclick = () => this.switchMode(false);
@@ -256,9 +259,12 @@
     },
 
     /* Головне меню → підменю режиму. */
-    view(v) {
+    view(v, fromPop) {
       if (v === "ref") { if (window.Ref) Ref.open(); return; }
       if (v === "duel") { if (window.Duel) Duel.open(); return; }
+      // системна кнопка «Назад» (Android, встановлений застосунок) повертає з підменю в меню
+      const inSub = !!(history.state && history.state.sub);
+      if (!fromPop) { if (v !== "menu" && !inSub) history.pushState({sub: 1}, ""); else if (v === "menu" && inSub) history.back(); }
       this.lastView = v;
       [["main-menu", "menu"], ["sub-search", "search"], ["sub-cards", "cards"], ["sub-fix", "fix"], ["sub-off", "off"]]
         .forEach(([id, k]) => { const el = $(id); if (el) el.hidden = v !== k; });
