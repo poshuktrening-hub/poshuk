@@ -661,7 +661,7 @@ async function putBlob(env, request, id, part) {
 
 // ------------------------------------------------------------------ дуель (морський бій на знімку)
 const HINT_COLS = 8;   // сітка поля бою для підказки: 8 квадратів по ширині
-const TURN_MS = 15000, PLACE_MS = 30000, PLACE_GRACE = 45000, GONE_MS = 90000;
+const TURN_MS = 15000, PLACE_MS = 60000, EXTRA_MS = 10000, UPLOAD_GRACE = 45000, GONE_MS = 90000;
 const jp = (s, d) => { try { return JSON.parse(s || ""); } catch (e) { return d; } };
 const rnd4 = () => String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
 
@@ -677,9 +677,11 @@ async function duelTick(env, r, me) {
   const now = Date.now(), sets = {};
   // «я на звʼязку» пишемо не частіше ніж раз на 15 с — запис у D1 на безкоштовному плані обмежений (100 тис./добу)
   if (now - (r["seen" + me] || 0) > 15000) sets["seen" + me] = now;
-  if (r.state === "place" && r.until && now > r.until + PLACE_GRACE) {
-    // час розстановки давно минув, а хтось так і не відправив карту
-    Object.assign(sets, {state: "done", winner: r.r1 && !r.r2 ? 1 : r.r2 && !r.r1 ? 2 : 0, reason: "noplace"});
+  if (r.state === "place" && r.until) {
+    // 60 с + 10 с додаткових: хто не розставив і не відправив техніку — програв (гра без його цілей не починається)
+    const hard = r.until + EXTRA_MS + 1500;
+    if (now > hard && (!r.u1 || !r.u2)) Object.assign(sets, {state: "done", winner: r.u1 && !r.u2 ? 1 : r.u2 && !r.u1 ? 2 : 0, reason: "noplace"});
+    else if (now > hard + UPLOAD_GRACE && (!r.r1 || !r.r2)) Object.assign(sets, {state: "done", winner: r.r1 && !r.r2 ? 1 : r.r2 && !r.r1 ? 2 : 0, reason: "noplace"});
   }
   if (r.state === "battle") {
     const other = 3 - me;
@@ -702,8 +704,8 @@ function duelView(r, me) {
   const done = r.state === "done";
   const reveal = opp.map((u, i) => (done || u.dead || u.seen ? {i, x: u.x, y: u.y, r: u.r, type: u.type, decoy: !!u.decoy, dead: !!u.dead} : null)).filter(Boolean);
   const alive = (us) => us.filter((u) => !u.decoy && !u.dead).length;
-  return {ok: true, code: r.code, state: r.state, me, turn: r.turn, left: r.state === "place" && !r.until ? PLACE_MS : Math.max(0, r.until - Date.now()),
-    loaded: [!!r.l1, !!r.l2], placeMs: PLACE_MS, turnMs: TURN_MS, names: [r.p1 || "", r.p2 || ""],
+  return {ok: true, code: r.code, state: r.state, me, turn: r.turn, left: r.state === "place" ? (r.until ? r.until - Date.now() : PLACE_MS) : Math.max(0, r.until - Date.now()),
+    loaded: [!!r.l1, !!r.l2], placeMs: PLACE_MS, extraMs: EXTRA_MS, turnMs: TURN_MS, sent: [!!r.u1, !!r.u2], names: [r.p1 || "", r.p2 || ""],
     kit: jp(r.kit, []), map: {id: r.map, gsd: r.gsd, crop: jp(r.crop, null)}, mine, ready: [!!r.r1, !!r.r2], reveal, shots,
     alive: {me: alive(mine), opp: r["r" + other] ? alive(opp) : null}, winner: r.winner, reason: r.reason || "",
     hint: (jp(r.hints, {}) || {})[me] || null, grid: HINT_COLS};
@@ -755,6 +757,7 @@ async function duel(env, req, a) {
   }
   if (a === "duel_place_begin") {
     if (r.state !== "place") throw new HttpError("Зараз не етап розстановки");
+    if (r.until && now > r.until + EXTRA_MS + 1500) throw new HttpError("Час розстановки вийшов");
     const kit = jp(r.kit, []), units = Array.isArray(req.units) ? req.units : [];
     if (units.length !== kit.length) throw new HttpError("Розставте всю техніку");
     const us = units.map((u, i) => ({x: Math.round(Number(u.x) || 0), y: Math.round(Number(u.y) || 0), r: Math.max(6, Math.min(200, Number(u.r) || 12)), type: String(u.type || kit[i].name || "").slice(0, 60), decoy: !!kit[i].decoy}));
