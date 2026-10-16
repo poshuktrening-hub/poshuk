@@ -227,7 +227,7 @@ async function action(env, ctx, req, origin) {
       const role = await auth(env, req, "player");
       const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects").all();
       const {results: cp} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
-      return {ok: true, settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]),
+      return {ok: true, brandIcon: (await metaGet(env, "brand_icon")) || "", settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]),
         cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), token: await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
@@ -349,6 +349,12 @@ async function action(env, ctx, req, origin) {
     }
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
     case "set_settings": await saveSettings(env, req.settings || {}); return {ok: true};
+    case "brand_icon": {
+      const icon = String(req.icon || "");
+      if (icon && (!/^data:image\/(png|jpeg|webp);base64,/.test(icon) || icon.length > 120000)) throw new HttpError("Іконка має бути PNG/JPEG до ~80 КБ");
+      if (icon) await metaSet(env, "brand_icon", icon); else await env.DB.prepare("DELETE FROM meta WHERE k='brand_icon'").run();
+      return {ok: true};
+    }
     case "objects": {
       await dedupeObjects(env);
       const {results} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects ORDER BY name").all();
