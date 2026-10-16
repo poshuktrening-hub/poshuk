@@ -134,7 +134,7 @@
     },
     callsignOk() {
       const cs = $("callsign").value.trim();
-      if (!cs) { $("start-err").textContent = "Введіть позивний"; $("callsign").focus(); return null; }
+      if (!cs) { $("start-err").textContent = "Введіть прізвище"; $("callsign").focus(); return null; }
       LS.set("poshuk_callsign", cs); this.callsign = cs; return cs;
     },
 

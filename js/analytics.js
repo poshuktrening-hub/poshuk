@@ -93,11 +93,11 @@
         ${hard.length ? `<h3>Найчастіше помиляються</h3><ul class="an-items">${hard.map((x) => `<li><span class="nm">${esc(Logic.dispName(x.name))}<small>${x.kind === "cards" ? "картка" : "на знімку"}</small></span><b class="${tone(x.p)}">${x.p}%</b><small>${x.ok} з ${x.n}</small></li>`).join("")}</ul>` : ""}
 
         <h3>Курсанти</h3>
-        ${cadets.length ? `<div class="an-scroll"><table class="an-table"><tr><th>Позивний</th><th class="num">Тестів</th><th class="num">Середній</th><th>Найслабше</th><th class="num">Останній</th></tr>
+        ${cadets.length ? `<div class="an-scroll"><table class="an-table"><tr><th>Прізвище</th><th class="num">Тестів</th><th class="num">Середній</th><th>Найслабше</th><th class="num">Останній</th></tr>
           ${cadets.map((c) => `<tr data-who="${esc(c.p)}"><td><a href="#" data-who="${esc(c.p)}">${esc(c.p)}</a></td><td class="num">${c.n}</td><td class="num ${c.av == null ? "" : tone(c.av)}">${c.av == null ? "—" : c.av + "%"}</td><td>${c.weak ? `${esc(c.weak.cat)} <small>${c.weak.p}%</small>` : "<small class=muted>мало даних</small>"}</td><td class="num"><small>${esc(when(c.last))}</small></td></tr>`).join("")}</table></div>`
           : `<p class="muted small">Немає результатів за цей період.</p>`}
         <h3>Проходження${runs.length ? ` <small>${runs.length}${runs.length > shown.length ? `, показано ${shown.length}` : ""}</small>` : ""}</h3>
-        ${shown.length ? `<div class="an-scroll"><table class="an-table an-runs"><tr><th>Дата, час</th><th>Позивний</th><th>Тест</th><th class="num">Результат</th><th>Висновок</th></tr>
+        ${shown.length ? `<div class="an-scroll"><table class="an-table an-runs"><tr><th>Дата, час</th><th>Прізвище</th><th>Тест</th><th class="num">Результат</th><th>Висновок</th></tr>
           ${shown.map((r) => `<tr><td class="nowrap">${esc(when(r.ts))}</td><td><a href="#" data-who="${esc(r.callsign)}">${esc(r.callsign)}</a></td><td>${kindOf(r.mode, r.conclusion) === "cards" ? "Картки" : "Пошук"}<small> · ${esc(MODE_NAME[r.mode] || "—")}</small></td><td class="num nowrap"><b class="${tone(r.pct)}">${r.pct}%</b> <small>${r.total}/${r.max}</small></td><td><small>${esc(String(r.conclusion || "").replace(/^(Картки( \(іспит\))?|Іспит|Хардкор): /, ""))}</small></td></tr>`).join("")}</table></div>`
           : `<p class="muted small">Ніхто не проходив тести за цей період.</p>`}
         <p class="muted small">Категорії рахуються з ${d.since ? esc(d.since.slice(0, 10).split("-").reverse().join(".")) : "наступного тесту"}: відтоді зберігається кожна відповідь (картка або ціль на знімку). Середній результат — за всіма тестами періоду.</p>
