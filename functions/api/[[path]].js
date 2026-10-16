@@ -660,6 +660,7 @@ async function putBlob(env, request, id, part) {
 }
 
 // ------------------------------------------------------------------ дуель (морський бій на знімку)
+const DUEL_AREA = 25000;   // м²: більші поля дуелі зменшуються ще вдвічі
 const HINT_COLS = 8;   // сітка поля бою для підказки: 8 квадратів по ширині
 const TURN_MS = 15000, PLACE_MS = 60000, EXTRA_MS = 10000, UPLOAD_GRACE = 45000, GONE_MS = 90000;
 const jp = (s, d) => { try { return JSON.parse(s || ""); } catch (e) { return d; } };
@@ -718,7 +719,7 @@ async function duel(env, req, a) {
     const {results: old} = await env.DB.prepare("SELECT code FROM duels WHERE created < ?").bind(now - 6 * 3600e3).all();
     for (const o of old) await env.DB.batch([env.DB.prepare("DELETE FROM duels WHERE code=?").bind(o.code), env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${o.code}_%`)]);
     // карта: чистий знімок з масштабом (етап без цілей)
-    const {results: maps} = await env.DB.prepare("SELECT id, meta FROM stages WHERE ready=1 AND (targets IS NULL OR targets='[]' OR targets='')").all();
+    const {results: maps} = await env.DB.prepare("SELECT id, meta, w, h FROM stages WHERE ready=1 AND (targets IS NULL OR targets='[]' OR targets='')").all();
     const ok = maps.filter((m) => Number(jp(m.meta, {}).gsd) > 0 && !jp(m.meta, {}).cond);
     if (!ok.length) throw new HttpError("Немає карт для дуелі: адміністратору — додати чисті карти з масштабом");
     const m = ok[Math.floor(Math.random() * ok.length)];
@@ -727,8 +728,12 @@ async function duel(env, req, a) {
     let code = rnd4();
     for (let k = 0; k < 20 && await env.DB.prepare("SELECT code FROM duels WHERE code=?").bind(code).first(); k++) code = rnd4();
     const secret = newId() + newId();
-    // поле бою — випадкова чверть карти (вдвічі менша по кожній стороні): шукати швидше, ходи коротші
-    const crop = JSON.stringify({k: 0.5, fx: Math.random(), fy: Math.random()});
+    // поле бою — випадкова чверть карти (вдвічі менша по кожній стороні): шукати швидше, ходи коротші;
+    // великі карти (поле понад DUEL_AREA м²) — ще вдвічі менше за площею
+    const g = Number(jp(m.meta, {}).gsd);
+    let k = 0.5;
+    if (m.w && m.h && (m.w * k * g) * (m.h * k * g) > DUEL_AREA) k = 0.5 / Math.SQRT2;
+    const crop = JSON.stringify({k: Math.round(k * 1000) / 1000, fx: Math.random(), fy: Math.random()});
     await env.DB.prepare("INSERT INTO duels (code,created,state,map,gsd,kit,p1,s1,shots,seen1,crop) VALUES (?,?,?,?,?,?,?,?,?,?,?)")
       .bind(code, now, "lobby", m.id, Number(jp(m.meta, {}).gsd), JSON.stringify(kit), String(req.callsign || "Гравець 1").slice(0, 40), secret, "[]", now, crop).run();
     return Object.assign(duelView(await duelRow(env, code), 1), {secret});
