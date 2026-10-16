@@ -80,7 +80,7 @@
       this.cfg = j.settings;
       // підпис автора: іконка завантажується в адмінці (у базі, не в репозиторії); немає — лишається слово
       const ci = $("credit-icon");
-      if (ci) ci.innerHTML = j.brandIcon ? `<img src="${j.brandIcon}" alt="wolverine">` : "wolverine";
+      if (ci) ci.innerHTML = j.brandIcon ? `<img src="${j.brandIcon}" alt="росомаха">` : "росомахою";
       this.stages = j.stages; API.noteStages(j.stages);
       this.objects = j.objects || [];
       this.cardPhotos = new Map(j.cardPhotos || []);
