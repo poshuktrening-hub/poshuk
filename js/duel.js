@@ -8,16 +8,14 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => UI.esc(s);
-  const KIT_REAL = 5, KIT_DECOY = 0, TURN_S = 15, PLACE_S = 60, EXTRA_S = 10, POLL_MS = 1000;
+  const KIT_REAL = 5, KIT_DECOY = 0, TURN_S = 25, PLACE_S = 60, EXTRA_S = 10, POLL_MS = 1000;
   const C = {hit: "#3ddc97", miss: "#ff5a4f", decoy: "#b48cff", accent: "#ffb23e", mine: "#7fb2ff"};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = () => rej(new Error("Не вдалось відкрити модель")); i.src = src; });
 
-  /* Довжина моделі на знімку = найдовша сторона картинки виду згори. У танків і САУ це довжина разом з гарматою
-     (у бібліотеці часто лише корпус, 7 м) — інакше техніка на полі виходить на чверть-третину меншою за реальну. */
-  const OVERALL = [[/т-(55|62)\b/i, 9.2], [/т-64/i, 9.2], [/т-(72|80|90)|танк/i, 9.5], [/мста/i, 11.9], [/акаці/i, 8.4], [/гвоздик/i, 7.3],
-    [/піон|малка/i, 10.5], [/смерч|торнадо/i, 12.1], [/бук/i, 9.3], [/панцир/i, 9.5]];
-  const fullLen = (o) => { const L = Number(o.length_m) || 7, f = OVERALL.find(([re]) => re.test(o.name || "")); return f ? Math.max(L, f[1]) : L; };
+  /* Довжина моделі на знімку = найдовша сторона картинки виду згори (у танків і САУ — разом з гарматою).
+     У бібліотеці довжина часто лишається типовою (7 м) — тоді береться довідкова за назвою (Logic.lengthOf). */
+  const fullLen = (o) => Logic.lengthOf(o);
 
   const Duel = {
     open() {

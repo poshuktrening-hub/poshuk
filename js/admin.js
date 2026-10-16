@@ -89,6 +89,8 @@
               </div>
               <details id="a-model-box" class="model-box" hidden><summary><img id="a-model-img" alt=""><span class="status" id="a-model-meta"></span></summary>
                 <div class="kv" style="margin-top:6px"><label for="a-mname">Назва моделі</label><input id="a-mname" maxlength="40" placeholder="Танк Т-72Б3"></div>
+                <div class="kv"><label for="a-mlen" title="Найдовша сторона моделі згори: танк — з гарматою, гелікоптер — за гвинтом. Від цього залежить розмір на знімку й у дуелі">Довжина, м</label><input id="a-mlen" type="number" min="0.3" max="80" step="0.1"><span class="status" id="a-mlen-hint"></span></div>
+                <div class="row"><button type="button" id="a-len-all" title="Усім моделям бібліотеки з типовою довжиною 7 м проставити довідкову довжину за назвою">📏 Довжини за назвами всім</button></div>
                 <label for="a-ttx" style="margin:.4rem 0 .2rem">ТТХ (бачить курсант перед етапом)</label>
                 <textarea id="a-ttx" rows="5"></textarea>
                 <div class="row"><button type="button" id="a-ttx-save">Зберегти модель</button><span class="status" id="a-ttx-st"></span></div>
@@ -131,6 +133,7 @@
       $("a-decoy").onchange = () => this.fieldChanged();
       $("a-type").onchange = () => this.fieldChanged();
       $("a-ttx-save").onclick = () => this.saveTtx();
+      $("a-len-all").onclick = () => this.fixLengths();
       $("a-mname").oninput = () => {
         const o = this.objById(this.modelId), box = $("a-ttx");
         if (o && Logic.isAutoTtx(box.value)) box.value = Logic.ttxFor(null, Logic.typeOf($("a-mname").value.replace(/^муляж\s+/i, "")), !!o.decoy);
@@ -407,10 +410,13 @@
       if (!$("a-model-box")) return;
       $("a-model-box").hidden = !o;
       if (!o) return;
-      $("a-model-meta").textContent = `модель з генератора · тип: ${Logic.typeOf(o.name.replace(/^муляж\s+/i, ""))}${o.decoy ? " · муляж" : ""} · ≈${o.length_m} м`;
+      $("a-model-meta").textContent = `модель з генератора · тип: ${Logic.typeOf(o.name.replace(/^муляж\s+/i, ""))}${o.decoy ? " · муляж" : ""} · ≈${Logic.lengthOf(o)} м`;
       $("a-ttx").value = Logic.ttxFor(o, o.type);
       $("a-mname").value = o.name;
-      $("a-ttx").disabled = $("a-ttx-save").disabled = $("a-mname").disabled = !!o.builtin;
+      $("a-mlen").value = o.length_m || "";
+      const kn = Logic.knownLength(o.name);
+      $("a-mlen-hint").textContent = kn ? `довідково ${kn} м${Math.abs(kn - (o.length_m || 0)) > 0.05 ? " — у грі береться саме вона, поки в полі типові 7 м" : ""}` : "";
+      $("a-ttx").disabled = $("a-ttx-save").disabled = $("a-mname").disabled = $("a-mlen").disabled = !!o.builtin;
       $("a-ttx-st").textContent = o.builtin ? "вбудована модель — ТТХ типові" : "";
       const img = $("a-model-img");
       img.src = o.builtin ? Models.sprite(o.id).toDataURL() : (await API.objUrl(o.id, this.pw).catch(() => "")) || "";
@@ -421,9 +427,24 @@
       if (!o || o.builtin) return;
       o.ttx = Logic.cleanTtx(this.$("a-ttx").value);
       o.name = this.$("a-mname").value.trim() || o.name;
+      o.length_m = Math.max(0.3, Math.min(80, Number(this.$("a-mlen").value) || o.length_m || 7));
       o.type = Logic.typeOf(o.name.replace(/^муляж\s+/i, ""));
       try { await API.call("object_update", {id: o.id, name: o.name, length_m: o.length_m, type: o.type, ttx: o.ttx, decoy: o.decoy ? 1 : 0}, this.pw); await this.loadObjects(); st.textContent = "Збережено ✓"; st.className = "status ok"; }
       catch (e) { st.textContent = e.message; st.className = "status no"; }
+    },
+
+    /* Усім моделям з типовою довжиною (7 м) — довідкова довжина за назвою; це виправляє масштаб у дуелі й генераторі. */
+    async fixLengths() {
+      const st = this.$("a-ttx-st");
+      const todo = (this.objects || []).filter((o) => !o.builtin && Math.abs(Logic.lengthOf(o) - (Number(o.length_m) || 0)) > 0.05);
+      if (!todo.length) { st.textContent = "Довжини вже проставлено ✓"; st.className = "status ok"; return; }
+      if (!confirm(`Проставити довжину за назвою ${todo.length} моделям?\n` + todo.slice(0, 12).map((o) => `${o.name}: ${o.length_m || "—"} → ${Logic.lengthOf(o)} м`).join("\n") + (todo.length > 12 ? "\n…" : ""))) return;
+      let n = 0;
+      for (const o of todo) {
+        try { await API.call("object_update", {id: o.id, name: o.name, length_m: Logic.lengthOf(o), type: o.type, ttx: o.ttx, decoy: o.decoy ? 1 : 0}, this.pw); n++; } catch (e) { /* далі */ }
+      }
+      await this.loadObjects();
+      st.textContent = `Оновлено ${n} з ${todo.length} ✓`; st.className = "status ok";
     },
 
     async deleteStage() {

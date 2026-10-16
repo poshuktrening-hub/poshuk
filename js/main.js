@@ -7,7 +7,20 @@
       document.getElementById("login-btn").disabled = true;
       return;
     }
-    if (location.hash === "#admin") Admin.boot(); else Game.boot();
+    if (location.hash === "#admin") loadAdmin().then(() => Admin.boot()).catch((e) => { UI.show("s-login"); document.getElementById("login-sub").textContent = e.message; });
+    else Game.boot();
+  }
+  /* Адмінка — окремі модулі (~200 КБ), які курсантові не потрібні: вантажаться лише за адресою #admin. */
+  const ADMIN_JS = ["cards-commons", "cards-admin", "analytics", "scale", "crop", "generator", "compose-legacy", "restage", "variants", "admin"];
+  function loadAdmin() {
+    if (window.Admin) return Promise.resolve();
+    const me = document.querySelector('script[src*="js/main.js"]'), v = me && (me.getAttribute("src").match(/v=([^&]+)/) || [])[1] || "";
+    return ADMIN_JS.reduce((p, name) => p.then(() => new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = `js/${name}.js${v ? "?v=" + v : ""}`;
+      s.onload = res; s.onerror = () => rej(new Error(`Не завантажився модуль адмінки: ${name}.js — оновіть сторінку`));
+      document.body.appendChild(s);
+    })), Promise.resolve());
   }
   window.addEventListener("hashchange", () => location.reload());
   // застосунок на головному екрані (Android): запам'ятати запрошення встановити

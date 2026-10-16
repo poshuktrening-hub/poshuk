@@ -8,8 +8,13 @@
 
   const TOUCH = window.matchMedia && matchMedia("(pointer: coarse)").matches;
   const BG_SCREENS = ["s-login", "s-start", "s-summary"];
+  /* Системна кнопка «Назад» (Android, встановлений застосунок): з будь-якого екрана — назад у меню, а не вихід
+     із застосунку. Поки відкрито екран чи підменю, в історії лежить один «запобіжний» запис {trap: 1}. */
+  const inTrap = () => !!(history.state && history.state.trap);
+  const trap = () => { if (!inTrap()) try { history.pushState({trap: 1}, ""); } catch (e) { /* ок */ } };
   function show(id) {
     document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== id));
+    if (!/^s-(start|login|admin)$/.test(id)) trap();
     const bg = $("bgvid"), on = BG_SCREENS.includes(id);
     if (!bg) return;
     bg.hidden = !on;
@@ -43,7 +48,16 @@
       $("sum-again").onclick = () => { SFX.click(); if (this.lastFix) return this.againFix(this.lastGame); if (this.lastGame === "cards" && window.Cards) Cards.start(); else this.start(); };   // та сама гра з тими ж налаштуваннями
       $("sum-menu").onclick = () => { SFX.click(); this.lastView = "menu"; this.showStart(); };
       $("sum-exit").onclick = () => $("logout-btn").click();
-      window.addEventListener("popstate", () => { if (!$("s-start").hidden && this.lastView !== "menu") this.view("menu", true); });
+      window.addEventListener("popstate", () => {
+        const vis = (id) => { const el = $(id); return !!el && !el.hidden; };
+        const again = (sel) => { trap(); const b = $(sel); if (b) b.click(); };   // підтвердження: відмовився — запобіжник лишається
+        if (vis("s-ref")) { if (window.Ref && $("r-detail") && !$("r-detail").hidden) { trap(); Ref.closeDetail(); } else if (window.Ref) Ref.close(); return; }
+        if (vis("s-summary")) { $("sum-menu").click(); return; }
+        if (vis("s-cards")) return again("c-quit");
+        if (vis("s-game")) return again("g-quit");
+        if (vis("s-duel")) return again("d-quit");
+        if (vis("s-start") && this.lastView !== "menu") this.view("menu", true);
+      });
       document.addEventListener("keydown", (e) => {
         if ($("s-game").hidden || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
         if (e.key === "+" || e.key === "=") this.viewer.zoomCenter(1.6);
@@ -297,8 +311,7 @@
       if (v === "duel") { if (window.Duel) Duel.open(); return; }
       if (v === "weak") { if (window.Ref) Ref.open(); return; }
       // системна кнопка «Назад» (Android, встановлений застосунок) повертає з підменю в меню
-      const inSub = !!(history.state && history.state.sub);
-      if (!fromPop) { if (v !== "menu" && !inSub) history.pushState({sub: 1}, ""); else if (v === "menu" && inSub) history.back(); }
+      if (!fromPop) { if (v !== "menu") trap(); else if (inTrap()) history.back(); }
       this.lastView = v;
       [["main-menu", "menu"], ["sub-search", "search"], ["sub-cards", "cards"], ["sub-fix", "fix"], ["sub-off", "off"], ["sub-my", "my"]]
         .forEach(([id, k]) => { const el = $(id); if (el) el.hidden = v !== k; });
@@ -375,13 +388,16 @@
       this.viewer.toggleGrid(false);   // сітка — за кнопкою «#» (і вмикається підказкою)
       this.gridBtn.classList.remove("on");
       this.gridBtn.hidden = !this.mode.grid;
-      this.rounds.forEach((_, i) => this.preload(i));
+      this.preload(0);
       this.nextRound();
     },
 
+    /* Знімки підвантажуються по черзі (а не всі 10 одразу): перший етап відкривається швидше,
+       наступні встигають завантажитись, поки курсант проходить поточний. */
     preload(i) {
       const st = this.rounds[i];
-      if (st) API.loadImage(st.id, this.password).catch(() => {});
+      if (!st) return;
+      API.loadImage(st.id, this.password).catch(() => {}).then(() => { if (this.rounds && this.rounds[i + 1]) this.preload(i + 1); });
     },
 
     /* Кнопка «Далі» по центру з відліком 5 с — потім сама переходить далі.

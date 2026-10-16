@@ -41,6 +41,11 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS stage_backups (id TEXT PRIMARY KEY, targets TEXT, size INTEGER, chunks INTEGER, created TEXT)`,
 ];
 
+function cookieOf(request, name) {
+  const m = String(request.headers.get("Cookie") || "").match(new RegExp("(?:^|;\\s*)" + name + "=([^;]*)"));
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
 class HttpError extends Error { constructor(msg, status = 200) { super(msg); this.status = status; } }
 
 const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj), {
@@ -48,10 +53,14 @@ const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj)
 });
 
 // ------------------------------------------------------------------ база
+const SCHEMA_V = "2026-10-16b";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
 let schemaReady = false;
 async function db(env) {
   if (!env.DB) throw new HttpError("База D1 не підключена (Settings → Functions → D1 binding: DB)");
   if (!schemaReady) {
+    let have = null;
+    try { have = (await env.DB.prepare("SELECT v FROM meta WHERE k='schema_v'").first() || {}).v; } catch (e) { have = null; }   // нова база — таблиці meta ще немає
+    if (have === SCHEMA_V) { schemaReady = true; return env.DB; }
     await env.DB.batch(SCHEMA.map((q) => env.DB.prepare(q)));
     try { await env.DB.prepare("ALTER TABLE objects ADD COLUMN ttx TEXT").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE objects ADD COLUMN decoy INTEGER DEFAULT 0").run(); } catch (e) { /* колонка вже є */ }
@@ -63,6 +72,11 @@ async function db(env) {
     for (const c of ["crop", "dims", "hints"]) { try { await env.DB.prepare(`ALTER TABLE duels ADD COLUMN ${c} TEXT`).run(); } catch (e) { /* колонка вже є */ } }
     try { await env.DB.prepare("ALTER TABLE duels ADD COLUMN purged INTEGER DEFAULT 0").run(); } catch (e) { /* колонка вже є */ }
     for (const t of ["results", "answers", "clicks"]) { try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN archived INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
+    // індекси для гарячих запитів (топ дня, робота над помилками, мої результати) — менше прочитаних рядків D1
+    for (const q of ["CREATE INDEX IF NOT EXISTS results_ts ON results (ts)", "CREATE INDEX IF NOT EXISTS results_cs ON results (callsign, ts)", "CREATE INDEX IF NOT EXISTS answers_cs ON answers (callsign, ts)"]) {
+      try { await env.DB.prepare(q).run(); } catch (e) { /* є */ }
+    }
+    await env.DB.prepare("INSERT INTO meta (k,v) VALUES ('schema_v',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(SCHEMA_V).run();
     schemaReady = true;
   }
   return env.DB;
@@ -763,7 +777,7 @@ async function getCardPhoto(env, ctx, request, id, t, v) {
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   }
   const out = new Response(res.body, res);
-  out.headers.set("Cache-Control", "private, max-age=86400");
+  out.headers.set("Cache-Control", "private, max-age=604800");
   return out;
 }
 
@@ -797,7 +811,7 @@ async function getObject(env, ctx, request, id, t) {
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   }
   const out = new Response(res.body, res);
-  out.headers.set("Cache-Control", "private, max-age=3600");
+  out.headers.set("Cache-Control", "private, max-age=86400");
   return out;
 }
 
@@ -820,7 +834,7 @@ async function getImage(env, ctx, request, id, t, v) {
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   }
   const out = new Response(res.body, res);
-  out.headers.set("Cache-Control", "private, max-age=43200");
+  out.headers.set("Cache-Control", "private, max-age=604800");
   return out;
 }
 
@@ -840,7 +854,7 @@ async function putBlob(env, request, id, part) {
 // ------------------------------------------------------------------ дуель (морський бій на знімку)
 const DUEL_AREA = 25000;   // м²: більші поля дуелі зменшуються ще вдвічі
 const HINT_COLS = 8;   // сітка поля бою для підказки: 8 квадратів по ширині
-const TURN_MS = 15000, PLACE_MS = 60000, EXTRA_MS = 10000, UPLOAD_GRACE = 45000, GONE_MS = 90000;
+const TURN_MS = 25000, PLACE_MS = 60000, EXTRA_MS = 10000, UPLOAD_GRACE = 45000, GONE_MS = 90000;
 const jp = (s, d) => { try { return JSON.parse(s || ""); } catch (e) { return d; } };
 const rnd4 = () => String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
 
@@ -1036,10 +1050,12 @@ export async function onRequest(context) {
   try {
     await db(env);
     try { usageTick(env, context); } catch (e) { /* ок */ }
-    if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
-    if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], url.searchParams.get("t"));
-    if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
-    if (request.method === "GET" && path[0] === "ref" && path[1]) return await getRefImage(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
+    // токен для картинок: у запиті (?t=), у заголовку (fetch) або в cookie (<img>) — тоді адреса стала й кеш браузера живе довго
+    const t = url.searchParams.get("t") || request.headers.get("X-Token") || cookieOf(request, "pt");
+    if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], t, url.searchParams.get("v"));
+    if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], t);
+    if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], t, url.searchParams.get("v"));
+    if (request.method === "GET" && path[0] === "ref" && path[1]) return await getRefImage(env, context, request, path[1], t, url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "duel" && path[1] && path[2]) return await getDuelImage(env, path[1], Number(path[2]), url.searchParams.get("t"), url.searchParams.get("s"));
     if (request.method === "PUT" && path[0] === "blob" && path[1]) return await putBlob(env, request, path[1], Number(path[2]));
     if (request.method === "GET") return json({ok: true, app: "poshuk", version: VERSION});

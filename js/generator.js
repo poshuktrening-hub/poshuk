@@ -163,7 +163,7 @@
     objectChanged() {
       const o = this.obj();
       LS.set("poshuk_gen_obj", o.id);
-      this.$("g-len").value = o.length_m;
+      this.$("g-len").value = Logic.lengthOf(o);
       this.$("g-name").value = o.name.replace(/\s*\((вбудована|надувний)\)$/, "");
       this.$("g-decoy").checked = !!o.decoy;
       this.$("g-inflate").disabled = !!o.decoy;

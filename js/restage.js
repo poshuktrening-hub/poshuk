@@ -99,7 +99,7 @@
         if (!o) continue;
         if (onStep) onStep(i + 1, targets.length);
         const spr = await this.sprite(o);
-        const size = Math.max(3, Math.min(160, t.r > 8 ? t.r / 0.6 : gsd > 0 ? (o.length_m || 7) / gsd : 16));
+        const size = Math.max(3, Math.min(160, t.r > 8 ? t.r / 0.6 : gsd > 0 ? Logic.lengthOf(o) / gsd : 16));
         const slen = gsd > 0 ? Math.min(40, Math.max(2, 2.2 / gsd)) : Math.max(2, size * 0.3);
         const r = await this.redo(out, clean, spr, t, size, slen, sun);
         if (!r) continue;

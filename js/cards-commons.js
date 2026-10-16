@@ -1,6 +1,6 @@
 /* Пошук фото для карток у Вікісховищі (Wikimedia Commons) — лише вільні ліцензії (CC0, PD, CC BY, CC BY-SA).
    Для кожної картки: спершу перевірені за назвою файли-кандидати, далі — пошук за запитом. */
-window.CARD_COMMONS = {
+Object.assign(window.CARD_COMMONS = window.CARD_COMMONS || {}, {
   t55: ["T-55 tank", "T-55_Tank.jpg", "Medium_soviet_tank_T55,_Kiev,_Ukraine.JPG"],
   t62m: ["T-62M tank", "T-62M_Kabul.JPG"],
   t64bv: ["T-64BV tank", "T-64BV_mod_2017,_Kyiv_2021,_16.jpg", "T-64BV_mod_2017,_Kyiv_2021,_10.jpg"],
@@ -120,7 +120,7 @@ window.CARD_COMMONS = {
   tzm_bm21: ["9T254 transloader"],
   ptrk_kornet: ["Kornet ATGM"],
   sprut: ["2S25 Sprut-SD"],
-};
+});
 
 /* Набір 2 (+100 карток): лише пошукові запити — у назві файлу має бути позначення моделі. */
 Object.assign(window.CARD_COMMONS, {
