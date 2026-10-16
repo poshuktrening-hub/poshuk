@@ -127,6 +127,33 @@ async function bootstrap(env, p) {
   return null;
 }
 
+/* Паролі в Google-таблиці (аркуш «Налаштування») — головні: якщо введений пароль не збігся з базою сайту,
+   питаємо таблицю; підійшов — сайт оновлює в себе пароль курсантів (і адміна, якщо це пароль адміна). */
+async function syncFromSheet(env, p) {
+  if (!env.SHEETS_URL || p.length > 200) return null;
+  let j;
+  try { j = await gas(env, {action: "login", p}); } catch (e) { return null; }
+  if (!j || !j.ok || !j.role) return null;
+  if (j.role === "admin") {
+    const vals = {admin_password: p};
+    try { const g = await gas(env, {action: "get_settings", p}); if (g && g.ok && g.settings && g.settings.player_password) vals.player_password = g.settings.player_password; } catch (e) { /* лише пароль адміна */ }
+    await saveSettings(env, vals, true);
+    return "admin";
+  }
+  await saveSettings(env, {player_password: p}, true);
+  return "player";
+}
+
+/* Зміна паролів в адмінці сайту — те саме в таблицю, щоб старий пароль із таблиці не повернувся. */
+async function pushPasswordsToSheet(env, oldAdmin, vals) {
+  if (!env.SHEETS_URL) return {ok: false, error: "не підключена"};
+  const pw = {};
+  for (const k of ["player_password", "admin_password"]) if (vals[k] !== undefined) pw[k] = String(vals[k]).trim();
+  if (!Object.keys(pw).length) return {ok: true};
+  try { const j = await gas(env, {action: "set_settings", p: oldAdmin, settings: pw}); return j && j.ok ? {ok: true} : {ok: false, error: (j && j.error) || "помилка"}; }
+  catch (e) { return {ok: false, error: "недоступна"}; }
+}
+
 // ------------------------------------------------------------------ доступ
 const enc = new TextEncoder();
 async function hmac(env, msg) {
@@ -172,6 +199,11 @@ async function auth(env, req, need) {
   const isAdmin = !!p && p === String(s.admin_password);
   const isPlayer = isAdmin || (!!p && p === String(s.player_password));
   if (need === "admin" ? isAdmin : isPlayer) return isAdmin ? "admin" : "player";
+  // пароль змінили в Google-таблиці — сайт підхоплює його звідти
+  if (p) {
+    const role = await syncFromSheet(env, p);
+    if (role && (need !== "admin" || role === "admin")) return role;
+  }
   const fails = Number(await metaGet(env, "fails") || 0) + 1;
   if (fails >= LOCK_FAILS) { await metaSet(env, "lock_until", Date.now() + LOCK_SECONDS * 1000); await metaSet(env, "fails", 0); }
   else await metaSet(env, "fails", fails);
@@ -422,7 +454,13 @@ async function action(env, ctx, req, origin) {
       return {ok: true, clicks: results.map((r) => [r.x, r.y, !!r.hit]), players: pl ? pl.n : 0};
     }
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
-    case "set_settings": await saveSettings(env, req.settings || {}); return {ok: true};
+    case "set_settings": {
+      const before = await settings(env), v = req.settings || {};
+      await saveSettings(env, v);
+      const changed = ["player_password", "admin_password"].some((k) => v[k] !== undefined && String(v[k]).trim() !== String(before[k]));
+      const sheet = changed ? await pushPasswordsToSheet(env, String(before.admin_password), v) : null;
+      return {ok: true, sheet};
+    }
     case "brand_icon": {
       const icon = String(req.icon || "");
       if (icon && (!/^data:image\/(png|jpeg|webp);base64,/.test(icon) || icon.length > 120000)) throw new HttpError("Іконка має бути PNG/JPEG до ~80 КБ");

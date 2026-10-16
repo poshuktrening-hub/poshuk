@@ -532,8 +532,9 @@
         f.forEach(([k, , t]) => { const el = box.querySelector("#st-" + k); vals[k] = t === "checkbox" ? (el.checked ? "TRUE" : "FALSE") : el.value; });
         const out = box.querySelector("#st-status");
         try {
-          await API.call("set_settings", {settings: vals}, this.pw);
-          out.textContent = "Збережено ✓"; out.className = "status ok";
+          const r = await API.call("set_settings", {settings: vals}, this.pw);
+          out.textContent = "Збережено ✓" + (r.sheet ? (r.sheet.ok ? " Паролі оновлено й у Google-таблиці." : ` Але в Google-таблиці паролі не оновились (${r.sheet.error}) — змініть їх там вручну, інакше старий пароль з таблиці теж працюватиме.`) : "");
+          out.className = "status " + (r.sheet && !r.sheet.ok ? "no" : "ok");
           if (vals.admin_password !== this.pw) { this.pw = vals.admin_password; SS.set("poshuk_admin_pw", this.pw); }
           this.cols = Number(vals.grid_cols) || 8;
           if (this.img) this.viewer.setGrid(this.cols);
