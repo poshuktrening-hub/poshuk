@@ -76,6 +76,24 @@
         if (t.bmp) ctx.drawImage(t.bmp, x, y, w + 0.6, h + 0.6); else this.load(t);
       }
     }
+    /* Лише ділянка (sx,sy,sw,sh) у полотно dw×dh — без повнорозмірного полотна. Плитки, які довелось розпакувати
+       саме для цього, одразу звільняються: на телефонах великий знімок цілком не влазить у пам'ять полотен (чорний екран). */
+    async region(sx, sy, sw, sh, dw, dh) {
+      const c = canvas(dw, dh), ctx = c.getContext("2d"), k = dw / sw;
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+      if (!this.tiles.length) {
+        const f = this.preview.width / this.width;
+        ctx.drawImage(this.preview, sx * f, sy * f, sw * f, sh * f, 0, 0, dw, dh);
+        return c;
+      }
+      const need = this.tiles.filter((t) => t.x < sx + sw && t.x + t.w > sx && t.y < sy + sh && t.y + t.h > sy);
+      for (const t of need) {
+        const had = !!t.p, bmp = await this.load(t);
+        ctx.drawImage(bmp, (t.x - sx) * k, (t.y - sy) * k, t.w * k + 0.6, t.h * k + 0.6);
+        if (!had) { try { bmp.close && bmp.close(); } catch (e) { /* ок */ } t.bmp = null; t.p = null; }
+      }
+      return c;
+    }
     async full() {
       if (!this.tiles.length) { const c = canvas(this.width, this.height); c.getContext("2d").drawImage(this.preview, 0, 0, this.width, this.height); return c; }
       const c = canvas(this.width, this.height), ctx = c.getContext("2d");

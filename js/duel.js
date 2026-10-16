@@ -13,6 +13,12 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = () => rej(new Error("Не вдалось відкрити модель")); i.src = src; });
 
+  /* Довжина моделі на знімку = найдовша сторона картинки виду згори. У танків і САУ це довжина разом з гарматою
+     (у бібліотеці часто лише корпус, 7 м) — інакше техніка на полі виходить на чверть-третину меншою за реальну. */
+  const OVERALL = [[/т-(55|62)\b/i, 9.2], [/т-64/i, 9.2], [/т-(72|80|90)|танк/i, 9.5], [/мста/i, 11.9], [/акаці/i, 8.4], [/гвоздик/i, 7.3],
+    [/піон|малка/i, 10.5], [/смерч|торнадо/i, 12.1], [/бук/i, 9.3], [/панцир/i, 9.5]];
+  const fullLen = (o) => { const L = Number(o.length_m) || 7, f = OVERALL.find(([re]) => re.test(o.name || "")); return f ? Math.max(L, f[1]) : L; };
+
   const Duel = {
     open() {
       const cs = Game.callsignOk(); if (!cs) return;
@@ -35,6 +41,9 @@
 
     reset() {
       clearTimeout(this.pollT); clearInterval(this.tickT); clearTimeout(this.switchT);
+      // попередня дуель: звільнити великі полотна одразу (iOS тримає пам'ять полотен до перезапуску)
+      for (const c of [this.base, this.work]) if (c && c.width) { c.width = 0; c.height = 0; }
+      if (this.oppImg && this.oppImg.tiles) for (const t of this.oppImg.tiles) { try { t.bmp && t.bmp.close && t.bmp.close(); } catch (e) { /* ок */ } t.bmp = null; t.p = null; }
       $("d-turnbar").hidden = true; $("d-units").hidden = true; $("d-hint").hidden = true;
       Object.assign(this, {extraShown: false, extraMode: false, sending: false, lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
       $("d-tabs").hidden = true; $("d-ready").hidden = true; $("d-msg").textContent = "";
@@ -76,7 +85,7 @@
       const pool = lib.length >= KIT_REAL ? lib : [...lib, ...Models.LIST.filter((m) => !m.decoy && !/catapult/.test(m.id))];
       let src = Logic.shuffle(pool.slice());
       while (src.length < KIT_REAL) src = src.concat(Logic.shuffle(pool.slice()));
-      const pick = src.slice(0, KIT_REAL).map((o) => ({obj: o.id, name: Logic.dispName(o.name.replace(/\s*\(вбудована\)$/, "")), length_m: o.length_m || 7, decoy: false}));
+      const pick = src.slice(0, KIT_REAL).map((o) => ({obj: o.id, name: Logic.dispName(o.name.replace(/\s*\(вбудована\)$/, "")), length_m: fullLen(o), decoy: false}));
       for (let i = 0; i < KIT_DECOY; i++) { const k = pick[i % pick.length]; pick.push(Object.assign({}, k, {decoy: true, name: "Муляж " + k.name})); }
       return pick;
     },
@@ -136,27 +145,38 @@
     },
 
     // ---------------------------------------------------------------- розстановка
+    /* Поле бою: та сама для обох ділянка карти (crop із сервера), збільшена до UP×. Читаємо лише потрібні плитки —
+       без повнорозмірного полотна всієї карти (на телефонах воно не влазить у пам'ять → чорний екран). */
+    async loadField(j) {
+      const img = await API.loadImage(j.map.id, this.pw);
+      const W = img.width || img.naturalWidth, H = img.height || img.naturalHeight;
+      const cr = j.map.crop || {k: 1, fx: 0, fy: 0};
+      const cw = Math.min(W, Math.max(Math.round(W * cr.k), 700)), ch = Math.min(H, Math.max(Math.round(H * cr.k), 500));
+      const sx = Math.round(cr.fx * (W - cw)), sy = Math.round(cr.fy * (H - ch));
+      // збільшуємо (до 2×), щоб техніка мала деталізацію, але не більше, ніж треба: танк ≈ 120 пкс на полі
+      const g0 = j.map.gsd || 0.25;
+      const UP = Math.max(1, Math.min(2, 4096 / Math.max(cw, ch), (120 * g0) / 7));
+      const dw = Math.round(cw * UP), dh = Math.round(ch * UP);
+      let cv;
+      if (img.region) cv = await img.region(sx, sy, cw, ch, dw, dh);
+      else { cv = Compose.canvas(dw, dh); const c = cv.getContext("2d"); c.imageSmoothingQuality = "high"; c.drawImage(img, sx, sy, cw, ch, 0, 0, dw, dh); }
+      return {cv, up: dw / cw};
+    },
+
     async startPlacing(j) {
       this.placing = true;
       this.panel("");
       this.loading("Завантажую карту…");
       try {
-        const full = await Tiles.toCanvas(await API.loadImage(j.map.id, this.pw));
-        // поле бою — та сама для обох чверть карти (½ ширини × ½ висоти), але не менше ~700×500 пкс
-        const cr = j.map.crop || {k: 1, fx: 0, fy: 0};
-        const cw = Math.min(full.width, Math.max(Math.round(full.width * cr.k), 700)), ch = Math.min(full.height, Math.max(Math.round(full.height * cr.k), 500));
-        const sx = Math.round(cr.fx * (full.width - cw)), sy = Math.round(cr.fy * (full.height - ch));
-        // ділянку збільшуємо (до ~2×): техніка малюється з удвічі більшою деталізацією — на зумі її добре видно
-        const UP = Math.max(1, Math.min(2, 4096 / Math.max(cw, ch)));
-        const src = Compose.canvas(Math.round(cw * UP), Math.round(ch * UP)), sctx = src.getContext("2d");
-        sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = "high";
-        sctx.drawImage(full, sx, sy, cw, ch, 0, 0, src.width, src.height);
-        this.up = UP;
-        this.base = Compose.canvas(src.width, src.height); this.base.getContext("2d").drawImage(src, 0, 0);
-        this.work = Compose.canvas(src.width, src.height); this.work.getContext("2d").drawImage(src, 0, 0);
+        const {cv, up} = await this.loadField(j);
+        if (!this.code || this.code !== j.code) return;   // поки вантажилось, гравець вийшов
+        this.up = up;
+        this.base = cv;
+        this.work = Compose.canvas(cv.width, cv.height); this.work.getContext("2d").drawImage(cv, 0, 0);
         try { this.sun = Compose.shadowDir(this.base); } catch (e) { this.sun = 135; }
-        this.gsd = (j.map.gsd || 0.25) / (this.up || 1);
-        this.units = j.kit.map((k) => ({k, x: null, y: null, angle: Math.floor(Math.random() * 360), size: Math.max(8, Math.min(240, (k.length_m || 7) / this.gsd)), rect: null}));
+        // масштаб поля: м/пкс карти з урахуванням збільшення; розмір техніки — її реальна довжина в пікселях поля
+        this.gsd = (j.map.gsd || 0.25) / this.up;
+        this.units = j.kit.map((k) => ({k, x: null, y: null, angle: Math.floor(Math.random() * 360), size: Math.max(6, (k.length_m || 7) / this.gsd), rect: null}));
         this.sel = 0;
         this.makeThumbs(j.kit);
         this.viewer.setImage(this.work);
@@ -165,7 +185,11 @@
         this.msg("Торкніться знімка — поставити вибрану техніку. Тягніть — перемістити; ⟳ — повернути.");
         API.call("duel_loaded", {code: this.code, secret: this.secret}, this.pw).then((r) => this.apply(r)).catch(() => {});   // таймер стартує, коли карта відкрилась в обох
         clearInterval(this.tickT); this.tickT = setInterval(() => this.tick(), 250);
-      } catch (e) { this.msg("Не вдалось завантажити карту: " + e.message, "no"); }
+      } catch (e) {
+        // не вийшло (зв'язок, пам'ять) — наступне опитування спробує ще раз, а не лишає чорний екран
+        this.base = null; this.work = null; this.placing = false;
+        this.msg("Не вдалось завантажити карту: " + e.message + ". Пробую ще раз…", "no");
+      }
       this.loading(null);
     },
 
@@ -304,7 +328,7 @@
       if (this.loadingOpp) return;
       this.loadingOpp = true;
       this.panel(""); $("d-ready").hidden = true; $("d-tabs").hidden = false;
-      if (!this.work) { this.loading("Завантажую карту…"); try { const src = await Tiles.toCanvas(await API.loadImage(j.map.id, this.pw)); this.work = src; } catch (e) { /* без своєї карти */ } }
+      if (!this.work) { this.loading("Завантажую карту…"); try { const f = await this.loadField(j); this.up = f.up; this.work = f.cv; } catch (e) { /* без своєї карти */ } }
       this.loading("Завантажую знімок суперника…");
       try {
         const tok = await API.token(this.pw);
