@@ -61,6 +61,7 @@ async function db(env) {
     // архів: записи не видаляються, а позначаються archived=1 і більше не рахуються в аналітиці, топі й теплових картах
     for (const c of ["l1", "l2"]) { try { await env.DB.prepare(`ALTER TABLE duels ADD COLUMN ${c} INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
     for (const c of ["crop", "dims", "hints"]) { try { await env.DB.prepare(`ALTER TABLE duels ADD COLUMN ${c} TEXT`).run(); } catch (e) { /* колонка вже є */ } }
+    try { await env.DB.prepare("ALTER TABLE duels ADD COLUMN purged INTEGER DEFAULT 0").run(); } catch (e) { /* колонка вже є */ }
     for (const t of ["results", "answers", "clicks"]) { try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN archived INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
     schemaReady = true;
   }
@@ -341,7 +342,12 @@ async function action(env, ctx, req, origin) {
       const {results} = await env.DB.prepare("SELECT id, ord, cat, name, ttx, descr, imgs, updated FROM ref_entries ORDER BY ord").all();
       return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
     }
-    case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env, String(req.since || "0000"))}; }
+    case "top": {
+      await auth(env, req, "player");
+      const top = await top3(env, String(req.since || "0000"));
+      top.duel = await duelTop(env, Number(req.sinceMs) || (Date.now() - 24 * 3600e3));
+      return {ok: true, top};
+    }
     case "mistakes": {   // робота над помилками: етапи й картки, де ОСТАННЯ спроба курсанта була з помилкою
       await auth(env, req, "player");
       const cs = String(req.callsign || "").trim().slice(0, 40);
@@ -656,6 +662,19 @@ async function dedupeObjects(env) {
 /* Тестові входи («Тест», «Тестовський», «test», «тест 2»…) — у результати, аналітику, топ і таблицю не потрапляють. */
 const isTestName = (n) => /(^|[^a-zа-яіїєґ])(тест|test)/i.test(String(n || "").trim());
 
+/* Дуель: топ-3 за кількістю перемог з початку доби курсанта. */
+async function duelTop(env, sinceMs) {
+  const {results} = await env.DB.prepare("SELECT p1, p2, winner FROM duels WHERE state='done' AND winner IN (1,2) AND created >= ?").bind(sinceMs).all();
+  const m = new Map();
+  for (const r of results) {
+    const name = String((r.winner === 1 ? r.p1 : r.p2) || "").trim();
+    if (!name || isTestName(name)) continue;
+    const k = name.toLowerCase(), cur = m.get(k);
+    if (cur) cur.wins++; else m.set(k, {name, wins: 1});
+  }
+  return [...m.values()].sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name)).slice(0, 3);
+}
+
 async function top3(env, since = "0000") {   // since — початок доби за часом курсанта («YYYY-MM-DD 00:00»)
   const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results WHERE COALESCE(archived,0)=0 AND ts >= ? ORDER BY ts DESC LIMIT 5000").bind(since).all();
   const out = {search: new Map(), cards: new Map()};
@@ -842,9 +861,10 @@ function duelView(r, me) {
 async function duel(env, req, a) {
   const now = Date.now();
   if (a === "duel_create") {
-    // прибрати старі кімнати (понад 6 год) разом зі знімками
-    const {results: old} = await env.DB.prepare("SELECT code FROM duels WHERE created < ?").bind(now - 6 * 3600e3).all();
-    for (const o of old) await env.DB.batch([env.DB.prepare("DELETE FROM duels WHERE code=?").bind(o.code), env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${o.code}_%`)]);
+    // старі кімнати: знімки — геть через 6 год; сам запис (хто переміг) лишається 2 доби — для «Топу дня»
+    const {results: old} = await env.DB.prepare("SELECT code FROM duels WHERE created < ? AND COALESCE(purged,0)=0").bind(now - 6 * 3600e3).all();
+    for (const o of old) await env.DB.batch([env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${o.code}_%`), env.DB.prepare("UPDATE duels SET purged=1 WHERE code=?").bind(o.code)]);
+    await env.DB.prepare("DELETE FROM duels WHERE created < ?").bind(now - 48 * 3600e3).run();
     // карта: чистий знімок з масштабом (етап без цілей)
     const {results: maps} = await env.DB.prepare("SELECT id, meta, w, h FROM stages WHERE ready=1 AND (targets IS NULL OR targets='[]' OR targets='')").all();
     const ok = maps.filter((m) => Number(jp(m.meta, {}).gsd) > 0 && !jp(m.meta, {}).cond);
