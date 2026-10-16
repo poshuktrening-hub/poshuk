@@ -102,13 +102,59 @@
       this.view(this.lastView || "menu");
       document.querySelectorAll("#s-start [data-go]").forEach((b) => (b.onclick = () => { SFX.click(); this.view(b.dataset.go); }));
       document.querySelectorAll("#s-start [data-help]").forEach((b) => (b.onclick = () => Help.show(b.dataset.help)));
+      this.offUi();
       this.refreshPending();
       this.flushPending().then(() => { this.loadTop(); this.loadMistakes(); });
       $("callsign").onchange = () => this.loadMistakes();
       if (!$("callsign").value) $("callsign").focus();
     },
+    /* Офлайн-версія: позначка в меню; без мережі не показуємо дуель, топ і адмінку. */
+    offUi() {
+      const on = !!(window.Offline && Offline.on), inf = on ? Offline.info() : null;
+      $("off-badge").hidden = !on;
+      if (on) $("off-badge").textContent = `📴 Офлайн-версія · дані від ${new Date(inf.at).toLocaleDateString("uk-UA")}`;
+      document.querySelectorAll(".mm-duel, .admin-link, .top3").forEach((el) => { if (on) el.hidden = true; else if (!el.classList.contains("top3")) el.hidden = false; });
+      $("off-link").textContent = on ? "📴 Офлайн-версія ✓" : "📥 Офлайн-версія";
+    },
+    renderOff() {
+      const box = $("off-body"), on = !!(window.Offline && Offline.on), inf = on ? Offline.info() : null;
+      const mb = (b) => Math.max(1, Math.round((b || 0) / 1048576));
+      const ios = /iphone|ipad|ipod/i.test(navigator.userAgent), standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+      const install = standalone ? "" : `<div class="off-inst"><b>Встановити як застосунок</b>
+          ${this.installEvt ? `<button type="button" id="off-install">📲 Встановити на головний екран</button>` : ""}
+          <p class="muted small">${ios ? "iPhone: відкрийте сайт у <b>Safari</b> → «Поділитися» → «На екран „Додому“»." : "Android: Chrome → меню ⋮ → «Встановити застосунок» або «Додати на головний екран»."}</p></div>`;
+      box.innerHTML = on
+        ? `<p>Офлайн-версія <b>увімкнена</b>: тренажер працює без інтернету й не звертається до сервера.</p>
+           <p class="muted">Дані від ${new Date(inf.at).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"})}: етапів — ${inf.stages}, фото карток — ${inf.cards}, записів довідника — ${inf.ref} (≈ ${mb(inf.bytes)} МБ).</p>
+           <p class="muted small">Результати й «Робота над помилками» зберігаються лише на цьому пристрої. Дуель і «Топ дня» офлайн недоступні.</p>
+           <div class="fix-btns"><button class="primary" type="button" id="off-update">🔄 Оновити дані</button><button type="button" id="off-disable">Вимкнути офлайн-версію</button></div>
+           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}`
+        : `<p>Тренажер один раз завантажує етапи, картки й довідник на пристрій і далі працює <b>без інтернету</b> — у полі й без витрат сервера.</p>
+           <p class="muted small">Результати в офлайн-версії бачите лише ви — інструктору вони не надсилаються. Дуель і «Топ дня» офлайн недоступні. Потрібно вільне місце — зазвичай 50–300 МБ.</p>
+           <div class="fix-btns"><button class="primary" type="button" id="off-dl">📥 Завантажити офлайн-версію</button></div>
+           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}`;
+      const prog = (t, f) => { $("off-prog").hidden = false; $("off-st").textContent = t; $("off-bar").style.width = Math.round(100 * f) + "%"; };
+      const run = async (btn) => {
+        btn.disabled = true;
+        try {
+          if (!(window.Offline && Offline.on)) await this.flushPending();   // спершу відправити ще не надіслані результати
+          await Offline.download(this.password, prog);
+          prog("Готово ✓ Перезапускаю…", 1);
+          setTimeout(() => location.reload(), 800);
+        } catch (e) { prog("Помилка: " + e.message, 0); btn.disabled = false; }
+      };
+      if ($("off-dl")) $("off-dl").onclick = () => run($("off-dl"));
+      if ($("off-update")) $("off-update").onclick = () => run($("off-update"));
+      if ($("off-disable")) $("off-disable").onclick = async () => {
+        if (!confirm("Вимкнути офлайн-версію? Завантажені дані й результати на цьому пристрої буде видалено. Далі тренажер працюватиме з інтернетом.")) return;
+        await Offline.disable(); location.reload();
+      };
+      if ($("off-install")) $("off-install").onclick = async () => { const e = this.installEvt; this.installEvt = null; e.prompt(); try { await e.userChoice; } catch (er) { /* ок */ } this.renderOff(); };
+    },
+
     /* Топ дня в головному меню: найкращий результат кожного курсанта за поточну добу + звання за цим результатом. */
     async loadTop() {
+      if (window.Offline && Offline.on) return;
       const draw = (id, list) => {
         const el = $(id); if (!el) return;
         list = list || [];
@@ -176,7 +222,9 @@
       $("sub-search").hidden = v !== "search";
       $("sub-cards").hidden = v !== "cards";
       $("sub-fix").hidden = v !== "fix";
+      $("sub-off").hidden = v !== "off";
       if (v === "fix") this.renderFix();
+      if (v === "off") this.renderOff();
       $("start-err").textContent = "";
     },
     callsignOk() {

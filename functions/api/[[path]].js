@@ -348,6 +348,21 @@ async function action(env, ctx, req, origin) {
       top.duel = await duelTop(env, Number(req.sinceMs) || (Date.now() - 24 * 3600e3));
       return {ok: true, top};
     }
+    case "offline_assets": {   // офлайн-версія: багато зображень одним запитом (base64), до ~8 МБ за раз; решта — в "rest"
+      await auth(env, req, "player");
+      const want = (Array.isArray(req.items) ? req.items : []).slice(0, 400), items = {}, rest = [];
+      let size = 0;
+      for (const it of want) {
+        const [kind, id] = [String(it[0] || ""), String(it[1] || "").slice(0, 80)];
+        if (size > 8e6) { rest.push([kind, id]); continue; }
+        let data = null, mime = "image/jpeg";
+        if (kind === "obj") { data = await objData(env, id); mime = "image/png"; }
+        else if (kind === "card") { const r = await env.DB.prepare("SELECT data,mime FROM card_photos WHERE id=?").bind(id).first(); if (r) { data = r.data; mime = r.mime || mime; } }
+        else if (kind === "ref") { const r = await env.DB.prepare("SELECT data,mime FROM ref_images WHERE id=?").bind(id).first(); if (r) { data = r.data; mime = r.mime || mime; } }
+        if (data) { items[kind + ":" + id] = {data, mime}; size += data.length; }
+      }
+      return {ok: true, items, rest};
+    }
     case "mistakes": {   // робота над помилками: етапи й картки, де ОСТАННЯ спроба курсанта була з помилкою
       await auth(env, req, "player");
       const cs = String(req.callsign || "").trim().slice(0, 40);

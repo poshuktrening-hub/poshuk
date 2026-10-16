@@ -17,7 +17,13 @@
   const isCF = url.indexOf("/") === 0;
   const tokens = {};            // пароль → токен (Cloudflare)
 
+  /* Офлайн-версія (js/offline.js): усі виклики й зображення — з телефона, до сервера ні запиту. */
+  const off = () => window.Offline && Offline.on;
   async function call(action, data = {}, password) {
+    if (off()) return Offline.call(action, data, password);
+    return callNet(action, data, password);
+  }
+  async function callNet(action, data = {}, password) {
     if (!url || !(isCF || url.indexOf("http") === 0)) throw new Error("Сайт ще не підключено до сервера: вкажіть адресу в config.js");
     const body = Object.assign({action, p: password}, data);
     if (isCF && tokens[password]) body.t = tokens[password];
@@ -30,7 +36,7 @@
     let j;
     try { j = await res.json(); } catch (e) { throw new Error("Сервер повернув неочікувану відповідь (перевірте розгортання)."); }
     if (!j.ok) {
-      if (isCF && body.t) { delete tokens[password]; if (/вхід|токен/i.test(j.error || "")) return call(action, data, password); }
+      if (isCF && body.t) { delete tokens[password]; if (/вхід|токен/i.test(j.error || "")) return callNet(action, data, password); }
       const err = new Error(j.error || "Помилка сервера");
       err.auth = /пароль|спроб/i.test(j.error || "");
       throw err;
@@ -40,14 +46,14 @@
   }
 
   async function token(password) {
-    if (!tokens[password]) await call("login", {}, password);
+    if (!tokens[password]) await callNet("login", {}, password);
     return tokens[password];
   }
 
   const imgCache = new Map();
   function loadImage(id, password) {
     if (imgCache.has(id)) return imgCache.get(id);
-    const p = isCF ? loadPack(id, password) : call("image", {id}, password).then((j) => new Promise((resolve, reject) => {
+    const p = off() ? Offline.image(id) : isCF ? loadPack(id, password) : call("image", {id}, password).then((j) => new Promise((resolve, reject) => {
       const bin = atob(j.data);
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -66,13 +72,15 @@
   function noteStages(list) {
     for (const s of list || []) { const v = s.v || ""; if (imgVer[s.id] !== undefined && imgVer[s.id] !== v) imgCache.delete(s.id); imgVer[s.id] = v; }
   }
-  async function loadPack(id, password) {
+  async function loadPack(id, password) { return Tiles.open(await fetchPack(id, password)); }
+  /* Пакет знімка як є (ArrayBuffer) — для офлайн-версії. */
+  async function fetchPack(id, password) {
     const t = await token(password);
     let res;
     try { res = await fetch(`${url}/img/${encodeURIComponent(id)}?t=${encodeURIComponent(t)}${imgVer[id] ? `&v=${encodeURIComponent(imgVer[id])}` : ""}`); } catch (e) { throw new Error("Немає зв'язку з сервером."); }
     if (res.status === 403) { delete tokens[password]; throw new Error("Сесія застаріла — оновіть сторінку"); }
     if (!res.ok) throw new Error("Знімок не знайдено");
-    return Tiles.open(await res.arrayBuffer());
+    return res.arrayBuffer();
   }
 
   /* Новий етап зі знімка (Image/Canvas/ImageBitmap або TiledImage). */
@@ -108,19 +116,22 @@
   }
 
   async function objUrl(id, password) {
+    if (id && off()) return Offline.url("obj", id);
     if (!isCF || !id) return null;
     return `${url}/obj/${encodeURIComponent(id)}?t=${encodeURIComponent(await token(password))}`;
   }
 
   async function cardUrl(id, ver, password) {
+    if (id && off()) return Offline.url("card", id);
     if (!isCF || !id) return null;
     return `${url}/card/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}&t=${encodeURIComponent(await token(password))}`;
   }
 
   async function refUrl(id, ver, password) {
+    if (id && off()) return Offline.url("ref", id);
     if (!isCF || !id) return null;
     return `${url}/ref/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}&t=${encodeURIComponent(await token(password))}`;
   }
 
-  window.API = {call, token, noteStages, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
+  window.API = {call, callNet, fetchPack, token, noteStages, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
 })();
