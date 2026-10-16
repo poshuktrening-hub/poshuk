@@ -1,7 +1,7 @@
 /* Вбудовані моделі техніки (вигляд зверху, ніс угору), намальовані програмно — без чужих зображень і водяних знаків.
    Кожна має «надувний муляж»: той самий силует, роздутий фільтром inflate(). Масштаб малювання — U пкс/м. */
 (function () {
-  const U = 40;
+  const U = 60;   // пкс/м: танк ≈ 570 пкс завдовжки — вистачає і для зуму в дуелі
 
   function cv(wm, hm) { const c = document.createElement("canvas"); c.width = Math.round(wm * U); c.height = Math.round(hm * U); return c; }
 
@@ -203,11 +203,16 @@
     {id: "builtin:grad", name: "РСЗВ БМ-21 Град", length_m: 7.4, draw: grad},
   ];
   const LIST = [];
-  BUILTIN.forEach((m) => {
-    LIST.push({id: m.id, name: m.name + " (вбудована)", length_m: m.length_m, builtin: true});
-    LIST.push({id: m.id + ":decoy", name: "Муляж " + m.name + " (надувний)", length_m: m.length_m, builtin: true, decoy: true});
-  });
-  LIST.forEach((o) => (o.type = Logic.typeOf(o.name.replace(/^Муляж\s+/, ""))));
+  function register(models) {
+    for (const m of models) {
+      if (BUILTIN.some((b) => b.id === m.id)) continue;
+      BUILTIN.push(m);
+      const real = {id: m.id, name: m.name + " (вбудована)", length_m: m.length_m, builtin: true, ttx: m.ttx || ""};
+      const decoy = {id: m.id + ":decoy", name: "Муляж " + m.name + " (надувний)", length_m: m.length_m, builtin: true, decoy: true};
+      for (const o of [real, decoy]) { o.type = Logic.typeOf(o.name.replace(/^Муляж\s+/, "")); LIST.push(o); }
+    }
+  }
+  const first = BUILTIN.splice(0); register(first);
 
   const cache = new Map();
   function sprite(id) {
@@ -219,5 +224,7 @@
     return c;
   }
 
-  window.Models = {LIST, sprite, inflate, isBuiltin: (id) => /^builtin:/.test(id || ""), U};
+  // набір для малювання додаткових моделей (js/models2.js): ті самі примітиви й масштаб
+  const kit = {U, setup, rect, rr, poly, line, circ, tracks, wheels, shade, grain};
+  window.Models = {LIST, sprite, inflate, register, kit, isBuiltin: (id) => /^builtin:/.test(id || ""), U};
 })();

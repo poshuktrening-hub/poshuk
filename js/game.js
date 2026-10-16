@@ -372,9 +372,10 @@
       this.missLimit = this.mode.misses === null ? this.cfg.misses_allowed : this.mode.misses;
       document.body.dataset.mode = this.mode.id;
       const fl = this.filtered(), hardFirst = this.mode.id === "hard" ? fl.filter((s) => s.hard) : [];
-      this.rounds = this.fix ? Logic.pickRounds(this.fix, this.cfg.rounds_per_game)
-        : hardFirst.length >= this.cfg.rounds_per_game ? Logic.pickRounds(hardFirst, this.cfg.rounds_per_game)
-        : [...Logic.pickRounds(hardFirst, hardFirst.length), ...Logic.pickRounds(fl.filter((s) => !hardFirst.includes(s)), this.cfg.rounds_per_game - hardFirst.length)];
+      const taken = new Set();   // сцени, вже взяті в цю гру: день і його зима/ніч разом не показуються
+      this.rounds = this.fix ? Logic.pickRounds(this.fix, this.cfg.rounds_per_game, taken, true)
+        : hardFirst.length >= this.cfg.rounds_per_game ? Logic.pickRounds(hardFirst, this.cfg.rounds_per_game, taken)
+        : [...Logic.pickRounds(hardFirst, hardFirst.length, taken), ...Logic.pickRounds(fl.filter((s) => !hardFirst.includes(s)), this.cfg.rounds_per_game - hardFirst.length, taken)];
       this.results = [];
       this.idx = -1;
       show("s-game");
