@@ -964,3 +964,10 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .r-weak ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .r-weak li::marker { color: #ffd666; }
 .r-weak h3 { color: #ffd666 !important; }
+/* щільніше: усе меню (разом з «Роботою над помилками») має вміщатися на екран 390×664 */
+.main-menu { gap: 8px; margin-top: 10px; }
+.main-menu .mm:not(.mm-wide) { min-height: 112px; }
+.main-menu .mm.mm-small { padding: 8px 12px; }
+.main-menu .mm-wide { padding: 8px 12px; }
+#s-start .links { margin-top: 10px; padding-top: 8px; }
+#s-start .support { margin-top: 4px; }

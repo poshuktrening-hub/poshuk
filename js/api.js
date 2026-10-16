@@ -41,9 +41,21 @@
       err.auth = /пароль|спроб/i.test(j.error || "");
       throw err;
     }
-    if (j.token) tokens[password] = j.token;
+    if (j.token) { tokens[password] = j.token; tokenCookie(j.token); }
     return j;
   }
+
+  /* Токен у cookie (лише для /api): адреси фото й знімків тоді без ?t=…, тобто сталі — і кеш браузера
+     тримає їх тиждень, а не до наступного входу. Якщо cookie не приймаються — токен лишається в адресі. */
+  let cookieOk = false;
+  function tokenCookie(t) {
+    if (!isCF) return;
+    try {
+      document.cookie = `pt=${encodeURIComponent(t)}; Path=/; Max-Age=43200; SameSite=Lax${location.protocol === "https:" ? "; Secure" : ""}`;
+      cookieOk = document.cookie.indexOf("pt=") >= 0;
+    } catch (e) { cookieOk = false; }
+  }
+  const tq = (t) => (cookieOk ? "" : `&t=${encodeURIComponent(t)}`);
 
   async function token(password) {
     if (!tokens[password]) await callNet("login", {}, password);
@@ -77,7 +89,7 @@
   async function fetchPack(id, password) {
     const t = await token(password);
     let res;
-    try { res = await fetch(`${url}/img/${encodeURIComponent(id)}?t=${encodeURIComponent(t)}${imgVer[id] ? `&v=${encodeURIComponent(imgVer[id])}` : ""}`); } catch (e) { throw new Error("Немає зв'язку з сервером."); }
+    try { res = await fetch(`${url}/img/${encodeURIComponent(id)}?v=${encodeURIComponent(imgVer[id] || "")}`, {headers: {"X-Token": t}}); } catch (e) { throw new Error("Немає зв'язку з сервером."); }
     if (res.status === 403) { delete tokens[password]; throw new Error("Сесія застаріла — оновіть сторінку"); }
     if (!res.ok) throw new Error("Знімок не знайдено");
     return res.arrayBuffer();
@@ -118,19 +130,19 @@
   async function objUrl(id, password) {
     if (id && off()) return Offline.url("obj", id);
     if (!isCF || !id) return null;
-    return `${url}/obj/${encodeURIComponent(id)}?t=${encodeURIComponent(await token(password))}`;
+    return `${url}/obj/${encodeURIComponent(id)}?v=1${tq(await token(password))}`;
   }
 
   async function cardUrl(id, ver, password) {
     if (id && off()) return Offline.url("card", id);
     if (!isCF || !id) return null;
-    return `${url}/card/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}&t=${encodeURIComponent(await token(password))}`;
+    return `${url}/card/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}${tq(await token(password))}`;
   }
 
   async function refUrl(id, ver, password) {
     if (id && off()) return Offline.url("ref", id);
     if (!isCF || !id) return null;
-    return `${url}/ref/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}&t=${encodeURIComponent(await token(password))}`;
+    return `${url}/ref/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}${tq(await token(password))}`;
   }
 
   window.API = {call, callNet, fetchPack, token, noteStages, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};

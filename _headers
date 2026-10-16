@@ -1,4 +1,23 @@
+# Сторінка, service worker і маніфест — завжди свіжі (перевірка на сервері, 304 якщо не змінилось)
 /*
   Cache-Control: no-cache
+# Скрипти, стилі й шрифти підключені з версією (?v=…), яку змінює кожен реліз — тому їх можна тримати в кеші рік
 /js/*
-  Cache-Control: no-cache
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/*
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+/style.css
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+/fonts.css
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+/config.js
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+# Картинки правил, відео тла, іконки — без версії в адресі, тому день
+/media/*
+  ! Cache-Control
+  Cache-Control: public, max-age=86400

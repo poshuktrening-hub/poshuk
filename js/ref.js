@@ -41,11 +41,17 @@
     withCards(list) {
       if (!window.Cards) return list;
       const deck = Cards.deck(), idx = new Map();
-      for (const c of deck) for (const a of [c.name, ...c.aliases]) { const v = norm(a); if (v.length >= 4 && (/\d/.test(v) || v.length >= 6) && !idx.has(v)) idx.set(v, c.id); }
+      const good = (v) => v.length >= 4 || (v.length === 3 && /\d/.test(v));   // «т72», «д30», «мтлб», «шилка» — але не «бв», «уд»
+      const brand = /^(камаз|урал|уаз|газ|зіл|зил|краз|маз|кзкт|тигр)$/;   // сама марка шасі ще не каже, що це за техніка
+      for (const c of deck) for (const a of [c.name, ...c.aliases]) { const v = norm(a); if (good(v) && !brand.test(v) && !idx.has(v)) idx.set(v, c.id); }
       const used = new Set();
       for (const e of list) {
-        const parts = String(e.name || "").split(/[\/\\;,()“”"«»]|\s[-–—]\s|\sта\s|\sабо\s/).map(norm).filter((x) => x.length >= 4);
-        for (const p of [norm(e.name), ...parts]) if (idx.has(p)) { e.card = idx.get(p); used.add(e.card); break; }
+        const name = String(e.name || "");
+        // спершу вся назва й частини між роздільниками, далі окремі слова, потім слова ще й по дефісу («9К35-Стрела-10»)
+        const parts = name.split(/[\/\\;,()“”"«»]|\s[-–—]\s|\sта\s|\sабо\s/).map(norm).filter(good);
+        const words = name.split(/[\s\/\\;,()“”"«»]+/).map(norm).filter(good);
+        const sub = name.split(/[\s\/\\;,()“”"«»\-–—]+/).map(norm).filter(good);
+        for (const p of [norm(name), ...parts, ...words, ...sub]) if (idx.has(p)) { e.card = idx.get(p); used.add(e.card); break; }
       }
       const extra = deck.filter((c) => !used.has(c.id)).map((c, i) => ({id: "card:" + c.id, ord: 100000 + i, cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name),
         name: c.name, ttx: c.p1, desc: c.p2, imgs: [], card: c.id, fromCard: true, concept: c.concept}));
@@ -67,7 +73,9 @@
       const q = norm(this.q), pool = this.entries.filter((e) => !this.cat || e.cat === this.cat);
       if (!q) return pool;
       // спершу збіг у назві, далі — згадки в ТТХ/описі
-      const byName = pool.filter((e) => norm(e.name).includes(q));
+      // збіг на початку слова («армата» → Т-14 «Армата» раніше за «гаубиця-гармата»)
+      const starts = (e) => String(e.name || "").split(/[\s\/\\;,()“”"«»\-–—]+/).some((w) => norm(w).startsWith(q));
+      const byName = pool.filter((e) => norm(e.name).includes(q)).sort((a, b) => (starts(b) ? 1 : 0) - (starts(a) ? 1 : 0));
       const byText = q.length >= 3 ? pool.filter((e) => !byName.includes(e) && norm(plain(e.ttx) + plain(e.desc)).includes(q)) : [];
       byText.forEach((e) => (e._txt = true)); byName.forEach((e) => (e._txt = false));
       return byName.concat(byText);
