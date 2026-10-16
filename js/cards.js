@@ -93,12 +93,54 @@
   const Cards = {
     MODES, check, norm,
     deck() { return (window.CARDS || []).map(([id, name, al, p1, p2]) => ({id, name, aliases: al.split("|").map((x) => x.trim()).filter(Boolean), p1, p2})); },
-    withPhoto() { const ph = (window.Game && Game.cardPhotos) || new Map(), ref = window.CARD_REF || {}; return this.deck().filter((c) => ph.has(c.id) || ref[c.id]); },
-    /* адреса фото картки: своє/Вікісховище, інакше — зображення з довідника */
-    photoUrl(id) {
-      if (Game.cardPhotos.has(id)) return API.cardUrl(id, Game.cardPhotos.get(id), Game.password);
-      const r = (window.CARD_REF || {})[id];
-      return r ? API.refUrl(r, "1", Game.password) : Promise.resolve(null);
+    withPhoto() { const ph = (window.Game && Game.cardPhotos) || new Map(), ref = window.CARD_REF || {}; return this.deck().filter((c) => ph.has(c.id) || ref[c.id] || (this.refPics && this.refPics.has(c.id))); },
+
+    /* Фото з довідника для карток: усі зображення запису, до якого належить картка (явна відповідність CARD_REF
+       або збіг назви). Кожен раунд бере випадкове — та сама техніка щоразу з іншого ракурсу. */
+    async loadRefPics() {
+      if (this.refPics || !API.isCF) return this.refPics;
+      if (this._refP) return this._refP;
+      this._refP = (async () => {
+        let list = [];
+        try { list = (await API.call("ref_list", {}, Game.password)).entries || []; } catch (e) { this._refP = null; return null; }
+        const byId = new Map(list.map((e) => [e.id, e])), map = new Map();
+        const add = (cid, e) => { if (!e || !e.imgs || !e.imgs.length) return; const a = map.get(cid) || []; e.imgs.forEach((im) => { if (!a.some((x) => x.id === im)) a.push({id: im, v: e.v || "1"}); }); map.set(cid, a); };
+        const ref = window.CARD_REF || {};
+        // 1) явні відповідності: картка → запис (id зображення «r024-2» → запис r024)
+        for (const [cid, img] of Object.entries(ref)) add(cid, byId.get(String(img).replace(/-[^-]+$/, "")));
+        // 2) збіг назви: частина назви запису (до «/», «;», дужок, лапок) дорівнює назві чи синоніму картки
+        const idx = new Map();
+        for (const c of this.deck()) for (const v of answers(c)) if (v.length >= 4 && /\d/.test(v) && !idx.has(v)) idx.set(v, c.id);
+        for (const e of list) {
+          if (/^відмінност|порівнян/i.test(e.name || "")) continue;   // порівняльні таблиці — не фото техніки
+          const parts = String(e.name || "").split(/[\/\\;,()“”"«»]|\s[-–—]\s|\sта\s|\sабо\s/).map(norm).filter((x) => x.length >= 3);
+          // кілька зразків в одному записі («2С1/2С34», «ИМР-2, ИМР-3М») — невідомо, хто на котрому фото: не беремо
+          if (new Set(parts.filter((x) => /\d/.test(x))).size > 1) continue;
+          const hit = new Set();
+          for (const p of new Set([norm(e.name), ...parts])) if (p.length >= 4 && idx.has(p)) hit.add(idx.get(p));
+          if (hit.size === 1) hit.forEach((cid) => add(cid, e));
+        }
+        this.refPics = map;
+        return map;
+      })();
+      return this._refP;
+    },
+    /* Варіанти фото картки: своє/Вікісховище + усі з довідника. */
+    picPool(id) {
+      const pool = [];
+      if (Game.cardPhotos.has(id)) pool.push({own: true});
+      const r = this.refPics && this.refPics.get(id);
+      if (r && r.length) r.forEach((x) => pool.push(x));
+      else if ((window.CARD_REF || {})[id]) pool.push({id: window.CARD_REF[id], v: "1"});
+      return pool;
+    },
+    pickPic(id) { const p = this.picPool(id); return p.length ? p[Math.floor(Math.random() * p.length)] : null; },
+    /* адреса фото картки: своє/Вікісховище або зображення з довідника */
+    photoUrl(id, pic) {
+      pic = pic || this.pickPic(id);
+      if (!pic) return Promise.resolve(null);
+      if (pic.own) return API.cardUrl(id, Game.cardPhotos.get(id), Game.password);
+      return API.refUrl(pic.id, pic.v, Game.password);
     },
 
     renderMenu() {
@@ -112,6 +154,7 @@
       $("c-start").disabled = !n;
       $("c-start").textContent = `Почати: ${this.mode.name.toLowerCase()}`;
       $("c-start").onclick = () => this.start();
+      if (!this.refPics && Game.password) this.loadRefPics().then((m) => { if (m && !$("s-start").hidden) this.renderMenu(); }).catch(() => {});
     },
 
     start() {
@@ -119,7 +162,7 @@
       SFX.unlock();
       if (window.Help && Help.maybe("cards", () => this.start())) return;   // перший раз — інструкція
       const pool = Logic.shuffle(this.withPhoto());
-      this.rounds = pool.slice(0, ROUNDS); this.idx = -1; this.results = [];
+      this.rounds = pool.slice(0, ROUNDS).map((c) => Object.assign({}, c, {pic: this.pickPic(c.id)})); this.idx = -1; this.results = [];
       UI.show("s-cards");
       document.body.dataset.mode = "cards";
       $("c-form").onsubmit = (e) => { e.preventDefault(); this.submit(); };
@@ -158,13 +201,13 @@
         $("c-choices").querySelectorAll("button").forEach((b) => (b.onclick = () => this.choose(opts[+b.dataset.ci])));
       }
       const img = $("c-img"); img.removeAttribute("src"); $("c-loading").hidden = false;
-      const url = await this.photoUrl(c.id).catch(() => null);
+      const url = await this.photoUrl(c.id, c.pic).catch(() => null);
       await new Promise((res) => { img.onload = img.onerror = res; img.src = url || ""; });
       $("c-loading").hidden = true;
       if (this.cur !== c) return;
       // наступне фото — заздалегідь
       const nx = this.rounds[this.idx + 1];
-      if (nx) this.photoUrl(nx.id).then((u) => { if (u) { const p = new Image(); p.src = u; } }).catch(() => {});
+      if (nx) this.photoUrl(nx.id, nx.pic).then((u) => { if (u) { const p = new Image(); p.src = u; } }).catch(() => {});
       this.t0 = performance.now();
       this.tick(); this.tT = setInterval(() => this.tick(), 200);
       if (!this.mode.choice && !matchMedia("(pointer: coarse)").matches) $("c-answer").focus();
@@ -215,7 +258,7 @@
       const verdict = r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +10</p>`
         : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
       $("c-choices").innerHTML = "";
-      const cr = (Game.cardCredits && Game.cardCredits.get(c.id)) || (!Game.cardPhotos.has(c.id) && (window.CARD_REF || {})[c.id] ? "навчальний довідник ВОС276" : "");
+      const cr = c.pic && !c.pic.own ? "навчальний довідник ВОС276" : (Game.cardCredits && Game.cardCredits.get(c.id)) || "";
       $("c-reveal").innerHTML = `${verdict}<h3>${esc(Logic.dispName(c.name))}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
       const last = this.idx === this.rounds.length - 1;

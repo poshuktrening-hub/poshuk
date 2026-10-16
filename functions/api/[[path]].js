@@ -210,6 +210,78 @@ async function stages(env, all) {
 
 function newId() { return [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, "0")).join(""); }
 
+// ------------------------------------------------------------------ ліміти безкоштовного тарифу Cloudflare
+/* Добові ліміти (скидаються о 00:00 UTC): запити Functions, рядки D1 (читання/запис) і розмір бази.
+   Дані — з GraphQL Analytics API (потрібні секрети CF_API_TOKEN з правом «Account Analytics: Read» і CF_ACCOUNT_ID);
+   розмір бази D1 повідомляє сама (meta.size_after), тож він видно й без токена. */
+const CF_LIMITS = {requests: 100000, rowsRead: 5000000, rowsWritten: 100000, dbBytes: 500 * 1024 * 1024};
+const USAGE_ALERT = 0.10;   // попереджати, коли лишилось менше 10%
+let usageCheckedAt = 0;
+
+async function cfGql(env, query, variables) {
+  const r = await fetch("https://api.cloudflare.com/client/v4/graphql", {method: "POST",
+    headers: {"Authorization": "Bearer " + env.CF_API_TOKEN, "Content-Type": "application/json"}, body: JSON.stringify({query, variables})});
+  const j = await r.json().catch(() => null);
+  if (!j) throw new Error("Cloudflare API: HTTP " + r.status);
+  if (j.errors && j.errors.length) throw new Error(j.errors.map((e) => e.message).join("; ").slice(0, 200));
+  return ((j.data || {}).viewer || {}).accounts || [];
+}
+
+async function cfUsage(env, ctx, fresh) {
+  const cache = caches.default, key = new Request("https://usage.poshuk.internal/v2");
+  if (!fresh) { const hit = await cache.match(key); if (hit) return hit.json(); }
+  const now = new Date(), day = now.toISOString().slice(0, 10), start = day + "T00:00:00Z", end = now.toISOString().slice(0, 19) + "Z";
+  const reset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  const u = {day, at: now.toISOString(), resetIn: reset - now.getTime(), limits: CF_LIMITS, configured: !!(env.CF_API_TOKEN && env.CF_ACCOUNT_ID), errors: []};
+  // розмір бази — без токена
+  try { const r = await env.DB.prepare("SELECT 1").run(); if (r.meta && r.meta.size_after) u.dbBytes = r.meta.size_after; } catch (e) { /* ок */ }
+  if (u.configured) {
+    const a = String(env.CF_ACCOUNT_ID);
+    const sum = (rows, f) => (rows || []).reduce((t, g) => t + (Number((g.sum || {})[f]) || 0), 0);
+    const jobs = [
+      cfGql(env, "query($a:String!,$s:Time!,$e:Time!){viewer{accounts(filter:{accountTag:$a}){workersInvocationsAdaptive(limit:10000,filter:{datetime_geq:$s,datetime_leq:$e}){sum{requests}dimensions{scriptName}}}}}", {a, s: start, e: end})
+        .then((acc) => { u.workers = sum((acc[0] || {}).workersInvocationsAdaptive, "requests"); }).catch((e) => u.errors.push("Workers: " + e.message)),
+      cfGql(env, "query($a:String!,$s:Time!,$e:Time!){viewer{accounts(filter:{accountTag:$a}){pagesFunctionsInvocationsAdaptiveGroups(limit:10000,filter:{datetime_geq:$s,datetime_leq:$e}){sum{requests}}}}}", {a, s: start, e: end})
+        .then((acc) => { u.pages = sum((acc[0] || {}).pagesFunctionsInvocationsAdaptiveGroups, "requests"); }).catch(() => { /* набір даних може бути недоступний — тоді рахуємо за Workers */ }),
+      cfGql(env, "query($a:String!,$d:Date!){viewer{accounts(filter:{accountTag:$a}){d1AnalyticsAdaptiveGroups(limit:10000,filter:{date_geq:$d,date_leq:$d}){sum{rowsRead rowsWritten}}}}}", {a, d: day})
+        .then((acc) => { const g = (acc[0] || {}).d1AnalyticsAdaptiveGroups; u.rowsRead = sum(g, "rowsRead"); u.rowsWritten = sum(g, "rowsWritten"); }).catch((e) => u.errors.push("D1: " + e.message)),
+      cfGql(env, "query($a:String!,$d:Date!){viewer{accounts(filter:{accountTag:$a}){d1StorageAdaptiveGroups(limit:10000,filter:{date_geq:$d,date_leq:$d}){max{databaseSizeBytes}dimensions{databaseId}}}}}", {a, d: day})
+        .then((acc) => { const g = (acc[0] || {}).d1StorageAdaptiveGroups || []; const m = Math.max(0, ...g.map((x) => Number((x.max || {}).databaseSizeBytes) || 0)); if (m) u.dbBytes = Math.max(u.dbBytes || 0, m); }).catch(() => { /* є size_after */ }),
+    ];
+    await Promise.all(jobs);
+    if (u.workers != null || u.pages != null) u.requests = Math.max(u.workers || 0, u.pages || 0);
+  }
+  // що вже майже вичерпано
+  u.low = [];
+  for (const [k, lim] of Object.entries(CF_LIMITS)) if (u[k] != null && lim - u[k] < lim * USAGE_ALERT) u.low.push(k);
+  ctx.waitUntil(cache.put(key, new Response(JSON.stringify(u), {headers: {"Content-Type": "application/json", "Cache-Control": "max-age=300"}})).catch(() => {}));
+  return u;
+}
+
+function kyivTime(ms) { try { return new Date(ms).toLocaleTimeString("uk-UA", {timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit"}); } catch (e) { return "00:00 UTC"; } }
+const USAGE_NAMES = {requests: "запити до сайту", rowsRead: "читання бази D1", rowsWritten: "записи в базу D1", dbBytes: "розмір бази D1"};
+/* Лист адміністратору (через Google-скрипт), не частіше разу на добу для кожного ліміту. */
+async function usageAlert(env, u) {
+  if (!u.low || !u.low.length || !env.SHEETS_URL || !env.SHEETS_SECRET) return;
+  const sentKey = "usage_alert_" + u.day, sent = new Set(String((await metaGet(env, sentKey)) || "").split(",").filter(Boolean));
+  const fresh = u.low.filter((k) => !sent.has(k));
+  if (!fresh.length) return;
+  const lines = fresh.map((k) => { const lim = CF_LIMITS[k], left = Math.max(0, lim - u[k]); return `• ${USAGE_NAMES[k]}: використано ${Math.round(100 * u[k] / lim)}%, лишилось ${Math.round(100 * left / lim)}%`; });
+  const h = Math.floor(u.resetIn / 3600e3), m = Math.round((u.resetIn % 3600e3) / 60e3);
+  const text = `«Пошук техніки»: денні ліміти Cloudflare майже вичерпано (${u.day}).\n\n${lines.join("\n")}\n\nОнулення лімітів через ${h} год ${m} хв (о ${kyivTime(Date.now() + u.resetIn)} за Києвом). Якщо ліміт вичерпається, сайт не відповідатиме до онулення.`;
+  try {
+    const j = await gas(env, {action: "alert", secret: env.SHEETS_SECRET, subject: "⚠ Пошук техніки: ліміти Cloudflare < 10%", text});
+    if (j && j.ok) await metaSet(env, sentKey, [...sent, ...fresh].join(","));
+  } catch (e) { /* наступна перевірка спробує ще раз */ }
+}
+
+/* Фонова перевірка: раз на 15 хв на екземпляр функції, у фоні (відповідь не чекає). */
+function usageTick(env, ctx) {
+  if (!(env.CF_API_TOKEN && env.CF_ACCOUNT_ID) || Date.now() - usageCheckedAt < 15 * 60e3) return;
+  usageCheckedAt = Date.now();
+  ctx.waitUntil(cfUsage(env, ctx, false).then((u) => usageAlert(env, u)).catch(() => {}));
+}
+
 // ------------------------------------------------------------------ дії (POST /api)
 async function action(env, ctx, req, origin) {
   const a = req.action;
@@ -245,6 +317,7 @@ async function action(env, ctx, req, origin) {
   await auth(env, req, "admin");
   switch (a) {
     case "admin_stages": return {ok: true, stages: await stages(env, true), token: await makeToken(env, "admin")};
+    case "usage": { const u = await cfUsage(env, ctx, !!req.fresh); ctx.waitUntil(usageAlert(env, u).catch(() => {})); return {ok: true, usage: u}; }
     case "stage_begin": {
       const id = newId(), size = Number(req.size) || 0;
       const chunks = Math.ceil(size / CHUNK);
@@ -854,6 +927,7 @@ export async function onRequest(context) {
   const path = url.pathname.replace(/^\/api\/?/, "").split("/").filter(Boolean);
   try {
     await db(env);
+    try { usageTick(env, context); } catch (e) { /* ок */ }
     if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], url.searchParams.get("t"));
     if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], url.searchParams.get("t"), url.searchParams.get("v"));

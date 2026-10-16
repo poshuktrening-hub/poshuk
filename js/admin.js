@@ -58,6 +58,7 @@
           <button type="button" id="a-stats" title="Слабкі місця групи й кожного курсанта">📊 Аналітика</button>
           <button type="button" id="a-ref" title="Довідник техніки для курсантів">📘 Довідник</button>
         </div>
+        <details class="usage" id="a-usage"><summary><span>Ліміти Cloudflare на добу</span><b id="a-usage-sum">…</b></summary><div id="a-usage-body"></div></details>
         <input type="file" id="a-file" accept="image/*" multiple hidden>
         <p class="status" id="a-up-status"></p>
         <section>
@@ -135,6 +136,7 @@
         if (o && Logic.isAutoTtx(box.value)) box.value = Logic.ttxFor(null, Logic.typeOf($("a-mname").value.replace(/^муляж\s+/i, "")), !!o.decoy);
       };
       this.loadObjects();
+      clearInterval(this.usageT); this.usage(); this.usageT = setInterval(() => { if (document.getElementById("a-usage")) this.usage(); else clearInterval(this.usageT); }, 5 * 60e3);
       $("a-tdel").onclick = () => this.deleteTarget(this.tsel);
       $("a-heat").onclick = () => this.toggleHeat();
       $("a-cards").onclick = () => CardsAdmin.open(this);
@@ -457,6 +459,37 @@
       this.$("a-hint").textContent = j.clicks.length
         ? `Кліків: ${j.clicks.length} · влучань: ${j.clicks.length - miss} · промахів: ${miss} · курсантів: ${j.players}. Червона пляма — де найчастіше помилково клікають.`
         : "По цьому етапу ще немає кліків курсантів.";
+    },
+
+    // ---------- ліміти Cloudflare (безкоштовний тариф, добові; онулення о 00:00 UTC)
+    async usage(fresh) {
+      const box = this.$ && this.$("a-usage-body"); if (!box) return;
+      let u;
+      try { u = (await API.call("usage", {fresh: !!fresh}, this.pw)).usage; }
+      catch (e) { this.$("a-usage-sum").textContent = "?"; box.innerHTML = `<p class="status no">${esc(e.message)}</p>`; return; }
+      const L = u.limits || {}, rows = [
+        ["requests", "Запити до сайту", (v) => fmt(v)], ["rowsRead", "Читання бази (рядки)", (v) => fmt(v)],
+        ["rowsWritten", "Записи в базу (рядки)", (v) => fmt(v)], ["dbBytes", "Розмір бази", (v) => mb(v)]];
+      function fmt(v) { return v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + " млн" : v >= 1e4 ? Math.round(v / 1e3) + " тис" : String(Math.round(v)); }
+      function mb(v) { return Math.round(v / 1048576) + " МБ"; }
+      let worst = null;
+      const bars = rows.map(([k, name, f]) => {
+        const v = u[k], lim = L[k];
+        if (v == null || !lim) return `<div class="u-row off"><div class="u-h"><span>${name}</span><em>немає даних</em></div><div class="u-bar"><i style="width:0"></i></div></div>`;
+        const p = Math.min(100, 100 * v / lim), left = Math.max(0, 100 - p), cls = left < 10 ? "bad" : left < 30 ? "warn" : "ok";
+        if (!worst || left < worst.left) worst = {left, name};
+        return `<div class="u-row ${cls}"><div class="u-h"><span>${name}</span><em>${f(v)} з ${f(lim)} · лишилось ${Math.floor(left)}%</em></div><div class="u-bar"><i style="width:${p.toFixed(1)}%"></i></div></div>`;
+      }).join("");
+      const h = Math.floor(u.resetIn / 3600e3), m = Math.round((u.resetIn % 3600e3) / 60e3);
+      box.innerHTML = bars + `<p class="muted small">Онулення через ${h} год ${m} хв (о 00:00 UTC). Оновлено ${new Date(u.at).toLocaleTimeString("uk-UA", {hour: "2-digit", minute: "2-digit"})} · <a href="#" id="a-usage-re">оновити</a></p>` +
+        (u.low && u.low.length ? `<p class="status no">⚠ Лишилось менше 10% — ${u.low.length > 1 ? "кількох лімітів" : "ліміту"} на сьогодні. Лист адміністратору надсилається автоматично.</p>` : "") +
+        (!u.configured ? `<p class="status muted">Запити й рядки бази видно після підключення токена Cloudflare: Pages → Settings → Variables and Secrets — <b>CF_ACCOUNT_ID</b> і <b>CF_API_TOKEN</b> (право «Account Analytics: Read»).</p>` : "") +
+        (u.errors && u.errors.length ? `<p class="status no small">${esc(u.errors.join(" · "))}</p>` : "");
+      const sum = this.$("a-usage-sum");
+      sum.textContent = worst ? `лишилось ${Math.floor(worst.left)}%` : "—";
+      sum.className = worst ? (worst.left < 10 ? "bad" : worst.left < 30 ? "warn" : "ok") : "";
+      if (worst && worst.left < 10) this.$("a-usage").open = true;
+      const re = box.querySelector("#a-usage-re"); if (re) re.onclick = (e) => { e.preventDefault(); this.usage(true); };
     },
 
     // ---------- налаштування
