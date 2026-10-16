@@ -169,8 +169,15 @@
       $("ra-file").onclick = () => $("ra-in").click();
       $("ra-in").onchange = async (e) => {
         const f = e.target.files[0]; if (!f) return;
+        e.target.value = "";
+        let b; try { b = JSON.parse(await f.text()); } catch (err) { this.say("Файл не читається як JSON", "no"); return; }
+        if (b && b.type === "ref-text-patch") {   // лише тексти (переклад, правки): фото й решта записів не чіпаються
+          if (!confirm(`${b.title || "Оновлення текстів довідника"}: записів — ${(b.entries || []).length}. Фото не змінюються. Продовжити?`)) return;
+          try { const r = await this.applyTextPatch(b); await this.load(); this.renderList(); this.say(r, "ok"); } catch (err) { this.say(err.message, "no"); }
+          return;
+        }
         if (!confirm("Імпорт файлу замінить довідник вмістом файлу (записи, яких у файлі немає, буде прибрано). Продовжити?")) return;
-        try { await this.importBundle(JSON.parse(await f.text())); await this.load(); this.renderList(); this.say("Імпорт завершено ✓", "ok"); } catch (err) { this.say(err.message, "no"); }
+        try { await this.importBundle(b); await this.load(); this.renderList(); this.say("Імпорт завершено ✓", "ok"); } catch (err) { this.say(err.message, "no"); }
       };
       $("ra-q").oninput = (e) => { this.f = e.target.value; const pos = e.target.selectionStart; this.renderList(); const q = $("ra-q"); q.focus(); q.setSelectionRange(pos, pos); };
       $("ra-c").onchange = (e) => { this.fcat = e.target.value; this.renderList(); };
@@ -262,6 +269,34 @@
       finally { this.busy = false; }
     },
     say(t, cls = "") { const el = $("ra-st"); if (el) { el.textContent = t; el.className = "status " + cls; } },
+    /* Патч текстів: поле міняється, лише якщо в базі ще той самий текст, що й «from» (ручні правки не перезаписуються). */
+    async applyTextPatch(b) {
+      const same = (x, y) => String(x || "").replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim() === String(y || "").replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/\s+/g, " ").trim();
+      let done = 0, already = 0;
+      const skipped = [];
+      this.busy = true;
+      try {
+        for (const p of b.entries || []) {
+          const e = this.entries.find((x) => x.id === p.id);
+          if (!e) { skipped.push(p.name || p.id); continue; }
+          const upd = Object.assign({}, e);
+          let ch = 0;
+          for (const [f, v] of Object.entries(p.fields || {})) {
+            if (!["name", "ttx", "desc"].includes(f)) continue;
+            if (same(e[f], v.to)) { already++; continue; }
+            if (!same(e[f], v.from)) { skipped.push(`${e.name} (${f === "ttx" ? "ТТХ" : f === "desc" ? "опис" : "назва"} змінено вручну)`); continue; }
+            upd[f] = v.to; ch++;
+          }
+          if (!ch) continue;
+          this.say(`Оновлюю: ${e.name}…`);
+          await API.call("ref_put", {entry: {id: upd.id, ord: upd.ord, cat: upd.cat, name: upd.name, ttx: upd.ttx, desc: upd.desc, imgs: upd.imgs}, images: []}, this.pw);
+          done += ch;
+        }
+      } finally { this.busy = false; }
+      Ref.entries = null;
+      return `Готово ✓ Оновлено полів: ${done}${already ? `, уже були оновлені: ${already}` : ""}${skipped.length ? `. Пропущено: ${skipped.join("; ")}` : ""}.`;
+    },
+
     async importBundle(b) {
       if (!b || !Array.isArray(b.entries) || !b.images) throw new Error("Це не файл довідника");
       this.busy = true;

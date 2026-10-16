@@ -794,3 +794,21 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .duel .d-units span.dead s { text-decoration: line-through; color: #ff7a70; }
 .duel .d-units span.dead img { opacity: .35; filter: grayscale(1); }
 @media (max-width: 600px) { .duel .d-units { max-width: calc(100% - 16px); left: 8px; bottom: 8px; } .duel .d-units img, .duel .d-nothumb { width: 20px; height: 20px; } }
+
+/* ---------- адмінка: ліміти Cloudflare */
+.usage { margin: 8px 0 4px; border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; background: rgba(255,255,255,.02); }
+.usage summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; font-size: .86rem; color: var(--muted); list-style: none; }
+.usage summary::-webkit-details-marker { display: none; }
+.usage summary b { font-size: .82rem; font-weight: 700; }
+.usage summary b.ok, .u-row.ok em { color: #3ddc97; }
+.usage summary b.warn, .u-row.warn em { color: #ffb23e; }
+.usage summary b.bad, .u-row.bad em { color: #ff5a4f; }
+.u-row { margin: 8px 0; }
+.u-h { display: flex; justify-content: space-between; gap: 8px; font-size: .78rem; }
+.u-h em { font-style: normal; color: var(--muted); white-space: nowrap; }
+.u-bar { height: 7px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 4px; }
+.u-bar i { display: block; height: 100%; border-radius: 4px; background: #3ddc97; }
+.u-row.warn .u-bar i { background: #ffb23e; }
+.u-row.bad .u-bar i { background: #ff5a4f; }
+.u-row.off { opacity: .5; }
+.usage .small { font-size: .74rem; }
