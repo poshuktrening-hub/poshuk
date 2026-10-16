@@ -519,7 +519,8 @@ async function action(env, ctx, req, origin) {
       const {results: res} = await env.DB.prepare("SELECT callsign, mode, COUNT(*) n, AVG(pct) avg, MAX(ts) last FROM results WHERE ts >= ? AND COALESCE(archived,0)=0 GROUP BY callsign, mode").bind(since).all();
       const {results: list} = await env.DB.prepare("SELECT ts, callsign, mode, total, max, pct, conclusion FROM results WHERE ts >= ? AND COALESCE(archived,0)=0 ORDER BY ts DESC LIMIT 500").bind(since).all();
       const first = await env.DB.prepare("SELECT MIN(ts) t FROM answers WHERE COALESCE(archived,0)=0").first();
-      return {ok: true, answers: ans, results: res, list, since: first ? first.t : null};
+      const real = (r) => !isTestName(r.callsign);
+      return {ok: true, answers: ans.filter(real), results: res.filter(real), list: list.filter(real), since: first ? first.t : null};
     }
     case "archive_history": {
       const A = "COALESCE(archived,0)=0";
@@ -652,11 +653,14 @@ async function dedupeObjects(env) {
 }
 
 /* Топ-3 для головного меню: найкращий результат кожного позивного окремо для «Пошуку цілей» і «Карток». */
+/* Тестові входи («Тест», «Тестовський», «test», «тест 2»…) — у результати, аналітику, топ і таблицю не потрапляють. */
+const isTestName = (n) => /(^|[^a-zа-яіїєґ])(тест|test)/i.test(String(n || "").trim());
+
 async function top3(env, since = "0000") {   // since — початок доби за часом курсанта («YYYY-MM-DD 00:00»)
   const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results WHERE COALESCE(archived,0)=0 AND ts >= ? ORDER BY ts DESC LIMIT 5000").bind(since).all();
   const out = {search: new Map(), cards: new Map()};
   for (const r of results) {
-    const name = String(r.callsign || "").trim(); if (!name) continue;
+    const name = String(r.callsign || "").trim(); if (!name || isTestName(name)) continue;
     const kind = /^cards/.test(r.mode || "") || /^Картки/.test(r.conclusion || "") ? "cards" : "search";
     const key = name.toLowerCase(), m = out[kind], cur = m.get(key);
     if (!cur) m.set(key, {name, best: r.pct, ts: r.ts, n: 1});
@@ -669,6 +673,7 @@ async function top3(env, since = "0000") {   // since — початок доб�
 async function submit(env, ctx, req) {
   const when = req.date || new Date().toISOString().slice(0, 16).replace("T", " ");
   const cs = String(req.callsign || "").slice(0, 40);
+  if (isTestName(cs)) return {ok: true, test: true};   // тестовий запуск — нікуди не записуємо
   const scores = (req.scores || []).slice(0, MAX_ROUNDS).map(Number);
   const total = scores.reduce((a, b) => a + b, 0);
   const max = Number(req.max) || scores.length * 10;
