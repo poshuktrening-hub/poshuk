@@ -50,9 +50,8 @@
       <aside class="side">
         <div class="adm-head"><h2>Адмінка</h2><button type="button" class="iconbtn" id="a-settings-btn" title="Налаштування гри">⚙</button><button type="button" class="iconbtn" id="a-out" title="Вийти з адмінки">⎋</button></div>
         <div class="adm-actions">
-          <button type="button" class="primary" id="a-auto" title="Сам розставляє техніку на картах і створює етапи">⚡ Автогенератор</button>
           <button type="button" id="a-add" title="Знімки без техніки: масштаб, напрямок і пора року визначаються самі">＋ Карти</button>
-          <button type="button" id="a-gen" title="Поставити техніку вручну">✎ Генератор</button>
+          <button type="button" class="primary" id="a-gen" title="Поставити техніку вручну">✎ Генератор</button>
           <button type="button" id="a-variants" title="Зимові й нічні тепловізійні варіанти етапів">❄ Зима / 🌡 ТПВ</button>
           <button type="button" id="a-restage" title="Перемалювати техніку на вже створених етапах новою обробкою (з бекапом)">♻ Оновити етапи</button>
           <button type="button" id="a-cards" title="Фото для режиму «Картки цілей»">🃏 Картки</button>
@@ -73,7 +72,6 @@
             <label>Пора року<select id="a-season"><option value="">—</option><option>Літо</option><option>Зима</option></select></label>
             <label title="м на 1 піксель знімка — визначається сам">Масштаб<input id="a-gsd" type="number" min="0" max="10" step="0.01" placeholder="авто"></label>
           </div>
-          <button type="button" class="primary" id="a-gen-map" hidden>⚡ Згенерувати етапи з цієї карти</button>
           <div class="row">
             <label class="chk" title="Техніка сховано понад 60% — етап іде лише в режим «Хардкор»"><input id="a-hard" type="checkbox"> Хардкор</label>
             <button type="button" id="a-toggle" style="flex:0"></button>
@@ -104,7 +102,7 @@
         <section id="a-settings" hidden></section>
       </aside>
       <div class="mainpane">
-        <div class="bar"><div class="hint" id="a-hint">«＋ Карти» → «⚡ Автогенератор» — і етапи готові. Клік по знімку — додати ціль вручну.</div>
+        <div class="bar"><div class="hint" id="a-hint">«＋ Карти» → «✎ Генератор» — поставте техніку й збережіть етап. Клік по знімку — додати ціль вручну.</div>
           <button type="button" id="a-heat" title="Куди клікали курсанти">Теплова карта</button>
           <button type="button" onclick="location.hash='';location.reload()">До гри</button></div>
         <div class="view-wrap"><div id="a-view" class="view-host"></div>
@@ -120,7 +118,6 @@
       $("a-file").onchange = (e) => this.uploadFiles([...e.target.files]);
       this.tab = this.tab || "stages";
       $("a-tabs").querySelectorAll("button").forEach((b) => (b.onclick = () => { this.tab = b.dataset.t; this.renderList(); }));
-      $("a-gen-map").onclick = () => { const s = this.stage(); if (s) AutoGen.open(this, s.id); };
       $("a-title").oninput = () => { this.stage().title = $("a-title").value; this.dirty(true); this.renderList(); };
       $("a-dir").onchange = () => { this.stage().direction = $("a-dir").value; this.dirty(true); this.renderList(); };
       $("a-hard").onchange = () => { this.stage().hard = $("a-hard").checked; this.dirty(true); this.renderList(); };
@@ -144,7 +141,6 @@
       if (!this._fixed) { this._fixed = true; setTimeout(() => CardsAdmin.autoFix(this), 3000); }
       $("a-stats").onclick = () => Analytics.open(this);
       $("a-ref").onclick = () => RefAdmin.open(this);
-      $("a-auto").onclick = () => { this.heatOn = false; AutoGen.open(this); };
       $("a-variants").onclick = () => { this.heatOn = false; Variants.open(this); };
       $("a-restage").onclick = () => { this.heatOn = false; ReStage.open(this); };
       $("a-gen").onclick = async () => { await this.flushSave(); this.heatOn = false; Gen.open(this); };
@@ -171,7 +167,7 @@
       const list = this.stages.filter((s) => (this.tab === "maps") === isMap(s) && (!fd.value || reg(s) === fd.value) && (!fs || s.season === fs));
       $("a-stages").innerHTML = list.map((s) =>
         `<li data-id="${s.id}" class="${s.id === this.sel ? "sel" : ""}"><span class="${s.enabled ? "" : "off"}">${s.enabled ? "✓" : "✗"} ${esc(s.title)}${Logic.region(s) || s.season || s.hard ? `<small class="tag">${esc([Logic.region(s), s.season, s.hard ? "хардкор" : ""].filter(Boolean).join(" · "))}</small>` : ""}</span>${s.targets.length ? `<span class="cnt">${s.targets.filter((t) => !t.decoy).length}${s.targets.some((t) => t.decoy) ? "+" + s.targets.filter((t) => t.decoy).length : ""}</span>` : `<span class="cnt">${s.gsd ? s.gsd + " м" : ""}</span>`}</li>`
-      ).join("") || `<li class="muted">${this.tab === "maps" ? "Карт немає — «＋ Карти»" : this.stages.length ? "Нічого за фільтром" : "Етапів ще немає — додайте карти й запустіть автогенератор"}</li>`;
+      ).join("") || `<li class="muted">${this.tab === "maps" ? "Карт немає — «＋ Карти»" : this.stages.length ? "Нічого за фільтром" : "Етапів ще немає — додайте карти й поставте техніку в «✎ Генераторі»"}</li>`;
       $("a-stages").querySelectorAll("li[data-id]").forEach((li) => (li.onclick = () => this.select(li.dataset.id)));
     },
 
@@ -208,7 +204,6 @@
       $("a-task").value = s.task || "";
       $("a-toggle").textContent = s.enabled ? "Вимкнути" : "Увімкнути";
       const map = !s.targets.length;
-      $("a-gen-map").hidden = !map;
       $("a-toggle").hidden = map;   // карта без цілей у гру не йде
       $("a-hard").parentElement.hidden = map;
       this.renderTargets();
