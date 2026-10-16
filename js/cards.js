@@ -295,7 +295,7 @@
       const q = LS.get("poshuk_pending", []); q.push(item); LS.set("poshuk_pending", q);
       $("sum-sync").className = "muted"; $("sum-sync").textContent = "Записую результат…";
       Game.flushPending().then((left) => {
-        $("sum-sync").textContent = left ? "Немає зв'язку: результат збережено в браузері й надішлеться при наступному вході." : "Результат записано.";
+        $("sum-sync").textContent = left ? "Немає зв'язку: результат збережено в браузері й надішлеться при наступному вході." : (/(^|[^a-zа-яіїєґ])(тест|test)/i.test(String(Game.callsign || "")) ? "Тестовий вхід — результат не записується в аналітику." : "Результат записано.");
         $("sum-sync").style.color = left ? "var(--miss)" : "var(--hit)";
       });
     },
