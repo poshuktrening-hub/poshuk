@@ -37,7 +37,7 @@ const SCHEMA = [
   // дуель на двох: кімната за 4-значним кодом; uN — техніка гравця N (координати бачить лише сервер), shots — усі удари
   `CREATE TABLE IF NOT EXISTS duels (code TEXT PRIMARY KEY, created INTEGER, state TEXT, map TEXT, gsd REAL, kit TEXT,
      p1 TEXT, p2 TEXT, s1 TEXT, s2 TEXT, u1 TEXT, u2 TEXT, c1 INTEGER DEFAULT 0, c2 INTEGER DEFAULT 0, r1 INTEGER DEFAULT 0, r2 INTEGER DEFAULT 0,
-     seen1 INTEGER DEFAULT 0, seen2 INTEGER DEFAULT 0, turn INTEGER DEFAULT 0, until INTEGER DEFAULT 0, shots TEXT, winner INTEGER DEFAULT 0, reason TEXT)`,
+     seen1 INTEGER DEFAULT 0, seen2 INTEGER DEFAULT 0, l1 INTEGER DEFAULT 0, l2 INTEGER DEFAULT 0, turn INTEGER DEFAULT 0, until INTEGER DEFAULT 0, shots TEXT, winner INTEGER DEFAULT 0, reason TEXT)`,
   `CREATE TABLE IF NOT EXISTS stage_backups (id TEXT PRIMARY KEY, targets TEXT, size INTEGER, chunks INTEGER, created TEXT)`,
 ];
 
@@ -59,6 +59,7 @@ async function db(env) {
     try { await env.DB.prepare("ALTER TABLE results ADD COLUMN mode TEXT").run(); } catch (e) { /* колонка вже є */ }
     try { await env.DB.prepare("ALTER TABLE card_photos ADD COLUMN credit TEXT").run(); } catch (e) { /* колонка вже є */ }
     // архів: записи не видаляються, а позначаються archived=1 і більше не рахуються в аналітиці, топі й теплових картах
+    for (const c of ["l1", "l2"]) { try { await env.DB.prepare(`ALTER TABLE duels ADD COLUMN ${c} INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
     for (const t of ["results", "answers", "clicks"]) { try { await env.DB.prepare(`ALTER TABLE ${t} ADD COLUMN archived INTEGER DEFAULT 0`).run(); } catch (e) { /* колонка вже є */ } }
     schemaReady = true;
   }
@@ -236,7 +237,7 @@ async function action(env, ctx, req, origin) {
       return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated}))};
     }
     case "top": { await auth(env, req, "player"); return {ok: true, top: await top3(env, String(req.since || "0000"))}; }
-    case "duel_create": case "duel_join": case "duel_state": case "duel_place_begin": case "duel_place_end": case "duel_shot": case "duel_leave":
+    case "duel_create": case "duel_join": case "duel_state": case "duel_loaded": case "duel_place_begin": case "duel_place_end": case "duel_shot": case "duel_leave":
       await auth(env, req, "player");
       return duel(env, req, a);
   }
@@ -652,7 +653,7 @@ async function putBlob(env, request, id, part) {
 }
 
 // ------------------------------------------------------------------ дуель (морський бій на знімку)
-const TURN_MS = 30000, GONE_MS = 90000;
+const TURN_MS = 15000, PLACE_MS = 30000, PLACE_GRACE = 45000, GONE_MS = 90000;
 const jp = (s, d) => { try { return JSON.parse(s || ""); } catch (e) { return d; } };
 const rnd4 = () => String(1000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 9000));
 
@@ -667,6 +668,10 @@ function whoAmI(r, secret) { if (secret && secret === r.s1) return 1; if (secret
 async function duelTick(env, r, me) {
   const now = Date.now(), sets = {};
   sets["seen" + me] = now;
+  if (r.state === "place" && r.until && now > r.until + PLACE_GRACE) {
+    // час розстановки давно минув, а хтось так і не відправив карту
+    Object.assign(sets, {state: "done", winner: r.r1 && !r.r2 ? 1 : r.r2 && !r.r1 ? 2 : 0, reason: "noplace"});
+  }
   if (r.state === "battle") {
     const other = 3 - me;
     if (r["seen" + other] && now - r["seen" + other] > GONE_MS) { Object.assign(sets, {state: "done", winner: me, reason: "left"}); }
@@ -687,7 +692,8 @@ function duelView(r, me) {
   const done = r.state === "done";
   const reveal = opp.map((u, i) => (done || u.dead || u.seen ? {i, x: u.x, y: u.y, r: u.r, type: u.type, decoy: !!u.decoy, dead: !!u.dead} : null)).filter(Boolean);
   const alive = (us) => us.filter((u) => !u.decoy && !u.dead).length;
-  return {ok: true, code: r.code, state: r.state, me, turn: r.turn, left: Math.max(0, r.until - Date.now()), names: [r.p1 || "", r.p2 || ""],
+  return {ok: true, code: r.code, state: r.state, me, turn: r.turn, left: r.state === "place" && !r.until ? PLACE_MS : Math.max(0, r.until - Date.now()),
+    loaded: [!!r.l1, !!r.l2], placeMs: PLACE_MS, turnMs: TURN_MS, names: [r.p1 || "", r.p2 || ""],
     kit: jp(r.kit, []), map: {id: r.map, gsd: r.gsd}, mine, ready: [!!r.r1, !!r.r2], reveal, shots,
     alive: {me: alive(mine), opp: r["r" + other] ? alive(opp) : null}, winner: r.winner, reason: r.reason || ""};
 }
@@ -728,6 +734,12 @@ async function duel(env, req, a) {
     if (r.state !== "done") await env.DB.prepare("UPDATE duels SET state='done', winner=?, reason='left' WHERE code=?").bind(r.s2 ? 3 - me : 0, r.code).run();
     return {ok: true};
   }
+  if (a === "duel_loaded") {
+    // 30 с на розстановку рахуються, коли карта відкрилась в обох (повільний телефон не втрачає час)
+    await env.DB.prepare(`UPDATE duels SET l${me}=1 WHERE code=?`).bind(r.code).run();
+    await env.DB.prepare("UPDATE duels SET until=? WHERE code=? AND state='place' AND l1=1 AND l2=1 AND (until IS NULL OR until=0)").bind(now + PLACE_MS, r.code).run();
+    return duelView(await duelRow(env, r.code), me);
+  }
   if (a === "duel_place_begin") {
     if (r.state !== "place") throw new HttpError("Зараз не етап розстановки");
     const kit = jp(r.kit, []), units = Array.isArray(req.units) ? req.units : [];
@@ -747,7 +759,7 @@ async function duel(env, req, a) {
     const r2 = await duelRow(env, r.code);
     if (r2.r1 && r2.r2 && r2.state === "place") {
       // перший хід — випадково; першому трохи більше часу (завантажити знімок суперника)
-      await env.DB.prepare("UPDATE duels SET state='battle', turn=?, until=? WHERE code=? AND state='place'").bind(1 + (crypto.getRandomValues(new Uint8Array(1))[0] & 1), now + TURN_MS + 10000, r.code).run();
+      await env.DB.prepare("UPDATE duels SET state='battle', turn=?, until=? WHERE code=? AND state='place'").bind(1 + (crypto.getRandomValues(new Uint8Array(1))[0] & 1), now + TURN_MS + 5000, r.code).run();
     }
     return duelView(await duelRow(env, r.code), me);
   }
