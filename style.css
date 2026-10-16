@@ -721,3 +721,7 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   .duel .d-kit > b, .duel .d-kit p { display: none; }
   .duel .d-kit button { flex: 1 1 45%; padding: 6px 8px; font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
+/* головне меню: довгий підпис не розтягує картку */
+.main-menu { grid-template-columns: minmax(0, 1fr); }
+.main-menu .mm { min-width: 0; max-width: 100%; white-space: normal; }
+.main-menu .mm > span { white-space: normal; font-size: .84rem; color: var(--muted); overflow-wrap: anywhere; }
