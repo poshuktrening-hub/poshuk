@@ -755,3 +755,10 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 @media (max-width: 600px) { #s-start { align-content: start; } .credit { font-size: .78rem; } }
 .credit { display: block; line-height: 28px; }
 .credit-icon img { display: inline-block; margin: 0 1px 0 3px; position: relative; top: -1px; }
+/* дуель: напис результату удару */
+.duel .d-float { position: absolute; z-index: 9; transform: translate(-50%, -120%); font: 800 1.35rem var(--display, sans-serif); letter-spacing: .04em; padding: 4px 12px; border-radius: 10px; pointer-events: none; white-space: nowrap; animation: d-float 1.8s ease-out forwards; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
+.duel .d-float.miss { color: #fff; background: #d93a3a; }
+.duel .d-float.hit { color: #04140c; background: var(--hit, #3ddc97); }
+.duel .d-float.lost { color: #fff; background: #d93a3a; }
+.duel .d-float.ok { color: #04140c; background: var(--hit, #3ddc97); }
+@keyframes d-float { 0% { opacity: 0; transform: translate(-50%, -80%) scale(.8); } 12% { opacity: 1; transform: translate(-50%, -120%) scale(1.05); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -200%) scale(1); } }
