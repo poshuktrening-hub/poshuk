@@ -122,5 +122,5 @@
     return `${url}/ref/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}&t=${encodeURIComponent(await token(password))}`;
   }
 
-  window.API = {call, noteStages, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
+  window.API = {call, token, noteStages, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
 })();
