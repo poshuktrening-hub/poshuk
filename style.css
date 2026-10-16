@@ -742,3 +742,8 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .duel .d-card { max-height: calc(100% - 8px); overflow: auto; }
 .duel #d-rules { justify-self: start; }
 .duel .d-card input::placeholder { letter-spacing: normal; font-size: .9rem; }
+.duel .d-turnbar.their { background: #d93a3a; color: #fff; border: 0; }
+.duel .d-turnbar.place { background: var(--accent, #ffb23e); color: #1a1205; }
+.duel .d-rot { display: flex; gap: 6px; }
+.duel .d-rot button { flex: 1; }
+@media (max-width: 600px) { .duel .d-rot { flex: 1 1 100%; } }

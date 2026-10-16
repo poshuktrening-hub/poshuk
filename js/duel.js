@@ -8,7 +8,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => UI.esc(s);
-  const KIT_REAL = 5, KIT_DECOY = 0, TURN_S = 30, POLL_MS = 1200;
+  const KIT_REAL = 5, KIT_DECOY = 0, TURN_S = 15, PLACE_S = 30, POLL_MS = 1000;
   const C = {hit: "#3ddc97", miss: "#ff5a4f", decoy: "#b48cff", accent: "#ffb23e", mine: "#7fb2ff"};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = () => rej(new Error("Не вдалось відкрити модель")); i.src = src; });
@@ -35,7 +35,7 @@
     reset() {
       clearTimeout(this.pollT); clearInterval(this.tickT);
       $("d-turnbar").hidden = true;
-      Object.assign(this, {lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
+      Object.assign(this, {autoDone: false, lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
       $("d-tabs").hidden = true; $("d-ready").hidden = true; $("d-msg").textContent = "";
       $("d-title").textContent = "⚔ Дуель"; ["d-turn", "d-time", "d-me", "d-opp"].forEach((id) => ($(id).textContent = "—"));
       $("d-timebar").style.transform = "scaleX(0)";
@@ -50,9 +50,9 @@
     lobby() {
       const p = this.panel(`<div class="d-card">
         <h2>⚔ Дуель на двох</h2>
-        <img class="d-help-img" src="media/help-duel.svg?v=1" alt="Схема дуелі: розстановка техніки й удари по черзі">
+        <img class="d-help-img" src="media/help-duel.svg?v=2" alt="Схема дуелі: розстановка техніки й удари по черзі">
         <ol class="d-rules">
-          <li>Кожен ховає на тій самій карті <b>${KIT_REAL} одиниць техніки</b> — суперник розстановки не бачить.</li>
+          <li>Кожен за <b>${PLACE_S} с</b> ховає на тій самій карті <b>${KIT_REAL} одиниць техніки</b> — суперник розстановки не бачить.</li>
           <li>Б'єте по черзі по карті суперника: <b>${TURN_S} с на хід</b>, один удар.</li>
           <li>Влучили — ходите ще; мимо — хід суперникові.</li>
           <li>Виграє, хто першим знищить усю техніку суперника.</li>
@@ -120,8 +120,9 @@
       if (j.state === "place") {
         if (this.helpFor !== j.code) { this.helpFor = j.code; Help.show("duel"); }   // правила — щоразу після зʼєднання
         if (!this.base && !this.placing) this.startPlacing(j);
-        if (j.ready[j.me - 1]) this.msg(j.ready[2 - j.me] ? "" : `Готово. Чекаю, поки ${opp} сховає свою техніку…`);
         $("d-turn").textContent = "розстановка";
+        this.placeBanner(j);
+        this.deadline = j.left != null && j.loaded && j.loaded[0] && j.loaded[1] ? performance.now() + j.left : null;
         return;
       }
       if (j.state === "battle" || j.state === "done") {
@@ -146,7 +147,9 @@
         this.viewer.setImage(this.work);
         this.mapView = "mine";
         this.renderKit();
-        this.msg("Клік по знімку — поставити вибрану техніку. Тягніть — перемістити, Shift+тягнути або Q/E — повернути.");
+        this.msg("Торкніться знімка — поставити вибрану техніку. Тягніть — перемістити; ⟳ — повернути.");
+        API.call("duel_loaded", {code: this.code, secret: this.secret}, this.pw).then((r) => this.apply(r)).catch(() => {});   // таймер стартує, коли карта відкрилась в обох
+        clearInterval(this.tickT); this.tickT = setInterval(() => this.tick(), 250);
       } catch (e) { this.msg("Не вдалось завантажити карту: " + e.message, "no"); }
       this.loading(null);
     },
@@ -155,7 +158,9 @@
       const all = this.units.every((u) => u.x !== null);
       if (!this.st || this.st.state !== "place") return;
       const p = this.panel(`<div class="d-kit"><b>Сховайте техніку</b>${this.units.map((u, i) => `<button type="button" data-u="${i}" class="${i === this.sel ? "on" : ""}${u.x !== null ? " done" : ""}">${u.k.decoy ? "◇" : "■"} ${esc(u.k.name)}${u.x !== null ? " ✓" : ""}</button>`).join("")}
+        <div class="d-rot"><button type="button" data-rot="-45">⟲ Повернути</button><button type="button" data-rot="45">⟳ Повернути</button></div>
         <p class="muted small">Під кронами й біля посадок техніку видно гірше. Не ставте все в одному місці.</p></div>`, "side");
+      p.querySelectorAll("[data-rot]").forEach((b) => (b.onclick = () => { const u = this.units[this.sel]; if (!u || u.x === null || this.st.ready[this.me - 1]) return; u.angle = (u.angle + Number(b.dataset.rot) + 360) % 360; this.redraw(); }));
       p.querySelectorAll("[data-u]").forEach((b) => (b.onclick = () => { this.sel = Number(b.dataset.u); this.renderKit(); this.marksPlace(); }));
       $("d-ready").hidden = false; $("d-ready").disabled = !all || !!(this.st && this.st.ready[this.me - 1]);
       this.marksPlace();
@@ -359,8 +364,45 @@
       $("d-tabs").querySelectorAll("[data-v]").forEach((x) => x.classList.toggle("turn", (x.dataset.v === "opp") === my));
     },
 
+    /* Розстановка: жовтий напис з таймером; поки суперник відкриває карту — таймер ще не йде. */
+    placeBanner(j) {
+      const b = $("d-turnbar"), opp = j.names[2 - j.me] || "суперник", mineReady = j.ready[j.me - 1];
+      b.hidden = false; b.className = "d-turnbar place";
+      b.innerHTML = mineReady ? `✓ <b>ГОТОВО</b> — чекаю, поки ${esc(opp)} сховає техніку <span id="d-tb-t"></span>`
+        : !(j.loaded && j.loaded[0] && j.loaded[1]) ? `⏳ Чекаю, поки ${esc(opp)} відкриє карту…`
+        : `🧩 <b>РОЗСТАНОВКА</b> — сховайте ${KIT_REAL} одиниць <span id="d-tb-t"></span>`;
+    },
+
+    /* Час розстановки вийшов: недоставлене — у випадкові вільні місця, і одразу «Готово». */
+    async autoPlace() {
+      if (this.autoDone || !this.base) return;
+      this.autoDone = true;
+      const W = this.base.width, H = this.base.height;
+      for (const u of this.units) {
+        if (u.x !== null) continue;
+        for (let k = 0; k < 300; k++) {
+          const x = u.size + Math.random() * (W - 2 * u.size), y = u.size + Math.random() * (H - 2 * u.size);
+          if (!this.tooClose(u, x, y)) { u.x = Math.round(x); u.y = Math.round(y); break; }
+        }
+        if (u.x === null) { u.x = Math.round(W / 2); u.y = Math.round(H / 2); }
+      }
+      this.msg("Час вийшов — решту техніки поставлено випадково.", "no");
+      await this.redraw();
+      this.ready();
+    },
+
     tick() {
-      const j = this.st; if (!j || j.state !== "battle") return;
+      const j = this.st; if (!j) return;
+      if (j.state === "place") {
+        if (this.deadline == null) { $("d-time").textContent = "0:" + PLACE_S; return; }
+        const left = Math.max(0, this.deadline - performance.now()), sec = Math.ceil(left / 1000), t = `0:${String(Math.min(59, sec)).padStart(2, "0")}`;
+        $("d-time").textContent = t; const tb = $("d-tb-t"); if (tb && !j.ready[j.me - 1]) tb.textContent = t;
+        $("d-timebar").style.transform = `scaleX(${Math.min(1, left / (PLACE_S * 1000))})`;
+        if (!j.ready[j.me - 1] && sec <= 5 && sec > 0 && sec !== this.lastSec) { this.lastSec = sec; SFX.tick(sec <= 3); }
+        if (left <= 0 && !j.ready[j.me - 1] && !this.autoDone) this.autoPlace();
+        return;
+      }
+      if (j.state !== "battle") return;
       const left = Math.max(0, (this.deadline || 0) - performance.now()), sec = Math.ceil(left / 1000);
       $("d-time").textContent = `0:${String(Math.min(59, sec)).padStart(2, "0")}`;
       const tb = $("d-tb-t"); if (tb) tb.textContent = `0:${String(Math.min(59, sec)).padStart(2, "0")}`;
@@ -386,7 +428,7 @@
       $("d-turnbar").hidden = true;
       clearInterval(this.tickT); clearTimeout(this.pollT);
       const win = j.winner === j.me, opp = j.names[2 - j.me] || "суперник";
-      const why = j.reason === "left" ? (win ? `${opp} вийшов з бою.` : "Ви вийшли з бою.") : win ? "Уся техніка суперника знищена." : "Уся ваша техніка знищена.";
+      const why = j.reason === "noplace" ? (win ? `${opp} не встиг сховати техніку.` : "Ви не встигли відправити розстановку.") : j.reason === "left" ? (win ? `${opp} вийшов з бою.` : "Ви вийшли з бою.") : win ? "Уся техніка суперника знищена." : "Уся ваша техніка знищена.";
       if (win) SFX.win(); else SFX.timeout();
       const mine = j.shots.filter((s) => s.by === j.me && s.res !== "timeout"), hits = mine.filter((s) => s.res === "hit").length;
       this.panel(`<div class="d-card result ${win ? "win" : "lose"}"><h2>${win ? "🏆 Перемога" : "Поразка"}</h2><p>${esc(why)}</p>
