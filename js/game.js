@@ -293,6 +293,44 @@
       const cand = this.objects.filter((x) => !x.decoy && words.some((w) => String((x.name || "") + " " + (x.type || "")).toLowerCase().includes(w)));
       return cand[0] || null;
     },
+    /* Картинка техніки для брифінгу — ланцюжок запасних варіантів: модель етапу → інша модель з такою назвою →
+       вбудована модель того ж типу → фото з карток/довідника. Якщо одна не відкривається — береться наступна. */
+    async picChain(t, o) {
+      const norm = (x) => String(x || "").toLowerCase();
+      const out = [], add = (u) => { if (u && !out.includes(u)) out.push(u); };
+      const objSrc = async (m) => (m.builtin ? (Models.sprite(m.id) || {toDataURL: () => ""}).toDataURL() : API.objUrl(m.id, this.password).catch(() => null));
+      if (o) add(await objSrc(o));
+      const text = norm([t.type, o && o.name].join(" "));
+      const words = text.split(/[^a-zа-яіїєґ0-9-]+/).filter((w) => w.length >= 3);
+      for (const m of this.objects.filter((x) => !x.decoy && x !== o && words.some((w) => norm(x.name).includes(w)))) add(await objSrc(m));
+      const ty = Logic.typeOf(t.type || (o && o.name) || "");
+      const bi = Models.LIST.find((m) => !m.decoy && !/:decoy$/.test(m.id) && (m.id === t.obj || words.some((w) => norm(m.name).includes(w)) || Logic.typeOf(m.name) === ty));
+      if (bi) add(await objSrc(bi));
+      // фото з режиму «Картки» (за назвами/синонімами), напр. «Град» → БМ-21
+      const hay = norm([text, bi && bi.name].join(" "));
+      const card = (window.CARDS || []).find((c) => String(c[2] || "").split("|").some((al) => al.length >= 3 && hay.includes(al)));
+      if (card && window.Cards) add(await Cards.photoUrl(card[0]).catch(() => null));
+      return out;
+    },
+    /* Відкрилась, але порожня (майже прозора чи крихітна — напр. невдало прибраний фон)? Тоді — наступна картинка. */
+    picCheck(img) {
+      try {
+        const w = img.naturalWidth, h = img.naturalHeight;
+        if (w < 16 || h < 16) return this.picFail(img);
+        const k = Math.min(1, 64 / Math.max(w, h)), c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+        const x = c.getContext("2d"); x.drawImage(img, 0, 0, c.width, c.height);
+        const d = x.getImageData(0, 0, c.width, c.height).data;
+        let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 40) n++;
+        if (n < c.width * c.height * 0.04) this.picFail(img);
+      } catch (e) { /* немає доступу до пікселів — лишаємо як є */ }
+    },
+    picFail(img) {
+      let alt = []; try { alt = JSON.parse(img.dataset.alt || "[]"); } catch (e) { alt = []; }
+      if (!alt.length) { const b = img.closest(".b-pic"); if (b) b.remove(); return; }
+      img.dataset.alt = JSON.stringify(alt.slice(1));
+      img.src = alt[0];
+    },
     async brief(st, after = false) {
       const norm = (s) => String(s || "").toLowerCase().trim();
       const seen = new Set(), items = [];
@@ -305,9 +343,8 @@
       }
       const box = $("g-brief");
       const cards = await Promise.all(items.map(async ({t, o}) => {
-        let pic = "";
-        if (o && o.builtin) pic = `<img src="${Models.sprite(o.id).toDataURL()}" alt="">`;
-        else if (o) { const u = await API.objUrl(o.id, this.password).catch(() => null); if (u) pic = `<img src="${u}" alt="" onerror="this.closest('.b-pic').remove()">`; }
+        const srcs = await this.picChain(t, o);
+        const pic = srcs.length ? `<img src="${srcs[0]}" alt="" data-alt="${esc(JSON.stringify(srcs.slice(1)))}" onerror="Game.picFail(this)" onload="Game.picCheck(this)">` : "";
         const ttx = Logic.ttxFor(o, t.type, !!t.decoy);
         const len = o && o.length_m ? `<p class="len">Довжина ≈ ${o.length_m} м</p>` : "";
         const name = Logic.dispName(o && o.name ? o.name.replace(/\s*\(вбудована\)$/, "") : (t.type || "ціль"));
