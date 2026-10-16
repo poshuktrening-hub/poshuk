@@ -905,3 +905,7 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   .main-menu .mm { padding: 11px 10px 10px; }
 }
 .main-menu .mm-duel[hidden] + .mm-ref { grid-column: 1 / -1; }
+/* чотири плитки однакові за розміром; «Робота над помилками» — окремим рядком нижче */
+.main-menu { grid-template-rows: 1fr 1fr; }
+.main-menu .mm-duel { --c: 180,140,255; }
+.main-menu .mm:not(.mm-wide) { min-height: 118px; }
