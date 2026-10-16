@@ -78,13 +78,33 @@
   }
   function regionOf(text) { return region({direction: text}); }
 
-  function pickRounds(stages, n) {
+  /* «Сцена» етапу: та сама карта з тими самими цілями, перероблена на зиму / ніч / тепловізор, — це варіанти
+     однієї сцени (у назві — суфікс «· Зима», «· Тепловізор», «· Ніч», можливо «#2»). В одній грі показуємо
+     лише один варіант сцени: інакше курсант уже знає, де стоїть техніка. */
+  const VARIANT_SUFFIX = /\s·\s(Зима|Тепловізор|Тепло|Ніч|Нічний|Зимовий)(\s#\d+)?$/i;
+  function sceneKey(s) {
+    let t = String(s.title || "").trim();
+    for (let k = 0; k < 4; k++) { const u = t.replace(VARIANT_SUFFIX, "").replace(/\s#\d+$/, ""); if (u === t) break; t = u; }
+    // однакова назва, але техніка стоїть в інших місцях — це інша сцена (генератор робить кілька етапів з тієї самої карти)
+    const pos = (s.targets || []).map((x) => Math.round(x.x / 20) + ":" + Math.round(x.y / 20)).sort().join(",");
+    return t.toLowerCase() + "|" + pos;
+  }
+  /* n випадкових етапів з цілями; taken — сцени, які вже взято (доповнюється). Якщо різних сцен замало —
+     добираємо варіантами, щоб гра все одно мала n етапів. */
+  function pickRounds(stages, n, taken = new Set(), allowSameScene = false) {
     const pool = stages.filter((s) => s.targets && s.targets.some((t) => !t.decoy)).slice();
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    return pool.slice(0, n);
+    if (allowSameScene) return pool.slice(0, n);
+    const out = [], rest = [];
+    for (const s of pool) {
+      const k = sceneKey(s);
+      if (out.length < n && !taken.has(k)) { out.push(s); taken.add(k); } else rest.push(s);
+    }
+    for (const s of rest) { if (out.length >= n) break; out.push(s); }
+    return out;
   }
 
   function hitTest(targets, found, x, y) {
@@ -216,5 +236,5 @@
     return known || own || DEFAULT_LEN;
   }
 
-  window.Logic = {dispName, knownLength, lengthOf, DEFAULT_LEN, nameHasType, category, MODES, REGIONS, SEASONS, region, regionOf, rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
+  window.Logic = {dispName, knownLength, lengthOf, DEFAULT_LEN, sceneKey, nameHasType, category, MODES, REGIONS, SEASONS, region, regionOf, rank, rankBadge, RANKS, TTX_DEFAULT, ttxFor, isAutoTtx, cleanTtx, typeOf, LANDMARKS, SIGNS, TYPES, options, shuffle, pickRounds, hitTest, roundScore, conclusion, normSquare, evalReport};
 })();
