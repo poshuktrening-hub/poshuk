@@ -40,7 +40,7 @@
     render() {
       const maps = this.mapList(), real = this.models(false), dec = this.models(true);
       const st = this.state = this.state || {maps: new Set(this.onlyMap ? [this.onlyMap] : maps.map((m) => m.id)), real: new Set(real.map((o) => o.id)), dec: new Set(dec.map((o) => o.id)),
-        n: 5, tmin: 1, tmax: 2, dmin: 0, dmax: 1, level: "norm", tracks: true};
+        n: 5, tmin: 1, tmax: 2, dmin: 0, dmax: 1, level: "norm", tracks: true, cond: ""};
       const tag = (m) => [Logic.region(m), m.season].filter(Boolean).join(" · ");
       const opt = (a, b, v) => Array.from({length: b - a + 1}, (_, i) => a + i).map((x) => `<option${x === v ? " selected" : ""}>${x}</option>`).join("");
       $("ag").innerHTML = `<div class="m-card">
@@ -65,6 +65,7 @@
           <label>Муляжів на етап</label><span class="rng"><select id="ag-dmin">${opt(0, 3, st.dmin)}</select>–<select id="ag-dmax">${opt(0, 3, st.dmax)}</select></span>
         </div>
         <div class="seg-row"><span>Маскування</span><div class="seg" id="ag-hide">${Object.entries(LEVELS).map(([k, L]) => `<button type="button" data-h="${k}" class="${st.level === k ? "on" : ""}">${L.name}</button>`).join("")}</div></div>
+        <div class="seg-row"><span>Умови</span><div class="seg" id="ag-cond">${[["", "☀ День"], ["winter", "❄ Зима"], ["thermal", "🌡 Тепловізор (ніч)"]].map(([k, n]) => `<button type="button" data-c="${k}" class="${(st.cond || "") === k ? "on" : ""}">${n}</button>`).join("")}</div></div>
         <label class="chk"><input type="checkbox" id="ag-tracks"${st.tracks ? " checked" : ""}> Накатані сліди від дороги до техніки</label>
         <p class="muted small">Хардкор-етапи потрапляють лише в режим «Хардкор»; в інших режимах техніка сховано не більше ніж на 60%.</p>
 
@@ -84,6 +85,7 @@
       }));
       box.querySelectorAll("#ag-hide [data-h]").forEach((b) => (b.onclick = () => { st.level = b.dataset.h; this.render(); }));
       $("ag-tracks").onchange = () => { st.tracks = $("ag-tracks").checked; };
+      box.querySelectorAll("#ag-cond [data-c]").forEach((b) => (b.onclick = () => { st.cond = b.dataset.c; this.render(); }));
       ["n", "tmin", "tmax", "dmin", "dmax"].forEach((k) => ($("ag-" + k).onchange = () => { st[k] = Number($("ag-" + k).value) || 0; }));
       $("ag-add").onclick = () => $("ag-file").click();
       $("ag-file").onchange = async (e) => {
@@ -243,6 +245,18 @@
           const d = await this.mapData(m);
           const cv = Compose.canvas(d.W, d.H), ctx = cv.getContext("2d");
           ctx.drawImage(d.src, 0, 0);
+          // зима / тепловізор: техніка ставиться на перефарбовану копію, а крони для маскування беруться з кольорової
+          const cond = st.cond || "";
+          let tcv = null;
+          if (cond) {
+            this.say(`Етап ${i + 1}/${N}: «${m.title}» — ${cond === "winter" ? "засніжую" : "тепловізор"}…`);
+            await new Promise((res) => setTimeout(res, 0));
+            this.condCache = this.condCache || new Map();
+            const key = m.id + ":" + cond;
+            if (!this.condCache.has(key)) this.condCache.set(key, cond === "winter" ? Variants.winter(cv) : Variants.thermal(cv));
+            const src0 = this.condCache.get(key);
+            tcv = Compose.canvas(d.W, d.H); tcv.getContext("2d").drawImage(src0, 0, 0); tcv.t2g = src0.t2g;
+          }
           const nT = rint(tmin, tmax), nD = dec.length ? rint(dmin, dmax) : 0;
           const items = [];
           const pool = real.slice().sort(() => Math.random() - 0.5);
@@ -272,18 +286,23 @@
             const {at, p, hid} = ok;
             if (st.level !== "hard" && hid > 0.62) continue;   // правило: поза хардкором — не більше 60%
             placed.push(at);
-            if (st.tracks && !it.decoy) this.addTracks(cv, d, at, p.angle, size, m.gsd);
-            Compose.compose(cv, cv, spr, at[0], at[1], p);
+            if (tcv) {
+              if (st.tracks && !it.decoy && cond === "winter") this.addTracks(tcv, d, at, p.angle, size, m.gsd);
+              Variants.place(cond, tcv, cv, spr, it.o, {t: {x: at[0], y: at[1], type: it.o.name, decoy: it.decoy}, size, angle: p.angle, hide: p.hideTarget, slen: p.shadow_len, sun: d.sunDir});
+            } else {
+              if (st.tracks && !it.decoy) this.addTracks(cv, d, at, p.angle, size, m.gsd);
+              Compose.compose(cv, cv, spr, at[0], at[1], p);
+            }
             const type = Logic.typeOf(it.o.name.replace(/^муляж\s+/i, "").replace(/\s*\((вбудована|надувний)\)$/i, ""));
             targets.push(Object.assign({x: at[0], y: at[1], r: Math.max(8, Math.round(size * 0.6)), type, obj: it.o.id}, it.decoy ? {decoy: true} : {}, hid > 0.6 ? {hidden: Math.round(hid * 100) / 100} : {}));
           }
           if (!targets.some((t) => !t.decoy)) continue;
           const types = [...new Set(targets.filter((t) => !t.decoy).map((t) => t.type))].sort().join(", ");
-          let title = `${m.title} · ${types}${targets.some((t) => t.decoy) ? " + муляжі" : ""}`;
+          let title = `${m.title} · ${types}${targets.some((t) => t.decoy) ? " + муляжі" : ""}${cond ? (cond === "winter" ? " · Зима" : " · Тепловізор") : ""}`;
           for (let k = 2; A.stages.some((s) => s.title === title); k++) title = title.replace(/ #\d+$/, "") + ` #${k}`;
           this.say(`Етап ${i + 1}/${N}: зберігаю «${title}»…`);
-          const stage = await API.uploadStage(cv, {title, targets, name: `auto_${Date.now()}`}, this.pw, (msg) => this.say(`Етап ${i + 1}/${N}: ${msg}`));
-          const meta = {direction: Logic.region(m) || m.direction || "", season: m.season || "", gsd: m.gsd, hard: st.level === "hard"};
+          const stage = await API.uploadStage(tcv || cv, {title, targets, name: `auto_${Date.now()}`}, this.pw, (msg) => this.say(`Етап ${i + 1}/${N}: ${msg}`));
+          const meta = {direction: Logic.region(m) || m.direction || "", season: cond === "winter" ? "Зима" : (m.season || ""), gsd: m.gsd, hard: st.level === "hard", cond};
           await API.call("save_stage", Object.assign({id: stage.id}, meta), this.pw).catch(() => {});
           A.stages.push(Object.assign(stage, meta));
           made++;

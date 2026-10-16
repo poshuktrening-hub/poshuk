@@ -27,7 +27,7 @@
     /* Карта, з якої зроблено етап: її назва — початок назви етапу (« · »), той самий розмір. */
     sourceMap(s) {
       // джерелом може бути й етап з розміткою (генератор бере «З вибраного етапу») — важить назва й розмір; чиста карта — у пріоритеті
-      const c = this.admin.stages.filter((m) => m.id !== s.id && s.title.startsWith(m.title + " · ") && (!m.w || !s.w || (m.w === s.w && m.h === s.h)));
+      const c = this.admin.stages.filter((m) => m.id !== s.id && !m.cond && s.title.startsWith(m.title + " · ") && (!m.w || !s.w || (m.w === s.w && m.h === s.h)));
       return c.sort((a, b) => b.title.length - a.title.length || a.targets.length - b.targets.length)[0] || null;
     },
     hasModels(s) { const ids = new Set((this.admin.objects || []).map((o) => o.id)); return s.targets.some((t) => t.obj && ids.has(t.obj)); },
@@ -35,6 +35,7 @@
     list() {
       return this.admin.stages.filter((s) => s.targets.length).map((s) => {
         const map = this.sourceMap(s), ok = !!map && this.hasModels(s);
+        if (s.cond) return {s, map: null, ok: false, why: s.cond === "thermal" ? "тепловізійний варіант" : "зимовий варіант"};
         return {s, map, ok, why: !s.targets.some((t) => t.obj) ? "справжній знімок з розміткою — не чіпаємо" : !map ? "не знайдено карти, з якої його зроблено" : !this.hasModels(s) ? "моделі видалено з бібліотеки" : ""};
       }).sort((a, b) => b.ok - a.ok);
     },
@@ -111,7 +112,7 @@
     },
 
     /* Одна ціль: підбір старих параметрів → прибирання старої техніки → новий рендер. Працює на локальному вікні. */
-    async redo(out, clean, spr, t, size, slen, sun) {
+    async redo(out, clean, spr, t, size, slen, sun, opt = {}) {
       const W = out.width, H = out.height, CR = Math.ceil(Math.max(48, size * 2.6 + slen + 12));
       const x0 = Math.max(0, Math.round(t.x - CR)), y0 = Math.max(0, Math.round(t.y - CR));
       const w = Math.min(W, Math.round(t.x + CR)) - x0, h = Math.min(H, Math.round(t.y + CR)) - y0;
@@ -193,6 +194,8 @@
       }
       const rp = Compose.canvas(w, h), rx = rp.getContext("2d"); rx.putImageData(rest, 0, 0);
       const before = Compose.canvas(w, h); before.getContext("2d").drawImage(ol, 0, 0);
+      // лише прибрати стару техніку (для зимових/тепловізійних варіантів — нову ставить Variants)
+      if (opt.removeOnly) { out.getContext("2d").drawImage(rp, x0, y0); return {rect: {x: x0, y: y0, w, h}, angle, hide: hb[1], size}; }
       const res = Compose.compose(rp, rp, spr, cx, cy, {size, angle, hideTarget: hb[1], shade: 0.25, shadow_dir: sun, shadow_len: slen});
       out.getContext("2d").drawImage(rp, x0, y0);
       return {rect: {x: x0, y: y0, w, h}, hidden: res ? res.hidden : 0, angle, hide: hb[1], pair: [before, rp, `${t.type || "ціль"} · кут ${angle}° · сховано ≈${Math.round((res ? res.hidden : 0) * 100)}%`]};

@@ -178,7 +178,7 @@ function rowToStage(r) {
   try { targets = JSON.parse(r.targets || "[]"); } catch (e) { targets = []; }
   let meta = {};
   try { meta = JSON.parse(r.meta || "{}"); } catch (e) { meta = {}; }
-  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, task: meta.task || "", direction: meta.direction || "", season: meta.season || "", gsd: Number(meta.gsd) || 0, hard: !!meta.hard, v: meta.v || ""};
+  return {id: r.id, title: r.title, enabled: !!r.enabled, w: r.w || 0, h: r.h || 0, targets, task: meta.task || "", direction: meta.direction || "", season: meta.season || "", gsd: Number(meta.gsd) || 0, hard: !!meta.hard, v: meta.v || "", cond: meta.cond || ""};
 }
 
 /* Етапи, що «застрягли» (ready=0) після перерваного оновлення старою версією адмінки, — повернути з бекапу. */
@@ -260,7 +260,7 @@ async function action(env, ctx, req, origin) {
       if (req.title !== undefined) { sets.push("title=?"); vals.push(String(req.title).slice(0, 120)); }
       if (req.enabled !== undefined) { sets.push("enabled=?"); vals.push(req.enabled ? 1 : 0); }
       if (req.targets !== undefined) { sets.push("targets=?"); vals.push(JSON.stringify(req.targets)); }
-      if (["task", "direction", "season", "gsd", "hard"].some((k) => req[k] !== undefined)) {   // мета зливається: незмінені поля лишаються
+      if (["task", "direction", "season", "gsd", "hard", "cond"].some((k) => req[k] !== undefined)) {   // мета зливається: незмінені поля лишаються
         const cur = await env.DB.prepare("SELECT meta FROM stages WHERE id=?").bind(String(req.id)).first();
         let m = {}; try { m = JSON.parse((cur && cur.meta) || "{}"); } catch (e) { m = {}; }
         if (req.task !== undefined) m.task = String(req.task || "").slice(0, 400);
@@ -268,6 +268,7 @@ async function action(env, ctx, req, origin) {
         if (req.season !== undefined) m.season = String(req.season || "").slice(0, 10);
         if (req.gsd !== undefined) m.gsd = Math.max(0, Math.min(10, Number(req.gsd) || 0));
         if (req.hard !== undefined) m.hard = !!req.hard;
+        if (req.cond !== undefined) { if (["winter", "thermal"].includes(req.cond)) m.cond = req.cond; else delete m.cond; }
         delete m.unit;
         sets.push("meta=?"); vals.push(JSON.stringify(m));
       }
