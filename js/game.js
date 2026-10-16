@@ -366,6 +366,7 @@
       }
       box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЗНАЙТИ ${n > 1 ? n + " ЦІЛІ" : "ЦІЛЬ"}</div>
         <div class="b-task"><div class="b-from">📡 ЗАВДАННЯ</div><p>${esc(task)}</p></div>${cards.join("")}
+        ${st.cond === "thermal" ? `<p class="b-cond">🌡 Тепловізор, ніч: тепле — світле. Найяскравіші — двигун і вихлоп; муляжі холодні й темні.</p>` : st.cond === "winter" ? `<p class="b-cond">❄ Зима: техніка — темна пляма на снігу, видно свіжі накати.</p>` : ""}
         <p class="b-warn">⚠ На знімку можуть бути муляжі — клік по обманці рахується як промах.</p>
         <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Почати зараз</button></div></div>`;
       box.hidden = false;

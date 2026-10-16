@@ -694,3 +694,4 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .rs-prev figcaption { font-size: .8rem; color: var(--muted, #9aa); margin-top: 2px; }
 .rs-bar { display: flex; gap: 1rem; align-items: center; margin: 6px 0; }
 .rs-bar b { margin-right: auto; font-weight: 600; }
+.b-cond { margin: 6px 0 0; padding: 8px 12px; border-radius: 10px; background: rgba(120,170,255,.1); color: #bcd3ff; font-size: .9rem; }

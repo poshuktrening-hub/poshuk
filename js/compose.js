@@ -278,7 +278,7 @@
     const k = size / Math.max(lvl.width, lvl.height), w = Math.max(6, Math.ceil(lvl.width * k) + 6), h = Math.max(6, Math.ceil(lvl.height * k) + 6);
     const cv = canvas(w, h), x = cv.getContext("2d");
     let best = 0, bd = Infinity;
-    for (const b of [0, 0.25, 0.5, 0.75, 1, 1.3, 1.7, 2.2]) {
+    for (const b of [0, 0.25, 0.5, 0.75, 1, 1.3, 1.7, 2.2, 2.8, 3.5]) {
       x.filter = "none"; x.fillStyle = `rgb(${sc.mean | 0},${sc.mean | 0},${sc.mean | 0})`; x.fillRect(0, 0, w, h);
       x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
       if (b) x.filter = `blur(${b}px)`;
@@ -385,8 +385,11 @@
     const g = harmonize(sprite, sc, p);
 
     // модель: якісне зменшення → підбір тону/кольору → малювання в SSd× роздільності з розмиттям під PSF знімка
-    const lvl = relief(grade(fitSprite(sprite, Math.max(dw, dh)), g), ang, p.shadow_dir || 135, (p.seed || 0) + Math.round(cx * 7 + cy * 13));
-    try { g.blur = matchBlur(lvl, sc, p.size); } catch (e) { /* лишається оцінка з PSF */ }
+    // p.raw — спрайт уже «готовий» (напр. тепловізійний): без підгонки кольору, світлотіні й тіні
+    if (p.raw) g.op = 0;
+    const lvl = p.raw ? fitSprite(sprite, Math.max(dw, dh)) : relief(grade(fitSprite(sprite, Math.max(dw, dh)), g), ang, p.shadow_dir || 135, (p.seed || 0) + Math.round(cx * 7 + cy * 13));
+    if (p.blurFix !== undefined) g.blur = p.blurFix;   // напр. тепловізор: шум знімка заважає оцінці різкості
+    else try { g.blur = matchBlur(lvl, sc, p.size); } catch (e) { /* лишається оцінка з PSF */ }
     const sctx0 = canvas(Wp, Hp), sctx = sctx0.getContext("2d");
     sctx.imageSmoothingEnabled = true; sctx.imageSmoothingQuality = "high";
     sctx.translate(Wp / 2, Hp / 2); sctx.rotate(ang);
@@ -406,8 +409,10 @@
     let vs = null, meanVeg = 0;
     if (hide > 0 || wantT !== null || p.shade) {
       const vc = canvas(mw, mh), vx = vc.getContext("2d"), vd = vx.createImageData(mw, mh);
+      // крони беремо з кольорового знімка (p.vegBase), якщо сам base — зимовий чи тепловізійний
+      const vpx = p.vegBase ? p.vegBase.getContext("2d").getImageData(x0, y0, mw, mh).data : rpx;
       for (let i = 0; i < mw * mh; i++) {
-        const r = rpx[i * 4], gg = rpx[i * 4 + 1], b = rpx[i * 4 + 2];
+        const r = vpx[i * 4], gg = vpx[i * 4 + 1], b = vpx[i * 4 + 2];
         const score = Math.max(0, Math.min(1, (2 * gg - r - b) / 90));
         vd.data[i * 4] = vd.data[i * 4 + 1] = vd.data[i * 4 + 2] = 255; vd.data[i * 4 + 3] = score * 255;
         meanVeg += score;
@@ -459,7 +464,7 @@
     }
     const AO = gaussBlur(Av, Wp, Hp, SSd * Math.max(0.7, Math.min(3, p.size * 0.06)));
     const IN = gaussBlur(Av, Wp, Hp, SSd * 0.7);   // «внутрішність» силуету — для мʼякого краю (light wrap)
-    const aoS = 0.35 * Math.min(1.3, g.op / 0.5) * (p.shadowK === undefined ? 1 : p.shadowK);
+    const aoS = p.raw ? 0 : 0.35 * Math.min(1.3, g.op / 0.5) * (p.shadowK === undefined ? 1 : p.shadowK);
 
     const out = new ImageData(mw, mh), o = out.data, n = SSd * SSd, cvr = new Float32Array(mw * mh);
     for (let my = 0; my < mh; my++) for (let mx = 0; mx < mw; mx++) {
@@ -471,7 +476,7 @@
         const s = S ? S[i] * out1 : 0, ao = AO[i] * out1 * aoS;
         let r = r0 * (1 - s * (1 - g.T[0])) * (1 - ao), gg = g0 * (1 - s * (1 - g.T[1])) * (1 - ao), b = b0 * (1 - s * (1 - g.T[2])) * (1 - ao);
         if (a) {
-          const q = i * 4, wrap = Math.max(0, Math.min(1, (1 - IN[i]) * 1.6)) * 0.28;
+          const q = i * 4, wrap = Math.max(0, Math.min(1, (1 - IN[i]) * 1.6)) * (p.raw ? 0.12 : 0.28);
           const cr = (spx[q] * (1 - wrap) + r0 * wrap) * shadeK, cg = (spx[q + 1] * (1 - wrap) + g0 * wrap) * shadeK, cb = (spx[q + 2] * (1 - wrap) + b0 * wrap) * shadeK;
           r = r * (1 - a) + cr * a; gg = gg * (1 - a) + cg * a; b = b * (1 - a) + cb * a;
           ca += a;
