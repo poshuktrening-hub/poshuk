@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Пошук техніки</title>
 <link rel="preload" href="fonts/geologica-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="fonts.css?v=202610162200">
-<link rel="stylesheet" href="style.css?v=202610162200">
+<link rel="stylesheet" href="fonts.css?v=202610162300">
+<link rel="stylesheet" href="style.css?v=202610162300">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1317">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -43,14 +43,14 @@
   <form class="card narrow" id="start-form">
     <p class="off-badge" id="off-badge" hidden></p>
     <h1 class="logo"><svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 2v9M20 29v9M2 20h9M29 20h9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="20" cy="20" r="2.5" fill="currentColor"/></svg><span>Пошук техніки</span></h1>
-    <label for="callsign" class="cs-field">Прізвище</label>
-    <input id="callsign" class="cs-field" autocomplete="family-name" maxlength="40" required>
+    <label for="callsign" class="cs-field cs-label">Прізвище</label>
+    <div class="cs-wrap cs-field"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><input id="callsign" autocomplete="family-name" maxlength="40" placeholder="Ваше прізвище" required></div>
     <div class="main-menu" id="main-menu">
-      <button type="button" class="mm" data-go="search"><b>Пошук цілей</b><ol class="top3" id="top-search"></ol></button>
-      <button type="button" class="mm" data-go="cards"><b>Картки цілей</b><ol class="top3" id="top-cards"></ol></button>
-      <button type="button" class="mm mm-fix" data-go="fix" id="mm-fix" hidden><b>🔁 Робота над помилками</b><span id="fix-info"></span></button>
-      <button type="button" class="mm mm-duel" data-go="duel"><b>⚔ Дуель</b><span>Морський бій на знімку: сховай свою техніку, знайди чужу</span><ol class="top3" id="top-duel" hidden></ol></button>
-      <button type="button" class="mm mm-ref" data-go="ref"><b>Довідник техніки</b><span>Фото, ТТХ і характерні ознаки</span></button>
+      <button type="button" class="mm mm-search" data-go="search"><span class="mm-h"><span class="mm-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/></svg></span><b>Пошук цілей</b></span><ol class="top3" id="top-search"></ol></button>
+      <button type="button" class="mm mm-cards" data-go="cards"><span class="mm-h"><span class="mm-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="15" rx="2"/><path d="M8 3h10a2 2 0 0 1 2 2v13"/><path d="M6 17l3-4 2 2.5 1.5-2 1.5 3.5"/></svg></span><b>Картки цілей</b></span><ol class="top3" id="top-cards"></ol></button>
+      <button type="button" class="mm mm-fix mm-wide" data-go="fix" id="mm-fix" hidden><span class="mm-h"><span class="mm-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg></span><b>Робота над помилками</b></span><span class="mm-sub" id="fix-info"></span></button>
+      <button type="button" class="mm mm-duel" data-go="duel"><span class="mm-h"><span class="mm-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6M16 16l4 4M19 21l2-2"/><path d="M9.5 6.5 14 2h3v3l-4.5 4.5"/><path d="m5 14 4 4M7 17l-3 3M3 19l2 2"/></svg></span><b>Дуель</b></span><span class="mm-sub">Сховай свою — знайди чужу</span><ol class="top3" id="top-duel" hidden></ol></button>
+      <button type="button" class="mm mm-ref" data-go="ref"><span class="mm-h"><span class="mm-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H20v15H5.5A1.5 1.5 0 0 0 4 19.5z"/><path d="M4 19.5A1.5 1.5 0 0 0 5.5 21H20v-3"/><path d="M9 8h7M9 11.5h5"/></svg></span><b>Довідник</b></span><span class="mm-sub">Фото, ТТХ і характерні ознаки зразків</span></button>
     </div>
     <div class="sub" id="sub-search" hidden>
       <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Пошук цілей</h2></div>
@@ -210,34 +210,34 @@
 
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="config.js?v=202610162200"></script>
-<script src="js/sfx.js?v=202610162200"></script>
-<script src="js/fx.js?v=202610162200"></script>
-<script src="js/api.js?v=202610162200"></script>
-<script src="js/offline.js?v=202610162200"></script>
-<script src="js/tiles.js?v=202610162200"></script>
-<script src="js/viewer.js?v=202610162200"></script>
-<script src="js/logic.js?v=202610162200"></script>
-<script src="js/game.js?v=202610162200"></script>
-<script src="js/cards-data.js?v=202610162200"></script>
-<script src="js/cards-data2.js?v=202610162200"></script>
-<script src="js/cards.js?v=202610162200"></script>
-<script src="js/ref.js?v=202610162200"></script>
-<script src="js/help.js?v=202610162200"></script>
-<script src="js/cards-commons.js?v=202610162200"></script>
-<script src="js/cards-admin.js?v=202610162200"></script>
-<script src="js/analytics.js?v=202610162200"></script>
-<script src="js/compose.js?v=202610162200"></script>
-<script src="js/scale.js?v=202610162200"></script>
-<script src="js/crop.js?v=202610162200"></script>
-<script src="js/models.js?v=202610162200"></script>
-<script src="js/generator.js?v=202610162200"></script>
-<script src="js/autogen.js?v=202610162200"></script>
-<script src="js/compose-legacy.js?v=202610162200"></script>
-<script src="js/restage.js?v=202610162200"></script>
-<script src="js/variants.js?v=202610162200"></script>
-<script src="js/duel.js?v=202610162200"></script>
-<script src="js/admin.js?v=202610162200"></script>
-<script src="js/main.js?v=202610162200"></script>
+<script src="config.js?v=202610162300"></script>
+<script src="js/sfx.js?v=202610162300"></script>
+<script src="js/fx.js?v=202610162300"></script>
+<script src="js/api.js?v=202610162300"></script>
+<script src="js/offline.js?v=202610162300"></script>
+<script src="js/tiles.js?v=202610162300"></script>
+<script src="js/viewer.js?v=202610162300"></script>
+<script src="js/logic.js?v=202610162300"></script>
+<script src="js/game.js?v=202610162300"></script>
+<script src="js/cards-data.js?v=202610162300"></script>
+<script src="js/cards-data2.js?v=202610162300"></script>
+<script src="js/cards.js?v=202610162300"></script>
+<script src="js/ref.js?v=202610162300"></script>
+<script src="js/help.js?v=202610162300"></script>
+<script src="js/cards-commons.js?v=202610162300"></script>
+<script src="js/cards-admin.js?v=202610162300"></script>
+<script src="js/analytics.js?v=202610162300"></script>
+<script src="js/compose.js?v=202610162300"></script>
+<script src="js/scale.js?v=202610162300"></script>
+<script src="js/crop.js?v=202610162300"></script>
+<script src="js/models.js?v=202610162300"></script>
+<script src="js/generator.js?v=202610162300"></script>
+<script src="js/autogen.js?v=202610162300"></script>
+<script src="js/compose-legacy.js?v=202610162300"></script>
+<script src="js/restage.js?v=202610162300"></script>
+<script src="js/variants.js?v=202610162300"></script>
+<script src="js/duel.js?v=202610162300"></script>
+<script src="js/admin.js?v=202610162300"></script>
+<script src="js/main.js?v=202610162300"></script>
 </body>
 </html>
