@@ -8,7 +8,7 @@
   const MODES = {
     game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Є підказка 50/50.", hint: true, choice: true},
     exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
-    hard: {id: "hard", name: "Складний рівень", desc: "Рідкісні модифікації, РЕБ і РЕР, ППО, авіація, ракети, флот. 4 варіанти, підказка 50/50. На іспит не входить.", hint: true, choice: true, hard: true},
+    hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
 
   /* ---------- нормалізація відповіді: регістр, латиниця-«двійники», і/и/ы, лапки, дефіси, пробіли */
@@ -94,9 +94,12 @@
   const Cards = {
     MODES, check, norm,
     /* hard — «складний рівень»: прапорець у даних, який адмін може перекрити галочкою (Game.cardHard). */
+    /* РЛС, РЕБ/РЕР, зв'язок, командні пункти — завжди хардкор (якщо адмін не зняв галочку) */
+    HARD_TYPES: ["РЛС", "РЕБ", "РЕР", "АРК", "КШМ", "КП", "ПЗУ", "Машина"],
     deck() {
       const ov = (window.Game && Game.cardHard) || {};
-      return (window.CARDS || []).map(([id, name, al, p1, p2, x]) => ({id, name, aliases: al.split("|").map((x) => x.trim()).filter(Boolean), p1, p2, hard: ov[id] != null ? !!ov[id] : !!(x && x.hard)}));
+      return (window.CARDS || []).map(([id, name, al, p1, p2, x]) => ({id, name, aliases: al.split("|").map((x) => x.trim()).filter(Boolean), p1, p2,
+        concept: !!(x && x.concept), hard: ov[id] != null ? !!ov[id] : !!(x && x.hard) || this.HARD_TYPES.includes(name.split(" ")[0])}));
     },
     withPhoto(hard) {
       const ph = (window.Game && Game.cardPhotos) || new Map(), ref = window.CARD_REF || {};
@@ -158,7 +161,7 @@
         `<button type="button" role="radio" aria-checked="${m.id === mode}" class="mode${m.id === mode ? " on" : ""}" data-cm="${m.id}"><b>${m.name}</b><span>${esc(m.desc)}</span></button>`).join("");
       $("pick-cmode").querySelectorAll("[data-cm]").forEach((b) => (b.onclick = () => { LS.set("poshuk_cmode", b.dataset.cm); SFX.click(); this.renderMenu(); }));
       const hard = !!this.mode.hard, n = this.withPhoto(hard).length, all = this.deck().filter((c) => c.hard === hard).length;
-      $("c-info").innerHTML = n ? `Карток у грі: ${Math.min(ROUNDS, n)} (з ${n} з фото${hard ? ` · складних усього ${all}` : ""}).` : `Фото карток ще не додано (${all} карток без фото). Адміністратору: <a href="#admin">адмінка → «Картки»</a>.`;
+      $("c-info").innerHTML = n ? `Карток у грі: ${Math.min(ROUNDS, n)} (з ${n} з фото${hard ? ` · у хардкорі всього ${all}` : ""}).` : `Фото карток ще не додано (${all} карток без фото). Адміністратору: <a href="#admin">адмінка → «Картки»</a>.`;
       $("c-start").disabled = !n;
       $("c-start").textContent = `Почати: ${this.mode.name.toLowerCase()}`;
       $("c-start").onclick = () => this.start();
@@ -173,7 +176,7 @@
       if (this.fix) this.mode = MODES.game;
       else { const mm = LS.get("poshuk_cmode", "game"); this.mode = MODES[mm] || MODES.game; }
       const pool = Logic.shuffle(this.fix ? this.fix.slice() : this.withPhoto(!!this.mode.hard));
-      this.rounds = pool.slice(0, ROUNDS).map((c) => Object.assign({}, c, {pic: this.pickPic(c.id)})); this.idx = -1; this.results = [];
+      this.rounds = pool.slice(0, ROUNDS).map((c) => Object.assign({}, c, {pic: this.pickPic(c.id)})); this.idx = -1; this.results = []; this.planned = this.rounds.length;
       UI.show("s-cards");
       document.body.dataset.mode = "cards";
       $("c-form").onsubmit = (e) => { e.preventDefault(); this.submit(); };
@@ -201,7 +204,9 @@
       if (this.idx >= this.rounds.length) return this.summary();
       const c = this.cur = this.rounds[this.idx];
       this.hintUsed = false; this.over = false;
-      $("c-stage").textContent = `${this.mode.id === "exam" ? "Іспит · " : this.mode.hard ? "Складний · " : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
+      const errs = this.results.filter((r) => !r.ok).length;
+      $("c-stage").textContent = `${this.mode.id === "exam" ? "Іспит · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
+      if ($("c-concept")) $("c-concept").hidden = !c.concept;
       $("c-score").textContent = this.results.reduce((a, r) => a + r.score, 0);
       $("c-reveal").hidden = true; $("c-nextbox").hidden = true; $("c-form").hidden = false;
       $("c-hint").hidden = true; $("c-hint-btn").hidden = !this.mode.hint; $("c-hint-btn").disabled = false; $("c-hint-btn").textContent = this.mode.choice ? "💡 50/50" : "💡 Підказка";
@@ -271,7 +276,10 @@
       $("c-choices").innerHTML = "";
       const cr = c.pic && !c.pic.own ? "навчальний довідник ВОС276" : (Game.cardCredits && Game.cardCredits.get(c.id)) || "";
       const weak = (window.CARD_WEAK || {})[c.id];
-      $("c-reveal").innerHTML = `${verdict}<h3>${esc(Logic.dispName(c.name))}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Слабкі сторони:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
+      // хардкор: одна можлива помилка, друга — кінець гри
+      const over = this.mode.lives != null && this.results.filter((x) => !x.ok).length > this.mode.lives;
+      if (over) this.rounds = this.rounds.slice(0, this.idx + 1);
+      $("c-reveal").innerHTML = `${verdict}${over ? `<p class="c-v no">💀 Друга помилка — хардкор завершено</p>` : ""}${c.concept ? `<p class="c-concept-tag">КОНЦЕПТ</p>` : ""}<h3>${esc(Logic.dispName(c.name))}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Слабкі сторони:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
       const last = this.idx === this.rounds.length - 1;
       $("c-next").textContent = last ? "Підсумок →" : "Далі →";
@@ -286,10 +294,10 @@
       this.stop();
       UI.show("s-summary");
       Game.lastGame = "cards"; Game.lastFix = !!this.fix;
-      const res = this.results, max = 10 * res.length, total = res.reduce((a, r) => a + r.score, 0);
+      const res = this.results, max = 10 * (this.mode.lives != null && !this.fix ? (this.planned || res.length) : res.length), total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.round(100 * total / max) : 0, m = this.mode;
       const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);
-      $("sum-title").textContent = `${this.fix ? "Робота над помилками · картки" : `Картки цілей${m.id === "exam" ? " · Іспит" : m.hard ? " · Складний рівень" : ""}`} · ${Game.callsign}`;
+      $("sum-title").textContent = `${this.fix ? "Робота над помилками · картки" : `Картки цілей${m.id === "exam" ? " · Іспит" : m.hard ? " · Хардкор" : ""}`} · ${Game.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
       $("sum-total").style.color = m.pass ? (pct >= m.pass ? "var(--hit)" : "var(--miss)") : pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
       const rk = Logic.rank(pct);
@@ -298,7 +306,7 @@
         res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(Logic.dispName(r.name))}</td><td class="${r.ok ? "t-ok" : "t-no"}">${esc(r.answer || "—")}${r.hint ? " 💡" : ""}</td><td class="num">${r.score}</td></tr>`).join("");
       const now = new Date(), p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: Game.callsign, scores: res.map((r) => r.score), max, mode: m.id === "exam" ? "cards_exam" : m.hard ? "cards_hard" : "cards",
-        conclusion: this.fix ? `Картки (робота над помилками): ${concl}` : `Картки${m.id === "exam" ? " (іспит)" : m.hard ? " (складний)" : ""}: ${concl}`,
+        conclusion: this.fix ? `Картки (робота над помилками): ${concl}` : `Картки${m.id === "exam" ? " (іспит)" : m.hard ? " (хардкор)" : ""}: ${concl}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`, clicks: [],
         items: res.map((r) => ["cards", r.id, r.name, r.cat, r.ok ? 1 : 0])};
       const q = LS.get("poshuk_pending", []); q.push(item); LS.set("poshuk_pending", q);

@@ -46,6 +46,8 @@
       const keys = q.split(/\s+/).filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
       const need = keys.length ? keys : q.split(/\s+/).map(nz).filter((w) => w.length >= 3);
       take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|emblem|logo|\bmap\b/i.test(p.title); }));
+      // справжніх фото немає (концепт, рідкісний зразок) — беремо модель, макет з виставки чи візуалізацію
+      if (!out.length) take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/toy|lego|emblem|logo|\bmap\b|interior|operators/i.test(p.title); }).map((p) => Object.assign(p, {model: true})));
     }
     return out;
   }
@@ -80,7 +82,7 @@
       const deck = Cards.deck(), n = deck.filter((c) => this.photos.has(c.id)).length;
       $("ca").innerHTML = `<div class="m-card">
         <div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" id="ca-x">Закрити</button></div>
-        <p class="muted small">Галочка «складний» — картка грає лише в «Складному рівні» (не в ігровому й не на іспиті). Складних зараз: ${deck.filter((c) => c.hard).length}.</p>
+        <p class="muted small">Галочка «хардкор» — картка грає лише в режимі «Хардкор» (не в ігровому й не на іспиті). У хардкорі зараз: ${deck.filter((c) => c.hard).length}.</p>
         <p class="muted small">У грі беруть участь лише картки з фото: зараз ${n} з ${deck.length}. Виберіть одразу багато фото — кожне прив'яжеться до картки за назвою файлу (напр. «Т-72Б3.jpg», «Град.png», «2С19 Мста-С.jpg»).</p>
         <div class="row"><button type="button" class="primary" id="ca-wiki" title="Знайти фото з вільною ліцензією у Wikimedia Commons для всіх карток без фото">🔎 Підібрати фото з Вікісховища</button></div>
         <div class="row"><button type="button" id="ca-bulk">＋ Свої фото (кілька файлів)…</button><button type="button" id="ca-names">Список назв файлів</button></div>
@@ -89,7 +91,7 @@
         <div class="tabs" id="ca-f"><button type="button" data-f="all" class="${this.f !== "no" && this.f !== "yes" ? "on" : ""}">Усі</button><button type="button" data-f="no" class="${this.f === "no" ? "on" : ""}">Без фото ${deck.length - n}</button><button type="button" data-f="yes" class="${this.f === "yes" ? "on" : ""}">З фото ${n}</button></div>
         <ul class="ca-list">${deck.filter((c) => this.f === "no" ? !this.photos.has(c.id) : this.f === "yes" ? this.photos.has(c.id) : true).map((c) => `<li>
           ${this.photos.has(c.id) ? `<img class="th" loading="lazy" alt="" data-th="${c.id}">` : `<span class="dot"></span>`}<span class="nm">${esc(Logic.dispName(c.name))}<small>${esc(this.credits.get(c.id) || c.id)}</small></span>
-          <label class="ca-hard" title="Складний рівень"><input type="checkbox" data-hard="${c.id}" ${c.hard ? "checked" : ""}>складний</label>
+          <label class="ca-hard" title="Хардкор"><input type="checkbox" data-hard="${c.id}" ${c.hard ? "checked" : ""}>хардкор</label>
           <button type="button" data-wiki="${c.id}" title="Інше фото з Вікісховища">🔎</button>
           <button type="button" data-up="${c.id}">${this.photos.has(c.id) ? "Замінити" : "Фото…"}</button>${this.photos.has(c.id) ? `<button type="button" data-del="${c.id}" title="Видалити фото">✕</button>` : ""}</li>`).join("")}</ul>
       </div>`;
