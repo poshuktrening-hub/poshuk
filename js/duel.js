@@ -8,7 +8,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => UI.esc(s);
-  const KIT_REAL = 5, KIT_DECOY = 0, TURN_S = 15, PLACE_S = 30, POLL_MS = 1000;
+  const KIT_REAL = 5, KIT_DECOY = 0, TURN_S = 15, PLACE_S = 60, EXTRA_S = 10, POLL_MS = 1000;
   const C = {hit: "#3ddc97", miss: "#ff5a4f", decoy: "#b48cff", accent: "#ffb23e", mine: "#7fb2ff"};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = () => rej(new Error("Не вдалось відкрити модель")); i.src = src; });
@@ -36,7 +36,7 @@
     reset() {
       clearTimeout(this.pollT); clearInterval(this.tickT); clearTimeout(this.switchT);
       $("d-turnbar").hidden = true; $("d-units").hidden = true; $("d-hint").hidden = true;
-      Object.assign(this, {autoDone: false, lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
+      Object.assign(this, {extraShown: false, extraMode: false, sending: false, lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
       $("d-tabs").hidden = true; $("d-ready").hidden = true; $("d-msg").textContent = "";
       $("d-title").textContent = "⚔ Дуель"; ["d-turn", "d-time", "d-me", "d-opp"].forEach((id) => ($(id).textContent = "—"));
       $("d-timebar").style.transform = "scaleX(0)";
@@ -53,7 +53,7 @@
         <h2>⚔ Дуель на двох</h2>
         <img class="d-help-img" src="media/help-duel.svg?v=2" alt="Схема дуелі: розстановка техніки й удари по черзі">
         <ol class="d-rules">
-          <li>Кожен за <b>${PLACE_S} с</b> ховає на тій самій карті <b>${KIT_REAL} одиниць техніки</b> — суперник розстановки не бачить.</li>
+          <li>Кожен за <b>1 хв</b> ховає на тій самій карті <b>${KIT_REAL} одиниць техніки</b> — суперник розстановки не бачить.</li>
           <li>Б'єте по черзі по карті суперника: <b>${TURN_S} с на хід</b>, один удар.</li>
           <li>Влучили — ходите ще; мимо — хід суперникові.</li>
           <li>Виграє, хто першим знищить усю техніку суперника.</li>
@@ -128,6 +128,7 @@
         this.deadline = j.left != null && j.loaded && j.loaded[0] && j.loaded[1] ? performance.now() + j.left : null;
         return;
       }
+      if (j.state === "done" && (!prev || prev.state === "place" || prev.state === "lobby")) { this.panel(""); return this.finish(j); }   // хтось не встиг розставити — бою не було
       if (j.state === "battle" || j.state === "done") {
         if (!prev || prev.state === "place" || !this.oppImg) this.startBattle(j);
         this.battle(j, prev);
@@ -272,7 +273,8 @@
     },
 
     async ready() {
-      if (!this.units.every((u) => u.x !== null)) return;
+      if (!this.units.every((u) => u.x !== null) || this.sending) return;
+      this.sending = true;
       $("d-ready").disabled = true;
       this.loading("Відправляю вашу карту…");
       try {
@@ -293,7 +295,7 @@
         }
         this.apply(await API.call("duel_place_end", {code: this.code, secret: this.secret}, this.pw));
         this.renderKit();
-      } catch (e) { this.msg(e.message, "no"); $("d-ready").disabled = false; }
+      } catch (e) { this.msg(e.message, "no"); $("d-ready").disabled = false; this.sending = false; }
       this.loading(null);
     },
 
@@ -434,39 +436,41 @@
     /* Розстановка: жовтий напис з таймером; поки суперник відкриває карту — таймер ще не йде. */
     placeBanner(j) {
       const b = $("d-turnbar"), opp = j.names[2 - j.me] || "суперник", mineReady = j.ready[j.me - 1];
-      b.hidden = false; b.className = "d-turnbar place";
+      b.hidden = false; b.className = "d-turnbar " + (this.extraMode && !mineReady ? "their" : "place");
       b.innerHTML = mineReady ? `✓ <b>ГОТОВО</b> — чекаю, поки ${esc(opp)} сховає техніку <span id="d-tb-t"></span>`
+        : this.extraMode ? `⏱ <b>ДОДАТКОВИЙ ЧАС</b> — не встигнете, поразка <span id="d-tb-t"></span>`
         : !(j.loaded && j.loaded[0] && j.loaded[1]) ? `⏳ Чекаю, поки ${esc(opp)} відкриє карту…`
         : `🧩 <b>РОЗСТАНОВКА</b> — сховайте ${KIT_REAL} одиниць <span id="d-tb-t"></span>`;
     },
 
-    /* Час розстановки вийшов: недоставлене — у випадкові вільні місця, і одразу «Готово». */
-    async autoPlace() {
-      if (this.autoDone || !this.base) return;
-      this.autoDone = true;
-      const W = this.base.width, H = this.base.height;
-      for (const u of this.units) {
-        if (u.x !== null) continue;
-        for (let k = 0; k < 300; k++) {
-          const x = u.size + Math.random() * (W - 2 * u.size), y = u.size + Math.random() * (H - 2 * u.size);
-          if (!this.tooClose(u, x, y)) { u.x = Math.round(x); u.y = Math.round(y); break; }
-        }
-        if (u.x === null) { u.x = Math.round(W / 2); u.y = Math.round(H / 2); }
-      }
-      this.msg("Час вийшов — решту техніки поставлено випадково.", "no");
-      await this.redraw();
-      this.ready();
+    /* Основний час вийшов: усе розставлено — відправити самому; ні — 10 с додаткового часу, далі поразка. */
+    placeTimeout() {
+      if (this.st.ready[this.me - 1] || this.sending) return;
+      if (this.units.every((u) => u.x !== null)) { this.ready(); return; }
+      if (!this.extraShown) { this.extraShown = true; this.msg(`Час вийшов! Ще ${EXTRA_S} с — розставте решту, інакше поразка.`, "no"); SFX.timeout(); }
     },
 
     tick() {
       const j = this.st; if (!j) return;
       if (j.state === "place") {
-        if (this.deadline == null) { $("d-time").textContent = "0:" + PLACE_S; return; }
-        const left = Math.max(0, this.deadline - performance.now()), sec = Math.ceil(left / 1000), t = `0:${String(Math.min(59, sec)).padStart(2, "0")}`;
-        $("d-time").textContent = t; const tb = $("d-tb-t"); if (tb && !j.ready[j.me - 1]) tb.textContent = t;
-        $("d-timebar").style.transform = `scaleX(${Math.min(1, left / (PLACE_S * 1000))})`;
-        if (!j.ready[j.me - 1] && sec <= 5 && sec > 0 && sec !== this.lastSec) { this.lastSec = sec; SFX.tick(sec <= 3); }
-        if (left <= 0 && !j.ready[j.me - 1] && !this.autoDone) this.autoPlace();
+        const fmt = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+        if (this.deadline == null) { $("d-time").textContent = fmt(PLACE_S); return; }
+        const mine = j.ready[j.me - 1] || (j.sent && j.sent[j.me - 1]);
+        let left = this.deadline - performance.now(), extra = false;
+        if (left <= 0) {
+          const all = this.units.length && this.units.every((u) => u.x !== null);
+          if (!all && !mine) { extra = true; left += EXTRA_S * 1000; }   // розставив усе — просто відправляємо, без «додаткового часу»
+          if (!mine) this.placeTimeout();
+        }
+        left = Math.max(0, left);
+        const sec = Math.ceil(left / 1000), t = fmt(sec);
+        $("d-time").textContent = t;
+        const tb = $("d-tb-t"); if (tb && !mine) tb.textContent = t;
+        $("d-timebar").style.transform = `scaleX(${Math.min(1, left / ((extra ? EXTRA_S : PLACE_S) * 1000))})`;
+        if (extra !== this.extraMode) { this.extraMode = extra; this.placeBanner(j); }
+        if (!mine && (extra || sec <= 5) && sec > 0 && sec !== this.lastSec) { this.lastSec = sec; SFX.tick(extra || sec <= 3); }
+        // у додатковий час: щойно все розставлено — відправити одразу
+        if (extra && !mine && !this.sending && this.units.length && this.units.every((u) => u.x !== null)) this.ready();
         return;
       }
       if (j.state !== "battle") return;
@@ -508,11 +512,11 @@
     finish(j) {
       $("d-turnbar").hidden = true;
       clearInterval(this.tickT); clearTimeout(this.pollT);
-      const win = j.winner === j.me, opp = j.names[2 - j.me] || "суперник";
-      const why = j.reason === "noplace" ? (win ? `${opp} не встиг сховати техніку.` : "Ви не встигли відправити розстановку.") : j.reason === "left" ? (win ? `${opp} вийшов з бою.` : "Ви вийшли з бою.") : win ? "Уся техніка суперника знищена." : "Уся ваша техніка знищена.";
+      const win = j.winner === j.me, draw = !j.winner, opp = j.names[2 - j.me] || "суперник";
+      const why = j.reason === "noplace" ? (draw ? "Обидва не встигли сховати техніку." : win ? `${opp} не встиг сховати техніку за відведений час.` : "Ви не встигли сховати техніку за відведений час.") : j.reason === "left" ? (win ? `${opp} вийшов з бою.` : "Ви вийшли з бою.") : win ? "Уся техніка суперника знищена." : "Уся ваша техніка знищена.";
       if (win) SFX.win(); else SFX.timeout();
       const mine = j.shots.filter((s) => s.by === j.me && s.res !== "timeout"), hits = mine.filter((s) => s.res === "hit").length;
-      this.panel(`<div class="d-card result ${win ? "win" : "lose"}"><h2>${win ? "🏆 Перемога" : "Поразка"}</h2><p>${esc(why)}</p>
+      this.panel(`<div class="d-card result ${win ? "win" : "lose"}"><h2>${win ? "🏆 Перемога" : draw ? "Нічия" : "Поразка"}</h2><p>${esc(why)}</p>
         <p class="muted">Ваші удари: ${mine.length}, влучань: ${hits}${mine.length ? ` (${Math.round(hits / mine.length * 100)}%)` : ""}. На карті суперника показано, де стояла його техніка.</p>
         <div class="row"><button type="button" class="primary" id="d-again">Нова дуель</button><button type="button" id="d-menu">В меню</button></div></div>`, "side res");
       $("d-ready").hidden = true;
