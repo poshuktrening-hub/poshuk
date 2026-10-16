@@ -71,7 +71,9 @@
         this.showStart();
       } catch (e) {
         this.password = null;
-        $("login-err").textContent = e.message;
+        console.error(e);
+        $("login-err").textContent = /[а-яіїєґ]/i.test(e.message || "") ? e.message
+          : "Не вдалося запустити тренажер. Оновіть сторінку (потягніть екран донизу) і спробуйте ще раз.";
       } finally { $("login-btn").disabled = false; }
     },
 
@@ -97,7 +99,8 @@
       if (!this.sel.seasons.length) this.sel.seasons = Logic.SEASONS.slice();   // збережені «Весна/Осінь» більше не існують
       this.renderMenu();
       try { if (window.Cards) Cards.renderMenu(); } catch (e) { console.error(e); }
-      $("callsign").value = $("callsign").value.trim() || LS.get("poshuk_callsign", "");   // не губити щойно введений позивний
+      const offOn = !!(window.Offline && Offline.on);
+      $("callsign").value = offOn ? Game.OFF_NAME : ($("callsign").value.trim() || LS.get("poshuk_callsign", ""));   // не губити щойно введений позивний
       $("start-err").textContent = "";
       this.view(this.lastView || "menu");
       document.querySelectorAll("#s-start [data-go]").forEach((b) => (b.onclick = () => { SFX.click(); this.view(b.dataset.go); }));
@@ -108,13 +111,18 @@
       $("callsign").onchange = () => this.loadMistakes();
       if (!$("callsign").value) $("callsign").focus();
     },
+    OFF_NAME: "Офлайн",   // в офлайн-версії результати лише на пристрої — прізвище не потрібне
     /* Офлайн-версія: позначка в меню; без мережі не показуємо дуель, топ і адмінку. */
     offUi() {
       const on = !!(window.Offline && Offline.on), inf = on ? Offline.info() : null;
-      $("off-badge").hidden = !on;
-      if (on) $("off-badge").textContent = `📴 Офлайн-версія · дані від ${new Date(inf.at).toLocaleDateString("uk-UA")}`;
-      document.querySelectorAll(".mm-duel, .admin-link, .top3").forEach((el) => { if (on) el.hidden = true; else if (!el.classList.contains("top3")) el.hidden = false; });
-      $("off-link").textContent = on ? "📴 Офлайн-версія ✓" : "📥 Офлайн-версія";
+      const badge = $("off-badge");
+      if (badge) {
+        badge.hidden = !on;
+        if (on) badge.innerHTML = `<b>ОФЛАЙН</b><span>дані від ${new Date(inf.at).toLocaleDateString("uk-UA")} · без інтернету</span>`;
+      }
+      document.querySelectorAll(".mm-duel, .admin-link, .top3, .cs-field").forEach((el) => { if (on) el.hidden = true; else if (!el.classList.contains("top3")) el.hidden = false; });
+      const link = $("off-link");
+      if (link) link.textContent = on ? "📴 Офлайн-версія ✓" : "📥 Офлайн-версія";
     },
     renderOff() {
       const box = $("off-body"), on = !!(window.Offline && Offline.on), inf = on ? Offline.info() : null;
@@ -218,16 +226,14 @@
       if (v === "ref") { if (window.Ref) Ref.open(); return; }
       if (v === "duel") { if (window.Duel) Duel.open(); return; }
       this.lastView = v;
-      $("main-menu").hidden = v !== "menu";
-      $("sub-search").hidden = v !== "search";
-      $("sub-cards").hidden = v !== "cards";
-      $("sub-fix").hidden = v !== "fix";
-      $("sub-off").hidden = v !== "off";
+      [["main-menu", "menu"], ["sub-search", "search"], ["sub-cards", "cards"], ["sub-fix", "fix"], ["sub-off", "off"]]
+        .forEach(([id, k]) => { const el = $(id); if (el) el.hidden = v !== k; });
       if (v === "fix") this.renderFix();
       if (v === "off") this.renderOff();
       $("start-err").textContent = "";
     },
     callsignOk() {
+      if (window.Offline && Offline.on) { this.callsign = this.OFF_NAME; return this.callsign; }
       const cs = $("callsign").value.trim();
       if (!cs) { $("start-err").textContent = "Введіть прізвище"; $("callsign").focus(); return null; }
       LS.set("poshuk_callsign", cs); this.callsign = cs; return cs;
@@ -708,7 +714,7 @@
       $("sum-sync").textContent = "Записую результат…";
       this.flushPending().then((left) => {
         $("sum-sync").textContent = left ? "Немає зв'язку: результат збережено в браузері й надішлеться при наступному вході."
-          : (/(^|[^a-zа-яіїєґ])(тест|test)/i.test(String(this.callsign || "")) ? "Тестовий вхід — результат не записується в аналітику." : "Результат записано.");
+          : (/(^|[^a-zа-яіїєґ])(тест|test)/i.test(String(this.callsign || "")) ? "Тестовий вхід — результат не записується в аналітику." : (window.Offline && Offline.on ? "Збережено на цьому пристрої (офлайн-версія)." : "Результат записано."));
         $("sum-sync").style.color = left ? "var(--miss)" : "var(--hit)";
       });
     },
