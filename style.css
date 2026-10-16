@@ -762,3 +762,35 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .duel .d-float.lost { color: #fff; background: #d93a3a; }
 .duel .d-float.ok { color: #04140c; background: var(--hit, #3ddc97); }
 @keyframes d-float { 0% { opacity: 0; transform: translate(-50%, -80%) scale(.8); } 12% { opacity: 1; transform: translate(-50%, -120%) scale(1.05); } 70% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -200%) scale(1); } }
+/* дуель: панель розстановки й перелік техніки — ліворуч унизу */
+.duel .d-panel.side { inset: auto auto 10px 10px; width: min(300px, calc(100% - 20px)); }
+.duel .d-kit button { padding: 7px 10px; }
+.duel .d-units { position: absolute; left: 10px; bottom: 10px; z-index: 6; display: grid; gap: 3px; padding: 8px 12px; border-radius: 12px; background: rgba(12,16,20,.82); border: 1px solid var(--glass-line, rgba(255,255,255,.12)); font-size: .85rem; max-width: min(260px, calc(100% - 20px)); pointer-events: none; }
+.duel .d-units b { font-size: .8rem; color: var(--accent, #ffb23e); margin-bottom: 2px; }
+.duel .d-units span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.duel .d-units span.dead { text-decoration: line-through; color: #ff7a70; opacity: .8; }
+@media (max-width: 600px) { .duel .d-panel.side { inset: auto 8px 8px 8px; width: auto; } .duel .d-units { font-size: .75rem; padding: 6px 10px; } }
+@media (max-width: 600px) {
+  .duel .d-panel.side { inset: auto auto 8px 8px; width: 172px; }
+  .duel .d-kit { display: grid; gap: 4px; padding: 6px; }
+  .duel .d-kit button { flex: none; width: 100%; padding: 5px 8px; font-size: .76rem; }
+  .duel .d-rot { gap: 4px; } .duel .d-rot button { font-size: .72rem; padding: 5px 4px; }
+}
+.duel .d-rot { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.duel .d-rot button { width: 100%; }
+.duel .d-panel.side.res { width: min(380px, calc(100% - 20px)); }
+@media (max-width: 600px) { .duel .d-panel.side.res { inset: auto 8px 8px 8px; width: auto; } .duel .d-panel.side.res .d-card { padding: 14px; gap: 8px; } }
+/* дуель: мініатюри техніки */
+.duel .d-kit button { display: flex; align-items: center; gap: 6px; }
+.duel .d-kit button img, .duel .d-units img { width: 26px; height: 26px; object-fit: contain; flex: 0 0 auto; transform: rotate(90deg); }
+.duel .d-kit button span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duel .d-kit button em { font-style: normal; color: var(--hit, #3ddc97); }
+.duel .d-nothumb { width: 26px; height: 26px; flex: 0 0 auto; border-radius: 6px; background: rgba(255,255,255,.08); display: inline-block; }
+.duel .d-units { grid-template-columns: 1fr 1fr; gap: 0 10px; max-width: min(340px, calc(100% - 20px)); }
+.duel .d-ucol { display: grid; gap: 2px; min-width: 0; }
+.duel .d-ucol.cur b { text-decoration: underline; text-underline-offset: 3px; }
+.duel .d-units span { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.duel .d-units span s { text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duel .d-units span.dead s { text-decoration: line-through; color: #ff7a70; }
+.duel .d-units span.dead img { opacity: .35; filter: grayscale(1); }
+@media (max-width: 600px) { .duel .d-units { max-width: calc(100% - 16px); left: 8px; bottom: 8px; } .duel .d-units img, .duel .d-nothumb { width: 20px; height: 20px; } }
