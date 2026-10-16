@@ -27,7 +27,7 @@
       this.closeDetail();
       if (!this.entries) {
         $("r-list").innerHTML = `<p class="muted r-empty">Завантажую довідник…</p>`;
-        try { this.entries = sortRef((await API.call("ref_list", {}, Game.password)).entries || []); }
+        try { this.entries = this.withCards(sortRef((await API.call("ref_list", {}, Game.password)).entries || [])); }
         catch (e) { $("r-list").innerHTML = `<p class="err r-empty">${esc(e.message)}</p>`; return; }
       }
       this.renderCats(); this.renderList();
@@ -35,6 +35,26 @@
       if (window.Help) Help.maybe("ref");
     },
     close() { this.closeDetail(); Game.showStart(); },
+
+    /* Довідник = записи навчальної таблиці + картки, яких у таблиці немає (ТТХ, ознаки, фото картки).
+       До кожного запису, що відповідає картці, додаються «Слабкі сторони». */
+    withCards(list) {
+      if (!window.Cards) return list;
+      const deck = Cards.deck(), idx = new Map();
+      for (const c of deck) for (const a of [c.name, ...c.aliases]) { const v = norm(a); if (v.length >= 4 && (/\d/.test(v) || v.length >= 6) && !idx.has(v)) idx.set(v, c.id); }
+      const used = new Set();
+      for (const e of list) {
+        const parts = String(e.name || "").split(/[\/\\;,()“”"«»]|\s[-–—]\s|\sта\s|\sабо\s/).map(norm).filter((x) => x.length >= 4);
+        for (const p of [norm(e.name), ...parts]) if (idx.has(p)) { e.card = idx.get(p); used.add(e.card); break; }
+      }
+      const extra = deck.filter((c) => !used.has(c.id)).map((c, i) => ({id: "card:" + c.id, ord: 100000 + i, cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name),
+        name: c.name, ttx: c.p1, desc: c.p2, imgs: [], card: c.id, fromCard: true, concept: c.concept}));
+      return list.concat(sortRef(extra));
+    },
+    weakHtml(e) {
+      const w = e.card && (window.CARD_WEAK || {})[e.card];
+      return w && w.length ? `<section class="r-sec r-weak"><h3>Слабкі сторони</h3><ul>${w.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p class="muted small">За відкритими джерелами.</p></section>` : "";
+    },
 
     cats() { const m = new Map(); (this.entries || []).forEach((e) => m.set(e.cat, (m.get(e.cat) || 0) + 1)); return [...m]; },
     renderCats() {
@@ -63,7 +83,7 @@
       for (const e of list) {
         if (q) { const h = e._txt ? "Згадується в описі" : "Назва"; if (h !== last) { html += `<h3 class="r-h">${h}</h3>`; last = h; } }
         else if (!this.cat && e.cat !== last) { html += `<h3 class="r-h">${esc(e.cat)}</h3>`; last = e.cat; }
-        html += `<button type="button" class="r-item" data-id="${esc(e.id)}"><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : ""}</span>
+        html += `<button type="button" class="r-item" data-id="${esc(e.id)}"><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : e.card ? `<img loading="lazy" alt="" data-card="${esc(e.card)}">` : ""}${e.concept ? `<em class="r-cpt">КОНЦЕПТ</em>` : ""}</span>
           <span class="r-nm"><b>${esc(Logic.dispName(e.name))}</b><small>${esc(plain(e.desc || e.ttx).slice(0, 90))}</small></span></button>`;
       }
       $("r-list").innerHTML = html;
@@ -74,6 +94,11 @@
       for (const im of root.querySelectorAll("img[data-img]")) {
         if (im.getAttribute("src")) continue;
         API.refUrl(im.dataset.img, im.dataset.v, pw || Game.password).then((u) => { im.src = u; }).catch(() => {});
+      }
+      for (const im of root.querySelectorAll("img[data-card]")) {
+        if (im.getAttribute("src") || !window.Cards) continue;
+        im.setAttribute("src", "data:,");
+        (Cards.loadRefPics ? Cards.loadRefPics() : Promise.resolve()).then(() => Cards.photoUrl(im.dataset.card)).then((u) => { if (u) im.src = u; else im.removeAttribute("src"); }).catch(() => im.removeAttribute("src"));
       }
     },
 
@@ -86,11 +111,13 @@
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
           <button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
-          <p class="r-cat">${esc(e.cat)}</p><h2>${esc(Logic.dispName(e.name))}</h2>
+          ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${esc(e.cat)}</p><h2>${esc(Logic.dispName(e.name))}</h2>
+          ${!e.imgs.length && e.card ? `<div class="r-gal"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-card="${esc(e.card)}"></button></div>` : ""}
           ${e.imgs.length ? `<div class="r-gal">${e.imgs.map((x) => `<button type="button" class="r-ph" data-zoom="${esc(x)}"><img alt="" data-img="${esc(x)}" data-v="${esc(e.v)}"></button>`).join("")}</div>
           ${e.imgs.length > 1 ? `<p class="muted small r-hint">Гортайте фото вбік · торкніться, щоб збільшити</p>` : `<p class="muted small r-hint">Торкніться фото, щоб збільшити</p>`}` : ""}
           ${e.ttx ? `<section class="r-sec"><h3>ТТХ</h3><div class="r-txt">${safe(e.ttx)}</div></section>` : ""}
-          ${e.desc ? `<section class="r-sec"><h3>Ознаки та опис</h3><div class="r-txt">${safe(e.desc)}</div></section>` : ""}
+          ${e.desc ? `<section class="r-sec"><h3>Ознаки та опис</h3><div class="r-txt">${e.fromCard ? esc(e.desc) : safe(e.desc)}</div></section>` : ""}
+          ${this.weakHtml(e)}
         </div>`;
       box.hidden = false; box.scrollTop = 0;
       $("rd-back").onclick = () => this.closeDetail();

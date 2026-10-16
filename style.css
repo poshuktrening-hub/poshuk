@@ -955,3 +955,12 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .main-menu .mm.mm-small { justify-content: center; }
 .main-menu .mm.mm-small .mm-h b { font: 700 .8rem/1.15 var(--display) !important; letter-spacing: -.02em; white-space: normal; overflow: visible; }
 .main-menu .mm.mm-small .mm-h { gap: 8px; }
+/* КОНЦЕПТ — позначка великими літерами */
+.c-pic { position: relative; }
+.c-concept { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); padding: 4px 16px; border-radius: 8px; background: rgba(180,140,255,.92); color: #120c1f; font: 800 1.5rem/1.1 var(--display); letter-spacing: .2em; z-index: 3; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
+.c-concept-tag, .r-concept { display: inline-block; margin: 2px 0 6px; padding: 3px 12px; border-radius: 6px; background: rgba(180,140,255,.18); border: 1px solid rgba(180,140,255,.6); color: #cdb6ff; font: 800 1.15rem/1.2 var(--display); letter-spacing: .2em; }
+.r-th { position: relative; }
+.r-cpt { position: absolute; left: 2px; bottom: 2px; font: 800 .5rem var(--display); letter-spacing: .08em; background: rgba(180,140,255,.92); color: #120c1f; padding: 1px 3px; border-radius: 3px; font-style: normal; }
+.r-weak ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.r-weak li::marker { color: #ffd666; }
+.r-weak h3 { color: #ffd666 !important; }

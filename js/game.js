@@ -295,7 +295,7 @@
     view(v, fromPop) {
       if (v === "ref") { if (window.Ref) Ref.open(); return; }
       if (v === "duel") { if (window.Duel) Duel.open(); return; }
-      if (v === "weak") { if (window.Weak) Weak.open(); return; }
+      if (v === "weak") { if (window.Ref) Ref.open(); return; }
       // системна кнопка «Назад» (Android, встановлений застосунок) повертає з підменю в меню
       const inSub = !!(history.state && history.state.sub);
       if (!fromPop) { if (v !== "menu" && !inSub) history.pushState({sub: 1}, ""); else if (v === "menu" && inSub) history.back(); }
