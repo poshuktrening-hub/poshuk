@@ -823,3 +823,13 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   pointer-events: none; z-index: 5; animation: d-aim .9s ease-out forwards; }
 .d-aim::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: #ffb23e; }
 @keyframes d-aim { 0% { transform: scale(.4); opacity: 1; } 60% { transform: scale(1); opacity: 1; } 100% { transform: scale(1.08); opacity: 0; } }
+
+/* Офлайн-версія */
+.off-badge { margin: -4px 0 10px; text-align: center; font-size: .82rem; color: #3ddc97; }
+.support { margin: 10px 0 4px; text-align: center; font-size: .82rem; color: var(--muted); }
+.support a { color: var(--muted); }
+#off-body p { margin: 0 0 10px; line-height: 1.45; }
+.off-prog { margin: 6px 0 12px; }
+.off-prog .u-bar { height: 10px; }
+.off-inst { margin-top: 16px; padding: 12px 14px; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; display: grid; gap: 8px; }
+.off-inst p { margin: 0 !important; }
