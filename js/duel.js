@@ -59,7 +59,7 @@
     // ---------------------------------------------------------------- кімната
     lobby() {
       const p = this.panel(`<div class="d-card">
-        <h2>⚔ Дуель на двох</h2>
+        <h2>⚔ Дуель</h2>
         <img class="d-help-img" src="media/help-duel.svg?v=2" alt="Схема дуелі: розстановка техніки й удари по черзі">
         <ol class="d-rules">
           <li>Кожен за <b>1 хв</b> ховає на тій самій карті <b>${KIT_REAL} одиниць техніки</b> — суперник розстановки не бачить.</li>
@@ -519,6 +519,16 @@
       } catch (e) { this.msg(e.message, "no"); }
     },
 
+    /* Куди саме пішов удар: на мить показати коло зони ураження. */
+    aimFlash(x, y) {
+      const host = this.viewer.host, v = this.viewer, el = document.createElement("div");
+      const r = Math.max(26, Math.min(70, 30 * Math.sqrt(v.s / (v.minS || v.s)))), rect = host.getBoundingClientRect();
+      el.className = "d-aim";
+      el.style.cssText = `left:${v.tx + x * v.s - r}px;top:${v.ty + y * v.s - r}px;width:${2 * r}px;height:${2 * r}px`;
+      host.appendChild(el);
+      setTimeout(() => el.remove(), 900);
+    },
+
     async click(cx, cy) {
       const j = this.st; if (!j) return;
       const [x, y] = this.viewer.toImage(cx, cy);
@@ -527,7 +537,9 @@
       if (j.state !== "battle" || j.turn !== j.me || this.mapView !== "opp" || this.shooting) return;
       this.shooting = true;
       try {
-        const r = await API.call("duel_shot", {code: this.code, secret: this.secret, x, y}, this.pw);
+        this.aimFlash(x, y);
+        // допуск — ~22 екранних пікселі (кінчик пальця) у пікселях знімка при поточному зумі
+        const r = await API.call("duel_shot", {code: this.code, secret: this.secret, x, y, tol: Math.round(22 / (this.viewer.s || 1))}, this.pw);
         this.apply(r);
       } catch (e) { this.msg(e.message, "no"); }
       this.shooting = false;
