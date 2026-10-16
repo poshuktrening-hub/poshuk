@@ -9,4 +9,6 @@ database_id = "b7d25b58-7457-42d6-881d-7dde8471d99e"
 
 [vars]
 SHEETS_URL = "https://script.google.com/macros/s/AKfycbwQwREKkQLH18-z4cnJKse146hTkdDmNlfE83ru9OlXQjkE_bU7xctcndsNhps3Dmra3w/exec"
+# ID акаунта Cloudflare — не секрет; потрібен для шкали лімітів (CF_API_TOKEN — Secret у панелі)
+CF_ACCOUNT_ID = "b88146a860b2b9db193d632c86a45461"
 # SHEETS_SECRET задається в панелі Cloudflare як Secret (не тут — репозиторій публічний)
