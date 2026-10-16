@@ -123,7 +123,7 @@
       const badge = $("off-badge");
       if (badge) {
         badge.hidden = !on;
-        if (on) badge.innerHTML = `<b>ОФЛАЙН</b><span>дані від ${new Date(inf.at).toLocaleDateString("uk-UA")} · натисніть, щоб перейти в онлайн</span>`;
+        if (on) badge.innerHTML = `<b>ОФЛАЙН</b><span>дані від ${new Date(inf.at).toLocaleDateString("uk-UA")} · торкніться, щоб в онлайн</span>`;
         badge.onclick = () => this.switchMode(false);
       }
       document.querySelectorAll(".mm-duel, .admin-link, .top3, .cs-field").forEach((el) => { if (on) el.hidden = true; else if (!el.classList.contains("top3")) el.hidden = false; });
@@ -202,16 +202,16 @@
         list = list || [];
         el.innerHTML = `<li class="top-h">Топ дня</li>` + (list.length ? list.map((x, i) => { const rk = Logic.rank(x.pct);
           return `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b><small title="${esc(rk.name)}">${Logic.rankBadge(rk.level)}${esc(rk.name)}</small></span><em>${x.pct}%</em></li>`; }).join("")
-          : `<li class="top-none">Сьогодні ще ніхто не проходив — будьте першим</li>`);
+          : `<li class="top-none">Ще ніхто — будьте першим</li>`);
         el.hidden = false;
       };
       const drawDuel = (list) => {
         const el = $("top-duel"); if (!el) return;
         list = list || [];
         const word = (n) => (n % 10 === 1 && n % 100 !== 11 ? "перемога" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "перемоги" : "перемог");
-        el.innerHTML = `<li class="top-h">Топ дня · перемоги</li>` + (list.length ? list.map((x, i) =>
-          `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b></span><em>${x.wins} ${word(x.wins)}</em></li>`).join("")
-          : `<li class="top-none">Сьогодні ще ніхто не перемагав — будьте першим</li>`);
+        el.innerHTML = `<li class="top-h">Топ дня · перемог</li>` + (list.length ? list.map((x, i) =>
+          `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b></span><em title="${x.wins} ${word(x.wins)}">${x.wins}</em></li>`).join("")
+          : `<li class="top-none">Ще ніхто — будьте першим</li>`);
         el.hidden = false;
       };
       if (this.top && this.topDay === today()) { draw("top-search", this.top.search); draw("top-cards", this.top.cards); drawDuel(this.top.duel); }
