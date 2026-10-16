@@ -93,6 +93,7 @@
       this.objects = j.objects || [];
       this.cardPhotos = new Map(j.cardPhotos || []);
       this.cardCredits = new Map(j.cardCredits || []);
+      this.cardHard = j.cardHard || {};
       this.typePool = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))];
     },
 
@@ -197,6 +198,38 @@
       if ($("off-install")) $("off-install").onclick = async () => { const e = this.installEvt; this.installEvt = null; e.prompt(); try { await e.userChoice; } catch (er) { /* ок */ } this.renderOff(); };
     },
 
+    /* «Мої результати»: власні підсумки курсанта — останні ігри, точність за видами техніки, що варто повторити. */
+    async renderMy() {
+      const box = $("my-body"), cs = (window.Offline && Offline.on) ? this.OFF_NAME : $("callsign").value.trim();
+      if (!cs) { box.innerHTML = `<p class="muted">Впишіть прізвище в меню — і тут з'являться ваші результати.</p>`; return; }
+      box.innerHTML = `<p class="muted">Завантажую…</p>`;
+      let j;
+      try { j = await API.call("my_results", {callsign: cs}, this.password); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+      const res = j.results || [], ans = (j.answers || []).filter((a) => /^(search|cards)$/.test(a.kind));
+      if (!res.length && !ans.length) { box.innerHTML = `<p class="muted">Поки немає жодної гри під прізвищем «${esc(cs)}». Пройдіть пошук цілей або картки — результати з'являться тут.</p>`; return; }
+      const MODE = {game: "Ігровий", exam: "Іспит", hard: "Хардкор", cards: "Картки", cards_exam: "Картки · іспит", cards_hard: "Картки · складний"};
+      const kindOf = (r) => (/^cards/.test(r.mode || "") || /^Картки/.test(r.conclusion || "") ? "Картки" : "Пошук");
+      const best = (k) => res.filter((r) => kindOf(r) === k).reduce((m, r) => Math.max(m, r.pct), 0);
+      const acc = (k) => { const a = ans.filter((x) => x.kind === k); return a.length ? Math.round(100 * a.filter((x) => x.ok).length / a.length) : null; };
+      const tone = (p) => (p >= 75 ? "t-ok" : p >= 40 ? "" : "t-no");
+      const cats = new Map();
+      ans.filter((a) => a.kind === "cards").forEach((a) => { const k = a.cat || "Інше", c = cats.get(k) || {n: 0, ok: 0}; c.n++; c.ok += a.ok ? 1 : 0; cats.set(k, c); });
+      const catRows = [...cats].map(([k, c]) => [k, c, Math.round(100 * c.ok / c.n)]).sort((a, b) => a[2] - b[2]);
+      const fmt = (ts) => { const m = String(ts || "").match(/^\d{4}-(\d\d)-(\d\d)[ T](\d\d:\d\d)/); return m ? `${m[2]}.${m[1]} ${m[3]}` : String(ts || ""); };
+      box.innerHTML = `
+        <div class="my-stats">
+          <div><b>${res.length}</b><span>ігор</span></div>
+          <div><b class="${tone(best("Пошук"))}">${best("Пошук")}%</b><span>найкращий пошук</span></div>
+          <div><b class="${tone(best("Картки"))}">${best("Картки")}%</b><span>найкращі картки</span></div>
+          <div><b>${acc("search") == null ? "—" : acc("search") + "%"}</b><span>точність по цілях</span></div>
+          <div><b>${acc("cards") == null ? "—" : acc("cards") + "%"}</b><span>точність по картках</span></div>
+        </div>
+        ${catRows.length ? `<h3 class="my-h">Картки за видами техніки</h3><div class="my-cats">${catRows.map(([k, c, p]) => `<div class="my-cat"><span>${esc(k)}</span><div class="u-bar"><i style="width:${p}%;background:${p >= 75 ? "var(--hit)" : p >= 40 ? "var(--accent)" : "var(--miss)"}"></i></div><b class="${tone(p)}">${p}%</b><small>${c.ok}/${c.n}</small></div>`).join("")}</div>` : ""}
+        <h3 class="my-h">Останні ігри</h3>
+        <table class="my-tbl">${res.slice(0, 30).map((r) => `<tr><td class="nowrap muted">${esc(fmt(r.ts))}</td><td>${esc(MODE[r.mode] || kindOf(r))}<small> · ${esc(String(r.conclusion || "").replace(/^(Картки[^:]*|Іспит|Хардкор|Робота над помилками): ?/, ""))}</small></td><td class="num"><b class="${tone(r.pct)}">${r.pct}%</b></td></tr>`).join("")}</table>
+        ${window.Offline && Offline.on ? `<p class="muted small">Офлайн-версія: показано результати лише з цього пристрою.</p>` : ""}`;
+    },
+
     /* Топ дня в головному меню: найкращий результат кожного курсанта за поточну добу + звання за цим результатом. */
     async loadTop() {
       if (window.Offline && Offline.on) return;
@@ -262,14 +295,16 @@
     view(v, fromPop) {
       if (v === "ref") { if (window.Ref) Ref.open(); return; }
       if (v === "duel") { if (window.Duel) Duel.open(); return; }
+      if (v === "weak") { if (window.Weak) Weak.open(); return; }
       // системна кнопка «Назад» (Android, встановлений застосунок) повертає з підменю в меню
       const inSub = !!(history.state && history.state.sub);
       if (!fromPop) { if (v !== "menu" && !inSub) history.pushState({sub: 1}, ""); else if (v === "menu" && inSub) history.back(); }
       this.lastView = v;
-      [["main-menu", "menu"], ["sub-search", "search"], ["sub-cards", "cards"], ["sub-fix", "fix"], ["sub-off", "off"]]
+      [["main-menu", "menu"], ["sub-search", "search"], ["sub-cards", "cards"], ["sub-fix", "fix"], ["sub-off", "off"], ["sub-my", "my"]]
         .forEach(([id, k]) => { const el = $(id); if (el) el.hidden = v !== k; });
       if (v === "fix") this.renderFix();
       if (v === "off") this.renderOff();
+      if (v === "my") this.renderMy();
       $("start-err").textContent = "";
     },
     callsignOk() {
