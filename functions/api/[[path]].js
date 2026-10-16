@@ -333,8 +333,9 @@ async function action(env, ctx, req, origin) {
       const role = await auth(env, req, "player");
       const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects").all();
       const {results: cp} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
+      let cardHard = {}; try { cardHard = JSON.parse((await metaGet(env, "cards_hard")) || "{}"); } catch (e) { cardHard = {}; }
       return {ok: true, brandIcon: (await metaGet(env, "brand_icon")) || "", settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]),
-        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), token: await makeToken(env, role)};
+        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), cardHard, token: await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
     case "ref_list": {
@@ -363,6 +364,14 @@ async function action(env, ctx, req, origin) {
       }
       return {ok: true, items, rest};
     }
+    case "my_results": {   // «Мої результати»: власні підсумки й відповіді курсанта
+      await auth(env, req, "player");
+      const cs = String(req.callsign || "").trim().slice(0, 40);
+      if (!cs) return {ok: true, results: [], answers: []};
+      const {results} = await env.DB.prepare("SELECT ts, pct, total, max, mode, conclusion FROM results WHERE callsign=? ORDER BY ts DESC LIMIT 60").bind(cs).all();
+      const {results: answers} = await env.DB.prepare("SELECT kind, item, name, cat, ok, ts FROM answers WHERE callsign=? AND COALESCE(archived,0)=0 ORDER BY ts DESC LIMIT 2000").bind(cs).all();
+      return {ok: true, results, answers};
+    }
     case "mistakes": {   // робота над помилками: етапи й картки, де ОСТАННЯ спроба курсанта була з помилкою
       await auth(env, req, "player");
       const cs = String(req.callsign || "").trim().slice(0, 40);
@@ -381,6 +390,14 @@ async function action(env, ctx, req, origin) {
   await auth(env, req, "admin");
   switch (a) {
     case "admin_stages": return {ok: true, stages: await stages(env, true), token: await makeToken(env, "admin")};
+    case "set_card_hard": {   // галочка «складний рівень» для картки (перекриває прапорець у даних)
+      let m = {}; try { m = JSON.parse((await metaGet(env, "cards_hard")) || "{}"); } catch (e) { m = {}; }
+      const id = String(req.id || "").slice(0, 60);
+      if (!id) throw new HttpError("Немає id картки");
+      if (req.hard === null || req.hard === undefined) delete m[id]; else m[id] = req.hard ? 1 : 0;
+      await metaSet(env, "cards_hard", JSON.stringify(m));
+      return {ok: true, cardHard: m};
+    }
     case "usage": { const u = await cfUsage(env, ctx, !!req.fresh); ctx.waitUntil(usageAlert(env, u).catch(() => {})); return {ok: true, usage: u}; }
     case "stage_begin": {
       const id = newId(), size = Number(req.size) || 0;

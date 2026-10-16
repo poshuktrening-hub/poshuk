@@ -77,10 +77,21 @@
         case "top": return {ok: true, top: {search: [], cards: [], duel: []}};
         case "submit": {
           const all = LS.get(RES, []);
-          all.push({cs: String(data.callsign || ""), ts: String(data.date || new Date().toISOString().slice(0, 16).replace("T", " ")), items: data.items || []});
+          all.push({cs: String(data.callsign || ""), ts: String(data.date || new Date().toISOString().slice(0, 16).replace("T", " ")), items: data.items || [],
+            scores: data.scores || [], max: data.max || 0, mode: data.mode || "game", conclusion: String(data.conclusion || "").slice(0, 120)});
           while (all.length > 400) all.shift();
           LS.set(RES, all);
           return {ok: true};
+        }
+        case "my_results": {   // власні результати — з локальних записів
+          const cs = String(data.callsign || "").trim(), results = [], answers = [];
+          for (const r of LS.get(RES, []).slice().reverse()) {
+            if (r.cs.trim() !== cs) continue;
+            const sc = r.scores || [], total = sc.reduce((a, b) => a + b, 0), max = r.max || sc.length * 10;
+            results.push({ts: r.ts, pct: max ? Math.round(100 * total / max) : 0, total, max, mode: r.mode || "game", conclusion: r.conclusion || ""});
+            for (const it of r.items) if (Array.isArray(it)) answers.push({kind: it[0], item: it[1], name: it[2], cat: it[3], ok: it[4] ? 1 : 0, ts: r.ts});
+          }
+          return {ok: true, results, answers};
         }
         case "mistakes": {   // як на сервері: остання спроба з помилкою
           const cs = String(data.callsign || "").trim(), last = new Map();

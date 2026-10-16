@@ -913,3 +913,45 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .sub-h .back { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.05); color: var(--fg); font-size: .85rem; flex: 0 0 auto; }
 .sub-h .back:hover { border-color: var(--accent); color: var(--accent); }
 .off-back { width: 100%; margin-top: 12px; padding: .75rem; border-radius: 12px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); font-weight: 600; }
+
+/* ===== Слабкі сторони / Мої результати / складний рівень ===== */
+.main-menu .mm-weak { --c: 255,214,102; }
+.main-menu .mm-my { --c: 160,190,220; }
+.main-menu .mm.mm-small { min-height: 0; padding: 10px 12px; }
+.main-menu .mm-small .mm-ic { width: 28px; height: 28px; border-radius: 8px; }
+.main-menu .mm-small .mm-ic svg { width: 16px; height: 16px; }
+.main-menu .mm-small b { font-size: .84rem; }
+.main-menu .mm-duel[hidden] + .mm-ref { grid-column: 1 / -1; }
+.c-weak { margin-top: 8px; padding: 8px 10px; border-left: 3px solid #ffd666; background: rgba(255,214,102,.08); border-radius: 0 8px 8px 0; font-size: .86rem; line-height: 1.4; }
+.c-weak b { color: #ffd666; }
+.w-note { margin: 0 14px 6px; }
+.w-item { border: 1px solid var(--line); border-radius: 12px; margin: 6px 12px; background: rgba(8,11,14,.4); overflow: hidden; }
+.w-item.hard { border-color: rgba(255,214,102,.35); }
+.w-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; background: none; border: none; text-align: left; color: var(--fg); }
+.w-head .r-th { width: 56px; height: 42px; flex: 0 0 auto; border-radius: 8px; overflow: hidden; background: rgba(255,255,255,.05); display: grid; place-items: center; }
+.w-head .r-th img { width: 100%; height: 100%; object-fit: cover; }
+.w-head .r-th.none img { display: none; }
+.w-head .r-nm { flex: 1; min-width: 0; display: grid; }
+.w-head .r-nm b { font-weight: 600; } .w-head .r-nm small { color: var(--muted); font-size: .76rem; }
+.w-arr { color: var(--muted); font-style: normal; font-size: 1.3rem; transition: transform .15s; }
+.w-item.open .w-arr { transform: rotate(90deg); }
+.w-pts { margin: 0; padding: 4px 14px 12px 28px; display: grid; gap: 6px; font-size: .88rem; line-height: 1.4; color: #dfe5e8; }
+.w-pts li::marker { color: #ffd666; }
+.my-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); gap: 8px; margin: 10px 0; }
+.my-stats div { background: rgba(8,11,14,.45); border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; text-align: center; display: grid; gap: 2px; }
+.my-stats b { font: 700 1.2rem var(--display); } .my-stats span { font-size: .7rem; color: var(--muted); }
+.my-h { margin: 14px 0 6px; font: 700 .72rem var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.my-cat { display: grid; grid-template-columns: minmax(0, 1fr) 90px 44px 40px; align-items: center; gap: 8px; font-size: .84rem; padding: 3px 0; }
+.my-cat span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.my-cat b { text-align: right; } .my-cat small { color: var(--muted); font-size: .72rem; }
+.my-tbl { width: 100%; border-collapse: collapse; font-size: .84rem; }
+.my-tbl td { padding: 5px 4px; border-bottom: 1px solid rgba(255,255,255,.06); vertical-align: top; }
+.my-tbl small { color: var(--muted); display: block; font-size: .74rem; }
+.my-tbl .num { text-align: right; white-space: nowrap; }
+.t-ok { color: var(--hit); } .t-no { color: var(--miss); }
+.ca-hard { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; color: var(--muted); white-space: nowrap; }
+.ca-hard input { margin: 0; }
+.main-menu .mm.mm-small .mm-h b { font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.main-menu .mm.mm-small { justify-content: center; }
+.main-menu .mm.mm-small .mm-h b { font: 700 .8rem/1.15 var(--display) !important; letter-spacing: -.02em; white-space: normal; overflow: visible; }
+.main-menu .mm.mm-small .mm-h { gap: 8px; }

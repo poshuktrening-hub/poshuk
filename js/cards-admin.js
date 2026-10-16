@@ -80,6 +80,7 @@
       const deck = Cards.deck(), n = deck.filter((c) => this.photos.has(c.id)).length;
       $("ca").innerHTML = `<div class="m-card">
         <div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" id="ca-x">Закрити</button></div>
+        <p class="muted small">Галочка «складний» — картка грає лише в «Складному рівні» (не в ігровому й не на іспиті). Складних зараз: ${deck.filter((c) => c.hard).length}.</p>
         <p class="muted small">У грі беруть участь лише картки з фото: зараз ${n} з ${deck.length}. Виберіть одразу багато фото — кожне прив'яжеться до картки за назвою файлу (напр. «Т-72Б3.jpg», «Град.png», «2С19 Мста-С.jpg»).</p>
         <div class="row"><button type="button" class="primary" id="ca-wiki" title="Знайти фото з вільною ліцензією у Wikimedia Commons для всіх карток без фото">🔎 Підібрати фото з Вікісховища</button></div>
         <div class="row"><button type="button" id="ca-bulk">＋ Свої фото (кілька файлів)…</button><button type="button" id="ca-names">Список назв файлів</button></div>
@@ -88,12 +89,17 @@
         <div class="tabs" id="ca-f"><button type="button" data-f="all" class="${this.f !== "no" && this.f !== "yes" ? "on" : ""}">Усі</button><button type="button" data-f="no" class="${this.f === "no" ? "on" : ""}">Без фото ${deck.length - n}</button><button type="button" data-f="yes" class="${this.f === "yes" ? "on" : ""}">З фото ${n}</button></div>
         <ul class="ca-list">${deck.filter((c) => this.f === "no" ? !this.photos.has(c.id) : this.f === "yes" ? this.photos.has(c.id) : true).map((c) => `<li>
           ${this.photos.has(c.id) ? `<img class="th" loading="lazy" alt="" data-th="${c.id}">` : `<span class="dot"></span>`}<span class="nm">${esc(Logic.dispName(c.name))}<small>${esc(this.credits.get(c.id) || c.id)}</small></span>
+          <label class="ca-hard" title="Складний рівень"><input type="checkbox" data-hard="${c.id}" ${c.hard ? "checked" : ""}>складний</label>
           <button type="button" data-wiki="${c.id}" title="Інше фото з Вікісховища">🔎</button>
           <button type="button" data-up="${c.id}">${this.photos.has(c.id) ? "Замінити" : "Фото…"}</button>${this.photos.has(c.id) ? `<button type="button" data-del="${c.id}" title="Видалити фото">✕</button>` : ""}</li>`).join("")}</ul>
       </div>`;
       $("ca-x").onclick = () => ($("ca").hidden = true);
       $("ca-wiki").onclick = () => this.wikiAll();
       $("ca").querySelectorAll("[data-wiki]").forEach((b) => (b.onclick = () => this.wikiOne(b.dataset.wiki)));
+      $("ca").querySelectorAll("[data-hard]").forEach((cb) => (cb.onchange = async () => {
+        try { const j = await API.call("set_card_hard", {id: cb.dataset.hard, hard: cb.checked ? 1 : 0}, this.pw); Game.cardHard = j.cardHard || {}; }
+        catch (e) { cb.checked = !cb.checked; UI.toast(e.message); }
+      }));
       $("ca").querySelectorAll("[data-th]").forEach(async (im) => { im.src = await API.cardUrl(im.dataset.th, this.photos.get(im.dataset.th), this.pw).catch(() => ""); });
       $("ca-f").querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { this.f = b.dataset.f; this.render(); }));
       $("ca-bulk").onclick = () => $("ca-files").click();
