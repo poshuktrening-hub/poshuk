@@ -40,7 +40,7 @@
       $("g-sound").onclick = () => { $("g-sound").textContent = SFX.toggle() ? "🔊" : "🔇"; };
       $("g-next").onclick = () => this.goNext();
       $("g-quit").onclick = () => { clearInterval(this.nextT); if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
-      $("sum-again").onclick = () => { SFX.click(); if (this.lastGame === "cards" && window.Cards) Cards.start(); else this.start(); };   // та сама гра з тими ж налаштуваннями
+      $("sum-again").onclick = () => { SFX.click(); if (this.lastFix) return this.againFix(this.lastGame); if (this.lastGame === "cards" && window.Cards) Cards.start(); else this.start(); };   // та сама гра з тими ж налаштуваннями
       $("sum-menu").onclick = () => { SFX.click(); this.lastView = "menu"; this.showStart(); };
       $("sum-exit").onclick = () => $("logout-btn").click();
       document.addEventListener("keydown", (e) => {
@@ -103,7 +103,8 @@
       document.querySelectorAll("#s-start [data-go]").forEach((b) => (b.onclick = () => { SFX.click(); this.view(b.dataset.go); }));
       document.querySelectorAll("#s-start [data-help]").forEach((b) => (b.onclick = () => Help.show(b.dataset.help)));
       this.refreshPending();
-      this.flushPending().then(() => this.loadTop());
+      this.flushPending().then(() => { this.loadTop(); this.loadMistakes(); });
+      $("callsign").onchange = () => this.loadMistakes();
       if (!$("callsign").value) $("callsign").focus();
     },
     /* Топ дня в головному меню: найкращий результат кожного курсанта за поточну добу + звання за цим результатом. */
@@ -122,6 +123,40 @@
         this.top = j.top; this.topDay = d; draw("top-search", j.top.search); draw("top-cards", j.top.cards);
       } catch (e) { /* без топу — не страшно */ }
     },
+    /* Робота над помилками: що курсант востаннє пройшов з помилкою (етапи — лише ті, що зараз у грі; картки — з фото). */
+    async loadMistakes() {
+      const cs = $("callsign").value.trim();
+      this.mist = {stages: [], cards: []};
+      if (cs) {
+        try {
+          const j = await API.call("mistakes", {callsign: cs}, this.password);
+          const ids = new Set(j.stages || []);
+          this.mist.stages = this.playable().filter((s) => ids.has(s.id));
+          if (window.Cards) { await Cards.loadRefPics().catch(() => null); const c = new Set(j.cards || []); this.mist.cards = Cards.withPhoto().filter((x) => c.has(x.id)); }
+        } catch (e) { /* без списку помилок */ }
+      }
+      const n = this.mist.stages.length, m = this.mist.cards.length;
+      $("mm-fix").hidden = !(n + m);
+      $("fix-info").textContent = [n ? `етапів: ${n}` : "", m ? `карток: ${m}` : ""].filter(Boolean).join(" · ");
+      if (!$("sub-fix").hidden) this.renderFix();
+      return this.mist;
+    },
+    renderFix() {
+      const mi = this.mist || {stages: [], cards: []}, n = mi.stages.length, m = mi.cards.length;
+      $("fix-search").textContent = `Етапи з помилками (${n})`; $("fix-search").disabled = !n;
+      $("fix-cards").textContent = `Картки з помилками (${m})`; $("fix-cards").disabled = !m;
+      $("fix-none").hidden = !!(n + m);
+      $("fix-search").onclick = () => { SFX.click(); this.start({fix: mi.stages}); };
+      $("fix-cards").onclick = () => { SFX.click(); if (window.Cards) Cards.start({fix: mi.cards}); };
+    },
+    /* «Нова гра» після роботи над помилками: оновити список (виправлене зникає) і почати ще раз або повернутись у меню. */
+    async againFix(kind) {
+      const mi = await this.loadMistakes();
+      const list = kind === "cards" ? mi.cards : mi.stages;
+      if (!list.length) { this.showStart(); this.view("fix"); return; }
+      if (kind === "cards") Cards.start({fix: list}); else this.start({fix: list});
+    },
+
     /* Головне меню → підменю режиму. */
     view(v) {
       if (v === "ref") { if (window.Ref) Ref.open(); return; }
@@ -130,6 +165,8 @@
       $("main-menu").hidden = v !== "menu";
       $("sub-search").hidden = v !== "search";
       $("sub-cards").hidden = v !== "cards";
+      $("sub-fix").hidden = v !== "fix";
+      if (v === "fix") this.renderFix();
       $("start-err").textContent = "";
     },
     callsignOk() {
@@ -173,16 +210,18 @@
     },
 
     // ---------- гра
-    start() {
+    start(opt) {
       if (!this.callsignOk()) return;
       SFX.unlock();
-      if (window.Help && Help.maybe("search", () => this.start())) return;   // перший раз — інструкція
-      this.mode = Logic.MODES[this.sel.mode] || Logic.MODES.game;
+      if (window.Help && Help.maybe("search", () => this.start(opt))) return;   // перший раз — інструкція
+      this.fix = opt && opt.fix && opt.fix.length ? opt.fix : null;
+      this.mode = this.fix ? Logic.MODES.game : Logic.MODES[this.sel.mode] || Logic.MODES.game;
       this.limit = this.mode.seconds || Math.round(this.cfg.time_limit_sec * (this.mode.time || 1));
       this.missLimit = this.mode.misses === null ? this.cfg.misses_allowed : this.mode.misses;
       document.body.dataset.mode = this.mode.id;
       const fl = this.filtered(), hardFirst = this.mode.id === "hard" ? fl.filter((s) => s.hard) : [];
-      this.rounds = hardFirst.length >= this.cfg.rounds_per_game ? Logic.pickRounds(hardFirst, this.cfg.rounds_per_game)
+      this.rounds = this.fix ? Logic.pickRounds(this.fix, this.cfg.rounds_per_game)
+        : hardFirst.length >= this.cfg.rounds_per_game ? Logic.pickRounds(hardFirst, this.cfg.rounds_per_game)
         : [...Logic.pickRounds(hardFirst, hardFirst.length), ...Logic.pickRounds(fl.filter((s) => !hardFirst.includes(s)), this.cfg.rounds_per_game - hardFirst.length)];
       this.results = [];
       this.idx = -1;
@@ -586,12 +625,12 @@
     // ---------- підсумок
     summary() {
       show("s-summary");
-      this.lastGame = "search";
+      this.lastGame = "search"; this.lastFix = !!this.fix;
       const res = this.results;
       const max = 10 * res.length, total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.round(100 * total / max) : 0, m = this.mode || Logic.MODES.game;
       const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);
-      $("sum-title").textContent = `${m.id === "game" ? "Підсумок" : m.name} · ${this.callsign}`;
+      $("sum-title").textContent = `${this.fix ? "Робота над помилками" : m.id === "game" ? "Підсумок" : m.name} · ${this.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
       const rk = Logic.rank(pct);
       $("sum-rank").innerHTML = `${Logic.rankBadge(rk.level)}<div><div class="rk-label">Звання</div><div class="rk-name">${esc(rk.name)}</div><div class="rk-next">${rk.next ? `До «${esc(rk.next.name)}» — від ${rk.next.min}%` : "Найвище звання"}</div></div>`;
@@ -601,7 +640,7 @@
       const now = new Date();
       const p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: this.callsign, scores: res.map((r) => r.score), max, mode: m.id,
-        conclusion: m.id === "game" ? concl : `${m.name}: ${concl}${m.pass ? ` (поріг ${m.pass}%)` : ""}`,
+        conclusion: this.fix ? `Робота над помилками: ${concl}` : m.id === "game" ? concl : `${m.name}: ${concl}${m.pass ? ` (поріг ${m.pass}%)` : ""}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`,
         clicks: res.flatMap((r) => r.clicks), items: res.flatMap((r) => r.items || [])};
       const q = LS.get("poshuk_pending", []);

@@ -157,11 +157,14 @@
       if (!this.refPics && Game.password) this.loadRefPics().then((m) => { if (m && !$("s-start").hidden) this.renderMenu(); }).catch(() => {});
     },
 
-    start() {
+    start(opt) {
       if (!Game.callsignOk()) return;
       SFX.unlock();
-      if (window.Help && Help.maybe("cards", () => this.start())) return;   // перший раз — інструкція
-      const pool = Logic.shuffle(this.withPhoto());
+      if (window.Help && Help.maybe("cards", () => this.start(opt))) return;   // перший раз — інструкція
+      this.fix = opt && opt.fix && opt.fix.length ? opt.fix : null;
+      if (this.fix) this.mode = MODES.game;
+      else { const mm = LS.get("poshuk_cmode", "game"); this.mode = MODES[mm] || MODES.game; }
+      const pool = Logic.shuffle(this.fix ? this.fix.slice() : this.withPhoto());
       this.rounds = pool.slice(0, ROUNDS).map((c) => Object.assign({}, c, {pic: this.pickPic(c.id)})); this.idx = -1; this.results = [];
       UI.show("s-cards");
       document.body.dataset.mode = "cards";
@@ -273,11 +276,11 @@
     summary() {
       this.stop();
       UI.show("s-summary");
-      Game.lastGame = "cards";
+      Game.lastGame = "cards"; Game.lastFix = !!this.fix;
       const res = this.results, max = 10 * res.length, total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.round(100 * total / max) : 0, m = this.mode;
       const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);
-      $("sum-title").textContent = `Картки цілей${m.id === "exam" ? " · Іспит" : ""} · ${Game.callsign}`;
+      $("sum-title").textContent = `${this.fix ? "Робота над помилками · картки" : `Картки цілей${m.id === "exam" ? " · Іспит" : ""}`} · ${Game.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
       $("sum-total").style.color = m.pass ? (pct >= m.pass ? "var(--hit)" : "var(--miss)") : pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
       const rk = Logic.rank(pct);
@@ -286,7 +289,7 @@
         res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(Logic.dispName(r.name))}</td><td class="${r.ok ? "t-ok" : "t-no"}">${esc(r.answer || "—")}${r.hint ? " 💡" : ""}</td><td class="num">${r.score}</td></tr>`).join("");
       const now = new Date(), p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: Game.callsign, scores: res.map((r) => r.score), max, mode: m.id === "exam" ? "cards_exam" : "cards",
-        conclusion: `Картки${m.id === "exam" ? " (іспит)" : ""}: ${concl}`,
+        conclusion: this.fix ? `Картки (робота над помилками): ${concl}` : `Картки${m.id === "exam" ? " (іспит)" : ""}: ${concl}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`, clicks: [],
         items: res.map((r) => ["cards", r.id, r.name, r.cat, r.ok ? 1 : 0])};
       const q = LS.get("poshuk_pending", []); q.push(item); LS.set("poshuk_pending", q);

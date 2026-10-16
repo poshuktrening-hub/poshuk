@@ -812,3 +812,8 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .u-row.bad .u-bar i { background: #ff5a4f; }
 .u-row.off { opacity: .5; }
 .usage .small { font-size: .74rem; }
+
+/* ---------- робота над помилками */
+.mm-fix b { color: #ff8a6e; }
+.main-menu .mm-fix > span { font-size: .84rem; color: var(--muted); }
+.fix-btns { display: grid; gap: 10px; margin: 14px 0 8px; }
