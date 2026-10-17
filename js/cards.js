@@ -6,7 +6,7 @@
   const LS = API.LS;
   const ROUND_SEC = 30, REVEAL_SEC = 15, ROUNDS = 10;
   const MODES = {
-    game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Слабка сторона» — з довідника.", hint: true, choice: true, sign: true},
+    game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника.", hint: true, choice: true, sign: true},
     exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
     hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
@@ -292,7 +292,7 @@
       const list = this.weakOf(this.cur); if (!list) return;
       this.weakUsed = true; this.hintUsed = true;
       const s = list[Math.floor(Math.random() * list.length)];
-      this.showHint(`🎯 Слабка сторона: ${esc(s.charAt(0).toUpperCase() + s.slice(1))}`);
+      this.showHint(`🎯 Недолік: ${esc(s.charAt(0).toUpperCase() + s.slice(1))}`);
       $("c-weak-btn").disabled = true; SFX.click();
     },
     /* кілька підказок на одній картці — показуються разом, кожна з нового рядка */
@@ -341,7 +341,7 @@
       // хардкор: одна можлива помилка, друга — кінець гри
       const over = this.mode.lives != null && this.results.filter((x) => !x.ok).length > this.mode.lives;
       if (over) this.rounds = this.rounds.slice(0, this.idx + 1);
-      $("c-reveal").innerHTML = `${verdict}${over ? `<p class="c-v no">💀 Друга помилка — хардкор завершено</p>` : ""}${c.concept ? `<p class="c-concept-tag">КОНЦЕПТ</p>` : ""}<h3>${UI.nameHtml(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Слабкі сторони:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
+      $("c-reveal").innerHTML = `${verdict}${over ? `<p class="c-v no">💀 Друга помилка — хардкор завершено</p>` : ""}${c.concept ? `<p class="c-concept-tag">КОНЦЕПТ</p>` : ""}<h3>${UI.nameHtml(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Недоліки:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
       const last = this.idx === this.rounds.length - 1;
       $("c-next").textContent = last ? "Підсумок →" : "Далі →";

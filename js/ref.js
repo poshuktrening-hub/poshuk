@@ -39,7 +39,7 @@
     close() { this.closeDetail(); Game.showStart(); },
 
     /* Довідник = записи навчальної таблиці + картки, яких у таблиці немає (ТТХ, ознаки, фото картки).
-       До кожного запису, що відповідає картці, додаються «Слабкі сторони». */
+       До кожного запису, що відповідає картці, додаються «Недоліки». */
     withCards(list, onlyLinks) {
       if (!window.Cards) return list;
       const deck = Cards.deck(), idx = new Map(), byId = new Map(deck.map((c) => [c.id, c]));
@@ -103,7 +103,7 @@
     },
     weakHtml(e) {
       const w = e.card && (window.CARD_WEAK || {})[e.card];
-      return w && w.length ? `<section class="r-sec r-weak"><h3>Слабкі сторони</h3><ul>${w.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p class="muted small">За відкритими джерелами.</p></section>` : "";
+      return w && w.length ? `<section class="r-sec r-weak"><h3>Недоліки</h3><ul>${w.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p class="muted small">За відкритими джерелами.</p></section>` : "";
     },
 
     cats() { const m = new Map(); (this.entries || []).forEach((e) => m.set(e.cat, (m.get(e.cat) || 0) + 1)); return [...m]; },
