@@ -8,6 +8,7 @@
  * куди дублювати результати (Google-скрипт таблиці). Перший вхід адміна сам переносить
  * налаштування й паролі з Google-таблиці.
  */
+import {fillTick, fillState, fillReset, fillInfo} from "./photofill.js";
 const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
 const LOCK_FAILS = 20, LOCK_SECONDS = 15 * 60;       // невдалі входи з однієї адреси за 15 хв → ця адреса чекає 15 хв (клас за одним Wi-Fi — одна адреса, тому не менше)
@@ -721,7 +722,12 @@ async function action(env, ctx, req, origin) {
     }
     case "card_photos": {
       const {results} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
-      return {ok: true, photos: results.map((r) => [r.id, r.updated]), credits: results.filter((r) => r.credit).map((r) => [r.id, r.credit])};
+      return {ok: true, photos: results.map((r) => [r.id, r.updated]), credits: results.filter((r) => r.credit).map((r) => [r.id, r.credit]), fill: fillInfo(await fillState(env, metaGet))};
+    }
+    case "photo_fill_now": {   // крок автопідбору негайно (кнопка в адмінці); reset — почати перелік спочатку
+      if (req.reset) await fillReset(env, metaSet);
+      const s = await fillTick(env, metaGet, metaSet, true);
+      return {ok: true, fill: fillInfo(s || await fillState(env, metaGet))};
     }
     case "card_photo_upload": {
       const id = String(req.id || "").slice(0, 40);
@@ -1148,6 +1154,7 @@ export async function onRequest(context) {
     await db(env);
     try { usageTick(env, context); } catch (e) { /* ок */ }
     try { sheetSyncTick(env, context); } catch (e) { /* ок */ }
+    if (request.method === "POST") context.waitUntil(fillTick(env, metaGet, metaSet, false).catch(() => {}));
     // токен для картинок: у запиті (?t=), у заголовку (fetch) або в cookie (<img>) — тоді адреса стала й кеш браузера живе довго
     const t = url.searchParams.get("t") || request.headers.get("X-Token") || cookieOf(request, "pt");
     if (request.method === "GET" && path[0]) rateLimit(ipOf(request), "img");

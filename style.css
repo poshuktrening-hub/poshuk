@@ -1003,3 +1003,6 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   .screen.ref .stage { font-size: .92rem; }
 }
 .r-th:empty::after { content: "немає фото"; display: grid; place-items: center; width: 100%; height: 100%; font-size: .66rem; color: var(--muted); opacity: .6; }
+.ca-fill { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.03); }
+.ca-fill p { margin: 0 0 6px; }
+.ca-fill details p { margin: 4px 0 0; }
