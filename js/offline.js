@@ -124,7 +124,10 @@
     },
 
     /* Завантаження (і оновлення) — лише з інтернетом. progress(текст, частка 0..1). */
-    async download(password, progress = () => {}) {
+    /* opt.auto — тихе фонове оновлення: режим (онлайн/офлайн) не змінюється, відкриті зображення не відкликаються.
+       Повертає, скільки файлів змінилось (завантажено нових + прибрано застарілих). */
+    async download(password, progress = () => {}, opt = {}) {
+      let changed = 0;
       if (!navigator.onLine) throw new Error("Немає інтернету. Завантаження потрібне один раз — з мережею.");
       try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) { /* ок */ }
       progress("Отримую список етапів…", 0);
@@ -143,7 +146,7 @@
         if (have) { bytes += have.byteLength || 0; continue; }
         const buf = await API.fetchPack(s.id, password);
         await put(k, buf);
-        bytes += buf.byteLength;
+        bytes += buf.byteLength; changed++;
       }
       // зображення: техніка (брифінг), фото карток, довідник — пачками в один запит
       const want = [];
@@ -157,7 +160,7 @@
         progress(`Фото техніки й довідника: ${done} з ${want.length}…`, 0.65 + 0.3 * done / Math.max(1, want.length));
         const batch = todo.slice(0, 120);
         const j = await API.callNet("offline_assets", {items: batch}, password);
-        for (const [k, v] of Object.entries(j.items || {})) { const b = b64Blob(v.data, v.mime); await put(k, b); bytes += b.size; done++; }
+        for (const [k, v] of Object.entries(j.items || {})) { const b = b64Blob(v.data, v.mime); await put(k, b); bytes += b.size; done++; if (!k.startsWith("card:")) changed++; }
         const rest = new Set((j.rest || []).map(([kind, id]) => kind + ":" + id));
         const sentMissing = batch.filter(([kind, id]) => !rest.has(kind + ":" + id) && !(j.items || {})[kind + ":" + id]).length;
         done += sentMissing;   // на сервері вже немає — пропускаємо
@@ -167,13 +170,39 @@
       const config = Object.assign({}, cfg); delete config.token; delete config.ok;
       config.stages = stages;
       await put("snap", {config, ref});
-      for (const k of await keys()) if (!keep.has(k)) await del(k);
-      this.snap = null; urls.forEach((u) => URL.revokeObjectURL(u)); urls.clear();
+      for (const k of await keys()) if (!keep.has(k)) { await del(k); changed++; }
+      const prev = this.info() || {};
+      if (prev.stages !== stages.length || prev.ref !== ref.length) changed++;
+      this.snap = null;
+      if (!opt.auto) { urls.forEach((u) => URL.revokeObjectURL(u)); urls.clear(); }
       await cacheShell();
       LS.set(KEY, {at: new Date().toISOString(), stages: stages.length, cards: (cfg.cardPhotos || []).length, ref: ref.length, bytes, pw: await sha(password),
         ver: Object.fromEntries(stages.map((s) => [s.id, s.v || ""]))});
-      LS.del(PAUSE);   // після завантаження — одразу в офлайн
+      if (!opt.auto) LS.del(PAUSE);   // після завантаження вручну — одразу в офлайн
       progress("Готово", 1);
+      return changed;
+    },
+    /* Автооновлення офлайн-даних двічі на добу — о 08:00 і 20:00 (час пристрою): якщо застосунок відкритий
+       або відкриється пізніше, а з останньої перевірки настав новий строк і є інтернет — тихо докачує зміни. */
+    autoSlot(now = new Date()) {
+      const d = new Date(now); const slots = [8, 20].map((h) => { const x = new Date(d); x.setHours(h, 0, 0, 0); return x; });
+      const past = slots.filter((x) => x <= d);
+      if (past.length) return past[past.length - 1].getTime();
+      const y = new Date(d); y.setDate(y.getDate() - 1); y.setHours(20, 0, 0, 0); return y.getTime();
+    },
+    async autoUpdate(password, onDone) {
+      if (!this.ready || !password || !navigator.onLine || this._auto) return;
+      const st = LS.get("poshuk_off_auto", {}) || {}, slot = this.autoSlot();
+      const last = Math.max(st.at || 0, Date.parse((this.info() || {}).at || "") || 0);
+      if (last >= slot) return;                                   // у цьому строку вже оновлено
+      if (st.fail && Date.now() - st.fail < 3600e3) return;       // невдала спроба — повтор не частіше разу на годину
+      this._auto = true;
+      try {
+        const changed = await this.download(password, () => {}, {auto: true});
+        LS.set("poshuk_off_auto", {at: Date.now()});
+        if (onDone) onDone(changed);
+      } catch (e) { LS.set("poshuk_off_auto", Object.assign(st, {fail: Date.now()})); }
+      finally { this._auto = false; }
     },
     async disable() {
       LS.del(KEY); LS.del(RES); LS.del(PAUSE);

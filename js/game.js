@@ -163,17 +163,18 @@
           ${this.installEvt ? `<button type="button" id="off-install">📲 Встановити на головний екран</button>` : ""}
           <p class="muted small">${ios ? "iPhone: відкрийте сайт у <b>Safari</b> → «Поділитися» → «На екран „Додому“»." : "Android: Chrome → меню ⋮ → «Встановити застосунок» або «Додати на головний екран»."}</p></div>`;
       const back = `<button type="button" class="off-back" id="off-back">Повернутися в меню</button>`;
+      const autoTxt = `<p class="muted small">🔄 Автооновлення: о 08:00 і 20:00, якщо є інтернет і застосунок відкритий (або при наступному відкритті) — докачуються лише зміни.</p>`;
       box.innerHTML = on
         ? `<p>Офлайн-версія <b>увімкнена</b>: тренажер працює без інтернету й не звертається до сервера.</p>
            <p class="muted">Дані від ${new Date(inf.at).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"})}: етапів — ${inf.stages}, фото карток — ${inf.cards}, записів довідника — ${inf.ref} (≈ ${mb(inf.bytes)} МБ).</p>
            <p class="muted small">Результати й «Робота над помилками» зберігаються лише на цьому пристрої. Дуель і «Топ дня» офлайн недоступні.</p>
            <div class="fix-btns"><button class="primary" type="button" id="off-online">🌐 Перейти в онлайн</button><button type="button" id="off-update">🔄 Оновити дані</button><button type="button" id="off-disable">Видалити офлайн-версію</button></div>
-           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}${back}`
+           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${autoTxt}${install}${back}`
         : ready
         ? `<p>Зараз <b>онлайн</b>. Офлайн-дані збережено на пристрої — перейти в офлайн можна будь-коли, навіть без інтернету.</p>
            <p class="muted">Дані від ${new Date(inf.at).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"})}: етапів — ${inf.stages}, фото карток — ${inf.cards}, записів довідника — ${inf.ref} (≈ ${mb(inf.bytes)} МБ).</p>
            <div class="fix-btns"><button class="primary" type="button" id="off-offline">📴 Перейти в офлайн</button><button type="button" id="off-update">🔄 Оновити дані</button><button type="button" id="off-disable">Видалити офлайн-версію</button></div>
-           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}${back}`
+           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${autoTxt}${install}${back}`
         : `<p>Тренажер один раз завантажує етапи, картки й довідник на пристрій і далі працює <b>без інтернету</b> — у полі й без витрат сервера.</p>
            <p class="muted small">Результати в офлайн-версії бачите лише ви — інструктору вони не надсилаються. Дуель і «Топ дня» офлайн недоступні. Потрібно вільне місце — зазвичай 50–300 МБ.</p>
            <div class="fix-btns"><button class="primary" type="button" id="off-dl">📥 ${standalone ? "Завантажити офлайн-версію" : "Завантажити й встановити застосунок"}</button></div>
@@ -882,6 +883,12 @@
     document.querySelectorAll(".main-menu .mm.mm-wide .mm-h b, .main-menu .mm.mm-small .mm-h b").forEach(fit);
   }
   window.addEventListener("resize", () => requestAnimationFrame(fitMenuTitles));
+  /* Офлайн-дані: автооновлення о 08:00 і 20:00 — перевірка при відкритті, при появі мережі й щоп'ять хвилин. */
+  const autoOff = () => {
+    if (!window.Offline || !Offline.ready || !Game.password) return;
+    Offline.autoUpdate(Game.password, (n) => { if (n) { toast("Офлайн-дані оновлено з сервера ✓"); if ($("off-body") && !$("sub-off").hidden) Game.renderOff(); } });
+  };
+  setTimeout(autoOff, 15000); setInterval(autoOff, 5 * 60e3); window.addEventListener("online", () => setTimeout(autoOff, 5000));
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(fitMenuTitles));
   function today() { const n = new Date(), p2 = (x) => String(x).padStart(2, "0"); return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())}`; }
   /* Назва техніки для показу: позначення з дефісом («Тайфун-К», «Т-72Б3») не розриваються на рядки. */
