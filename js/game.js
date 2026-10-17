@@ -541,9 +541,14 @@
         items.push({t, o: o || (Models.isBuiltin(t.obj) ? Models.LIST.find((m) => m.id === t.obj) : null) || (/катапульт/.test(norm(t.type)) ? Models.LIST[0] : null)});
       }
       const box = $("g-brief");
+      // обробники картинок — кодом, а не в розмітці (політика безпеки сторінки забороняє inline-скрипти)
+      const wirePics = () => box.querySelectorAll("img[data-alt]").forEach((im) => {
+        im.onerror = () => this.picFail(im); im.onload = () => this.picCheck(im);
+        if (im.complete) { if (im.naturalWidth) this.picCheck(im); else if (im.getAttribute("src")) this.picFail(im); }
+      });
       const cards = await Promise.all(items.map(async ({t, o}) => {
         const srcs = await this.picChain(t, o);
-        const pic = srcs.length ? `<img src="${srcs[0]}" alt="" data-alt="${esc(JSON.stringify(srcs.slice(1)))}" onerror="Game.picFail(this)" onload="Game.picCheck(this)">` : "";
+        const pic = srcs.length ? `<img src="${srcs[0]}" alt="" data-alt="${esc(JSON.stringify(srcs.slice(1)))}">` : "";
         const ttx = Logic.ttxFor(o, t.type, !!t.decoy);
         const len = o && o.length_m ? `<p class="len">Довжина ≈ ${o.length_m} м</p>` : "";
         const name = Logic.dispName(o && o.name ? o.name.replace(/\s*\(вбудована\)$/, "") : (t.type || "ціль"));
@@ -556,7 +561,7 @@
       if (after) {   // хардкор: картка цілі — лише після етапу
         box.innerHTML = `<div class="b-inner"><div class="b-head">ЕТАП ${this.idx + 1} · ЩО ВИ ШУКАЛИ</div>${cards.join("")}
           <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Далі</button></div></div>`;
-        box.hidden = false;
+        box.hidden = false; wirePics();
         const bar = box.querySelector(".b-bar i");
         requestAnimationFrame(() => { bar.style.transition = `transform ${BRIEF_MS}ms linear`; bar.style.transform = "scaleX(0)"; });
         await new Promise((res) => { const t = setTimeout(res, BRIEF_MS); box.querySelector("#b-go").onclick = () => { clearTimeout(t); res(); }; });
@@ -568,7 +573,7 @@
         ${st.cond === "thermal" ? `<p class="b-cond">🌡 Тепловізор, ніч: тепле — світле. Найяскравіші — двигун і вихлоп; муляжі холодні й темні.</p>` : st.cond === "winter" ? `<p class="b-cond">❄ Зима: техніка — темна пляма на снігу, видно свіжі накати.</p>` : ""}
         <p class="b-warn">⚠ На знімку можуть бути муляжі — клік по обманці рахується як промах.</p>
         <div class="b-foot"><div class="b-bar"><i></i></div><button type="button" class="primary" id="b-go">Почати зараз</button></div></div>`;
-      box.hidden = false;
+      box.hidden = false; wirePics();
       SFX.radio();
       const bar = box.querySelector(".b-bar i");
       requestAnimationFrame(() => { bar.style.transition = `transform ${BRIEF_MS}ms linear`; bar.style.transform = "scaleX(0)"; });

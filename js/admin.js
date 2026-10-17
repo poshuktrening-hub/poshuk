@@ -26,7 +26,8 @@
         <input id="a-pass" type="password" autocomplete="current-password" required>
         <p class="err" role="alert">${esc(err)}</p>
         <button class="primary" type="submit">Увійти</button>
-        <button type="button" class="link" onclick="location.hash='';location.reload()">← До гри</button></form>`;
+        <button type="button" class="link" id="a-togame">← До гри</button></form>`;
+      root.querySelector("#a-togame").onclick = () => { location.hash = ""; location.reload(); };
       root.querySelector("#a-login").onsubmit = async (e) => {
         e.preventDefault();
         this.pw = root.querySelector("#a-pass").value;
@@ -107,7 +108,7 @@
       <div class="mainpane">
         <div class="bar"><div class="hint" id="a-hint">«＋ Карти» → «✎ Генератор» — поставте техніку й збережіть етап. Клік по знімку — додати ціль вручну.</div>
           <button type="button" id="a-heat" title="Куди клікали курсанти">Теплова карта</button>
-          <button type="button" onclick="location.hash='';location.reload()">До гри</button></div>
+          <button type="button" id="a-togame2">До гри</button></div>
         <div class="view-wrap"><div id="a-view" class="view-host"></div>
           <div class="loading" id="a-loading" hidden><span>Завантажую…</span></div></div>
       </div>`;
@@ -129,6 +130,7 @@
       $("a-filter-dir").onchange = $("a-filter-season").onchange = () => this.renderList();
       $("a-task").oninput = () => { this.stage().task = $("a-task").value; this.dirty(true); };
       $("a-toggle").onclick = () => { const s = this.stage(); s.enabled = !s.enabled; this.dirty(true); this.renderStage(); };
+      $("a-togame2").onclick = () => { location.hash = ""; location.reload(); };
       $("a-del").onclick = () => this.deleteStage();
       $("a-decoy").onchange = () => this.fieldChanged();
       $("a-type").onchange = () => this.fieldChanged();

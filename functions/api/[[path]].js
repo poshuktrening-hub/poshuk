@@ -10,7 +10,10 @@
  */
 const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
-const LOCK_FAILS = 10, LOCK_SECONDS = 15 * 60;
+const LOCK_FAILS = 20, LOCK_SECONDS = 15 * 60;       // невдалі входи з однієї адреси за 15 хв → ця адреса чекає 15 хв (клас за одним Wi-Fi — одна адреса, тому не менше)
+const GLOBAL_FAILS = 150;                             // невдалі входи з усіх адрес за 15 хв → нові входи паролем чекають 15 хв (токени працюють)
+const RATE = {api: [300, 60e3], img: [900, 60e3], login: [60, 60e3], heavy: [40, 60e3]};   // запитів з однієї адреси за вікно (мс)
+const MAX_BODY = 30e6;                                // байт у POST-запиті (імпорт довідника, фото)
 const CHUNK = 1_500_000; // < 2 МБ — ліміт рядка D1
 const TOKEN_HOURS = 12;
 const DEFAULTS = {
@@ -40,6 +43,54 @@ const SCHEMA = [
      seen1 INTEGER DEFAULT 0, seen2 INTEGER DEFAULT 0, l1 INTEGER DEFAULT 0, l2 INTEGER DEFAULT 0, turn INTEGER DEFAULT 0, until INTEGER DEFAULT 0, shots TEXT, winner INTEGER DEFAULT 0, reason TEXT)`,
   `CREATE TABLE IF NOT EXISTS stage_backups (id TEXT PRIMARY KEY, targets TEXT, size INTEGER, chunks INTEGER, created TEXT)`,
 ];
+
+/* Адреса клієнта (Cloudflare підставляє справжню) — для лімітів і блокування перебору пароля. */
+const ipOf = (request) => request.headers.get("CF-Connecting-IP") || (request.headers.get("X-Forwarded-For") || "").split(",")[0].trim() || "local";
+const ipKey = (ip) => ip.replace(/[^0-9a-f.:]/gi, "").slice(0, 60);
+
+/* Лічильники в пам'яті ізоляту: дешево (без запитів до бази). Кожен дата-центр рахує окремо,
+   тому це перший рубіж; невдалі входи додатково зберігаються в базі (див. loginFail). */
+const buckets = new Map();
+function rateLimit(ip, kind) {
+  const [limit, win] = RATE[kind], now = Date.now(), k = kind + "|" + ip;
+  let b = buckets.get(k);
+  if (!b || now - b.t0 > win) { b = {t0: now, n: 0}; buckets.set(k, b); }
+  if (++b.n > limit) throw new HttpError("Забагато запитів. Зачекайте хвилину.", 429);
+  if (buckets.size > 5000) for (const [key, v] of buckets) if (now - v.t0 > win) buckets.delete(key);
+}
+/* Порівняння паролів за сталий час (щоб за часом відповіді не вгадувати символи). */
+function safeEqual(a, b) {
+  const x = enc.encode(String(a)), y = enc.encode(String(b));
+  let d = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) d |= (x[i] || 0) ^ (y[i] || 0);
+  return d === 0;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* Невдалі входи: за адресою (8 за 15 хв → адреса чекає 15 хв) і загалом (150 за 15 хв → нові входи паролем чекають).
+   Токени, видані раніше, працюють і під час блокування — курсантам у грі це не заважає. */
+async function loginLocked(env, ip) {
+  const now = Date.now();
+  const g = jp(await metaGet(env, "fails_g"), {});
+  if (g.until > now) return "Забагато невдалих спроб входу. Спробуйте за 15 хвилин.";
+  const r = jp(await metaGet(env, "fails_" + ipKey(ip)), {});
+  if (r.until > now) return "Забагато невдалих спроб з вашої адреси. Спробуйте за 15 хвилин.";
+  return null;
+}
+async function loginFail(env, ip) {
+  const now = Date.now(), win = LOCK_SECONDS * 1000;
+  const k = "fails_" + ipKey(ip), r = jp(await metaGet(env, k), {});
+  const n = (r.t0 && now - r.t0 < win ? r.n : 0) + 1;
+  await metaSet(env, k, JSON.stringify({t0: r.t0 && now - r.t0 < win ? r.t0 : now, n, until: n >= LOCK_FAILS ? now + win : 0}));
+  const g = jp(await metaGet(env, "fails_g"), {});
+  const gn = (g.t0 && now - g.t0 < win ? g.n : 0) + 1;
+  await metaSet(env, "fails_g", JSON.stringify({t0: g.t0 && now - g.t0 < win ? g.t0 : now, n: gn, until: gn >= GLOBAL_FAILS ? now + win : 0}));
+  await sleep(400 + Math.random() * 400);   // перебір стає повільним
+}
+async function loginOk(env, ip) {
+  const k = "fails_" + ipKey(ip);
+  if (await metaGet(env, k)) await env.DB.prepare("DELETE FROM meta WHERE k=?").bind(k).run();
+}
 
 function cookieOf(request, name) {
   const m = String(request.headers.get("Cookie") || "").match(new RegExp("(?:^|;\\s*)" + name + "=([^;]*)"));
@@ -197,12 +248,15 @@ async function checkToken(env, t, need) {
   return role;
 }
 
+let lastSync = 0;   // коли востаннє питали таблицю про невідомий пароль (не частіше разу на 20 с — захист квоти скрипта)
 async function auth(env, req, need) {
   if (req.t) { const r = await checkToken(env, req.t, need); if (r) return r; }
-  const until = Number(await metaGet(env, "lock_until") || 0);
-  if (until > Date.now()) throw new HttpError("Забагато невдалих спроб. Спробуйте за 15 хвилин.");
+  const ip = req._ip || "local";
+  rateLimit(ip, "login");
+  const locked = await loginLocked(env, ip);
+  if (locked) throw new HttpError(locked, 429);
   let s = await settings(env);
-  const p = String(req.p || "");
+  const p = String(req.p || "").slice(0, 200);
   if (s._empty) {
     const err = await bootstrap(env, p);
     if (err) {
@@ -211,17 +265,16 @@ async function auth(env, req, need) {
     }
     s = await settings(env);
   }
-  const isAdmin = !!p && p === String(s.admin_password);
-  const isPlayer = isAdmin || (!!p && p === String(s.player_password));
-  if (need === "admin" ? isAdmin : isPlayer) return isAdmin ? "admin" : "player";
-  // пароль змінили в Google-таблиці — сайт підхоплює його звідти
-  if (p) {
+  const isAdmin = !!p && safeEqual(p, s.admin_password);
+  const isPlayer = isAdmin || (!!p && safeEqual(p, s.player_password));
+  if (need === "admin" ? isAdmin : isPlayer) { await loginOk(env, ip); return isAdmin ? "admin" : "player"; }
+  // пароль змінили в Google-таблиці — сайт підхоплює його звідти (не частіше разу на 20 с)
+  if (p && p.length >= 6 && Date.now() - lastSync > 20e3) {
+    lastSync = Date.now();
     const role = await syncFromSheet(env, p);
-    if (role && (need !== "admin" || role === "admin")) return role;
+    if (role && (need !== "admin" || role === "admin")) { await loginOk(env, ip); return role; }
   }
-  const fails = Number(await metaGet(env, "fails") || 0) + 1;
-  if (fails >= LOCK_FAILS) { await metaSet(env, "lock_until", Date.now() + LOCK_SECONDS * 1000); await metaSet(env, "fails", 0); }
-  else await metaSet(env, "fails", fails);
+  await loginFail(env, ip);
   throw new HttpError("Невірний пароль");
 }
 
@@ -1052,6 +1105,7 @@ export async function onRequest(context) {
     try { usageTick(env, context); } catch (e) { /* ок */ }
     // токен для картинок: у запиті (?t=), у заголовку (fetch) або в cookie (<img>) — тоді адреса стала й кеш браузера живе довго
     const t = url.searchParams.get("t") || request.headers.get("X-Token") || cookieOf(request, "pt");
+    if (request.method === "GET" && path[0]) rateLimit(ipOf(request), "img");
     if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], t, url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], t);
     if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], t, url.searchParams.get("v"));
@@ -1060,10 +1114,19 @@ export async function onRequest(context) {
     if (request.method === "PUT" && path[0] === "blob" && path[1]) return await putBlob(env, request, path[1], Number(path[2]));
     if (request.method === "GET") return json({ok: true, app: "poshuk", version: VERSION});
     if (request.method !== "POST") return json({ok: false, error: "Метод не підтримується"}, 405);
+    const ip = ipOf(request);
+    rateLimit(ip, "api");
+    if (Number(request.headers.get("Content-Length") || 0) > MAX_BODY) return json({ok: false, error: "Запит завеликий"}, 413);
     let req;
     try { req = JSON.parse(await request.text()); } catch (e) { return json({ok: false, error: "Некоректний запит"}); }
+    if (!req || typeof req !== "object") return json({ok: false, error: "Некоректний запит"});
+    req._ip = ip;
+    if (req.action === "offline_assets" || req.action === "duel_create" || req.action === "duel_join") rateLimit(ip, "heavy");
     return json(await action(env, context, req, url.origin));
   } catch (e) {
-    return json({ok: false, error: String(e && e.message || e)}, e instanceof HttpError ? e.status : 200);
+    // внутрішні помилки бази не показуємо назовні (назви таблиць і SQL — зайва інформація для стороннього)
+    const msg = String(e && e.message || e);
+    if (!(e instanceof HttpError)) console.error("api error:", msg);
+    return json({ok: false, error: e instanceof HttpError ? msg : (/D1_|SQLITE|no such|syntax error/i.test(msg) ? "Помилка бази даних — спробуйте пізніше" : msg)}, e instanceof HttpError ? e.status : 200);
   }
 }
