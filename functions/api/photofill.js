@@ -3,10 +3,11 @@
    лише вільні ліцензії (CC0, PD, CC BY, CC BY-SA), ширина ≥ 700; якщо справжнього фото немає — креслення, модель або макет.
    Фото зберігається як у ручному підборі (card_photos: мініатюра 1280 px + підпис автора/ліцензії).
    Стан — у meta «photo_fill»: позиція у переліку, скільки знайдено, яких не знайдено. Перелік — photo-queries.js. */
-import {LIST_V, ORDER, NAMES, QUERIES} from "./photo-queries.js";
+import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS} from "./photo-queries.js";
 
 const UA = "poshuk-trener/1.0 (https://poshuk.pages.dev; contact: mrqwerty841@gmail.com)";
-const PER_TICK = 2, TICK_MS = 30e3, LOCK_MS = 90e3, BACKOFF_MS = 10 * 60e3;
+const PER_TICK = 1, TICK_MS = 20e3,   // до ~20 підзапитів на картку — в межах ліміту 50 на запит
+      LOCK_MS = 90e3, BACKOFF_MS = 10 * 60e3;
 const FREE = (lic) => { const l = String(lic || "").toLowerCase(); return !/nc|nd|fair|non-free/.test(l) && /(cc0|public domain|pd|cc by|cc-by|attribution)/.test(l); };
 const BAD_STRICT = /decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|drawing|blueprint|emblem|logo|\bmap\b|poster|stamp/i;
 const BAD_LOOSE = /toy|lego|emblem|logo|\bmap\b|interior|operators|stamp|poster|flag|coat of arms/i;
@@ -21,33 +22,69 @@ async function api(env, params) {
   return r.json();
 }
 
-/* Кандидати для картки: спершу названі файли, далі пошук; strict — без макетів/креслень, loose — з ними. */
+/* Кандидати для картки. Порядок пошуку:
+   1) названі файли; 2) пошук англійською (запит картки); 3) пошук кирилицею — шифр, позначення, російське написання
+      (на Вікісховищі багато фото mil.ru з російськими назвами); 4) якщо справжніх фото немає — креслення, модель, макет;
+   5) АрміяInform (сайт Міноборони, ліцензія CC BY 4.0): фото до статті про знищення/захоплення цього зразка. */
 async function candidates(env, id) {
-  const spec = QUERIES[id] || [], q = spec[0], files = spec.slice(1);
+  const spec = QUERIES[id] || [], files = spec.slice(1);
+  const queries = [spec[0], ...(VARIANTS[id] || [])].filter(Boolean);
   const ii = {prop: "imageinfo", iiprop: "url|size|extmetadata|mime", iiurlwidth: "1280", iiextmetadatafilter: "LicenseShortName|Artist"};
   const out = [], seen = new Set();
   const take = (pages, loose) => (pages || []).forEach((p) => {
     const i = p.imageinfo && p.imageinfo[0]; if (!i || seen.has(p.title)) return;
     const m = i.extmetadata || {}, lic = (m.LicenseShortName && m.LicenseShortName.value) || "";
     const svg = /svg/.test(i.mime || "");
-    if (!/^image\/(jpeg|png|webp|svg)/.test(i.mime || "") || (svg && !loose) || (i.width || 0) < 700 || !FREE(lic)) return;
+    if (!/^image\/(jpeg|png|webp|svg)/.test(i.mime || "") || (svg && !loose) || (i.width || 0) < 600 || !FREE(lic)) return;
     if ((loose ? BAD_LOOSE : BAD_STRICT).test(p.title)) return;
     seen.add(p.title);
-    out.push({title: p.title, url: i.thumburl || i.url, page: i.descriptionurl, license: lic, author: strip(m.Artist && m.Artist.value).slice(0, 120), mime: svg ? "image/png" : (i.thumbmime || i.mime), loose: !!loose});
+    out.push({title: p.title, url: i.thumburl || i.url, page: i.descriptionurl, license: lic, author: strip(m.Artist && m.Artist.value).slice(0, 120), loose: !!loose});
   });
   if (files.length) { const j = await api(env, Object.assign({action: "query", titles: files.map((f) => "File:" + f).join("|")}, ii)); take(j.query && j.query.pages, false); }
-  if (q && out.length < 1) {
-    const j = await api(env, Object.assign({action: "query", generator: "search", gsrsearch: q + " filetype:bitmap", gsrnamespace: "6", gsrlimit: "15"}, ii));
+  if (out.length) return out;
+  const pool = [];   // [сторінки, ключі] з усіх запитів — для другого, м'якшого проходу
+  for (const q of queries.slice(0, 5)) {
+    const j = await api(env, Object.assign({action: "query", generator: "search", gsrsearch: q + " filetype:bitmap", gsrnamespace: "6", gsrlimit: "12"}, ii));
     const pages = (j.query && j.query.pages || []).sort((a, b) => (a.index || 0) - (b.index || 0));
-    // у назві файлу мають бути всі позначення з цифрами із запиту («T-72B3» → t72b3), інакше це часто інша техніка
+    // у назві файлу — усі позначення з цифрами із запиту («T-72B3» → t72b3), а без цифр — шифр
     const keys = q.split(/\s+/).filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
-    const need = keys.length ? keys : q.split(/\s+/).map(nz).filter((w) => w.length >= 3);
+    const need = keys.length ? keys : q.split(/\s+/).map(nz).filter((w) => w.length >= 4);
+    if (!need.length) continue;
     const fit = pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)); });
     take(fit, false);
-    if (!out.length) take(fit, true);                       // креслення, модель, макет
-    if (!out.length && need.length > 1) take(pages.filter((p) => { const t = nz(p.title); return need.some((k) => t.includes(k)); }), true);
+    if (out.length) return out;
+    pool.push(fit);
   }
-  return out;
+  for (const fit of pool) take(fit, true);   // креслення, модель, макет
+  if (out.length) return out;
+  return armyInform(env, id).catch(() => []);
+}
+
+/* АрміяInform: WordPress-сайт Міноборони; матеріали — CC BY 4.0 з обов'язковим посиланням.
+   Беремо головне фото статті, у заголовку якої є шифр або позначення зразка. */
+async function armyInform(env, id) {
+  if (env.ARMYINFORM === "0") return [];
+  const name = NAMES[id] || "", code = (name.match(/«([^»]+)»/) || [])[1] || "";
+  const desig = name.replace(/^[^\s]+\s+/, "").replace(/\s*«[^»]*»/g, "").replace(/[()]/g, "").trim();
+  const base = env.ARMYINFORM_API || "https://armyinform.com.ua/wp-json/wp/v2";
+  for (const term of [code, desig].filter((x) => x && x.length >= 3)) {
+    const r = await fetch(`${base}/posts?search=${encodeURIComponent(term)}&per_page=6&_fields=link,title,featured_media`, {headers: {"User-Agent": UA, "Accept": "application/json"}});
+    if (!r.ok) continue;
+    const posts = await r.json();
+    const k = nz(term);
+    let tries = 0;
+    for (const p of posts || []) {
+      if (tries >= 2) break;
+      if (!p.featured_media || !nz(strip(p.title && p.title.rendered)).includes(k)) continue;
+      tries++;
+      const mr = await fetch(`${base}/media/${p.featured_media}?_fields=source_url,media_details`, {headers: {"User-Agent": UA, "Accept": "application/json"}});
+      if (!mr.ok) continue;
+      const m = await mr.json(), sz = (m.media_details && m.media_details.sizes) || {};
+      const pick = (sz.large || sz.medium_large || sz.full || {}).source_url || m.source_url;
+      if (pick) return [{title: strip(p.title.rendered), url: pick, page: p.link, license: "CC BY 4.0", author: "АрміяInform", loose: false, src: "armyinform"}];
+    }
+  }
+  return [];
 }
 
 function b64(buf) {
@@ -99,7 +136,7 @@ export async function fillTick(env, metaGet, metaSet, force) {
       for (const c of list.slice(0, 3)) {
         try {
           const t = await fetchThumb(c.url);
-          const credit = `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}${c.loose ? " (креслення/модель)" : ""}`;
+          const credit = c.src === "armyinform" ? `АрміяInform, ${c.license} — ${c.page}` : `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}${c.loose ? " (креслення/модель)" : ""}`;
           await env.DB.prepare("INSERT OR REPLACE INTO card_photos (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(id, t.data, t.mime, new Date().toISOString(), credit.slice(0, 400)).run();
           stored = true; break;
         } catch (e) { /* наступний кандидат */ }
