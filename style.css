@@ -1014,3 +1014,27 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 /* назви плиток меню — переносяться лише між словами; задовге слово зменшує шрифт (fitMenuTitles у game.js) */
 .main-menu .mm .mm-h, .main-menu .mm .mm-h b { overflow-wrap: normal; word-break: normal; hyphens: none; }
 .main-menu .mm .mm-h b { overflow: hidden; }
+/* великі плитки меню без описів: значок над назвою по центру; топ дня (якщо є) — під ними */
+.main-menu .mm:not(.mm-wide):not(.mm-small) { justify-content: center; align-items: stretch; }
+.main-menu .mm:not(.mm-wide):not(.mm-small) .mm-h { flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 8px; width: 100%; }
+.main-menu .mm:not(.mm-wide):not(.mm-small) .mm-ic { width: 46px; height: 46px; border-radius: 14px; }
+.main-menu .mm:not(.mm-wide):not(.mm-small) .mm-ic svg { width: 25px; height: 25px; }
+.main-menu .mm:not(.mm-wide):not(.mm-small) .mm-h b { font-size: 1.1rem; width: 100%; }
+
+/* нижні дії меню — кнопки в стилі плиток */
+#s-start .foot-btns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border-top: 0; padding-top: 4px; }
+#s-start .foot-btn[hidden] { display: none; }
+#s-start .foot-btns:has(.foot-btn[hidden]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.foot-btn { --c: 160,174,186; display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; min-height: 46px; padding: 8px 10px;
+  border-radius: 14px; border: 1px solid rgba(var(--c), .22); background: linear-gradient(160deg, rgba(var(--c), .10), rgba(8,11,14,.55));
+  color: var(--fg); font: 600 .86rem/1.1 var(--body); text-decoration: none; cursor: pointer; white-space: nowrap; }
+.foot-btn span { overflow: hidden; text-overflow: ellipsis; }
+.foot-btn svg { width: 18px; height: 18px; flex: 0 0 auto; color: rgb(var(--c)); }
+.foot-btn:active { transform: scale(.97); }
+@media (hover: hover) { .foot-btn:hover { border-color: rgba(var(--c), .5); } }
+#logout-btn.foot-btn { --c: 255,138,110; }
+#off-link.foot-btn { --c: 255,178,62; }
+.admin-link.foot-btn { --c: 120,170,255; }
+/* вузько — значок над підписом, щоб підпис не обрізався */
+.foot-btn { flex-direction: column; gap: 4px; min-height: 54px; padding: 7px 4px; font-size: .78rem; }
+.foot-btn span { white-space: nowrap; overflow: visible; }

@@ -145,8 +145,8 @@
         badge.onclick = () => this.switchMode(false);
       }
       document.querySelectorAll(".mm-duel, .admin-link, .top3, .cs-field").forEach((el) => { if (on) el.hidden = true; else if (!el.classList.contains("top3")) el.hidden = false; });
-      const link = $("off-link");
-      if (link) link.textContent = on ? "📴 Офлайн-версія ✓" : Offline.ready ? "📴 Перейти в офлайн" : "📥 Офлайн-версія";
+      const link = $("off-link-t");
+      if (link) link.textContent = on ? "Офлайн ✓" : Offline.ready ? "В офлайн" : "Офлайн";
     },
     /* Перемикання онлайн ↔ офлайн без видалення завантажених даних. */
     switchMode(toOffline) {
@@ -261,6 +261,7 @@
       const draw = (id, list) => {
         const el = $(id); if (!el) return;
         list = list || [];
+        if (!list.length) { el.innerHTML = ""; el.hidden = true; return; }   // ніхто ще не грав — топ не показуємо
         el.innerHTML = `<li class="top-h">Топ дня</li>` + (list.length ? list.map((x, i) => { const rk = Logic.rank(x.pct);
           return `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b><small title="${esc(rk.name)}">${Logic.rankBadge(rk.level)}${esc(rk.name)}</small></span><em>${x.pct}%</em></li>`; }).join("")
           : `<li class="top-none">Ще ніхто — будьте першим</li>`);
@@ -269,6 +270,7 @@
       const drawDuel = (list) => {
         const el = $("top-duel"); if (!el) return;
         list = list || [];
+        if (!list.length) { el.innerHTML = ""; el.hidden = true; return; }
         const word = (n) => (n % 10 === 1 && n % 100 !== 11 ? "перемога" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "перемоги" : "перемог");
         el.innerHTML = `<li class="top-h">Топ дня · перемог</li>` + (list.length ? list.map((x, i) =>
           `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b></span><em title="${x.wins} ${word(x.wins)}">${x.wins}</em></li>`).join("")
