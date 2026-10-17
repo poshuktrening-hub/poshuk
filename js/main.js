@@ -25,6 +25,20 @@
   window.addEventListener("hashchange", () => location.reload());
   // застосунок на головному екрані (Android): запам'ятати запрошення встановити
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); if (window.Game) Game.installEvt = e; });
+  /* Встановлений застосунок на ПК — на весь екран. Браузер дозволяє повний екран лише після дії користувача,
+     тому вмикаємо його на перший клік чи клавішу. Вийшли з повного екрана (Esc/F11) — більше не нав'язуємо до наступного запуску. */
+  const installed = matchMedia("(display-mode: standalone)").matches || matchMedia("(display-mode: fullscreen)").matches || matchMedia("(display-mode: window-controls-overlay)").matches;
+  const pc = matchMedia("(pointer: fine)").matches && matchMedia("(hover: hover)").matches;
+  if (installed && pc && document.documentElement.requestFullscreen && !location.hash.startsWith("#admin")) {
+    let declined = false;
+    const go = () => {
+      if (declined || document.fullscreenElement) return;
+      document.documentElement.requestFullscreen({navigationUI: "hide"}).catch(() => {});
+    };
+    document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) declined = true; });
+    window.addEventListener("pointerdown", go, {capture: true});
+    window.addEventListener("keydown", (e) => { if (e.key !== "Escape" && e.key !== "F11") go(); }, {capture: true});
+  }
   // кеш файлів сайту — щоб відкривався без мережі (для офлайн-версії)
   if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("sw.js").catch(() => {});
   route();
