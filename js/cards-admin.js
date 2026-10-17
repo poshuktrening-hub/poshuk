@@ -74,9 +74,10 @@
       let box = $("ca"); if (!box) { box = document.createElement("div"); box.id = "ca"; box.className = "modal"; document.body.appendChild(box); }
       box.hidden = false;
       box.onclick = (e) => { if (e.target === box && !this.busy) box.hidden = true; };
-      box.innerHTML = `<div class="m-card"><p class="status">Завантажую…</p></div>`;
-      try { const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); } catch (e) { box.innerHTML = `<div class="m-card"><p class="status no">${esc(e.message)}</p></div>`; return; }
-      this.render();
+      const fail = (e) => { box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" onclick="document.getElementById('ca').hidden=true">Закрити</button></div><p class="status no">${esc(e && e.message || e)}</p><p class="muted small">Оновіть сторінку й спробуйте ще раз. Якщо повторюється — напишіть у підтримку цей текст.</p></div>`; };
+      box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" onclick="document.getElementById('ca').hidden=true">Закрити</button></div><p class="status">Завантажую список фото…</p></div>`;
+      try { const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); } catch (e) { return fail(e); }
+      try { this.render(); } catch (e) { console.error(e); fail(e); }
     },
     render() {
       const deck = Cards.deck(), n = deck.filter((c) => this.photos.has(c.id)).length;
@@ -88,10 +89,12 @@
         <div class="row"><button type="button" id="ca-bulk">＋ Свої фото (кілька файлів)…</button><button type="button" id="ca-names">Список назв файлів</button></div>
         <input type="file" id="ca-files" accept="image/*" multiple hidden><input type="file" id="ca-one" accept="image/*" hidden>
         <p class="status" id="ca-st"></p>
+        <input type="search" id="ca-q" placeholder="Пошук картки: Т-72, Бук, РЕБ…" value="${esc(this.q || "")}" autocomplete="off" style="margin-top:10px">
         <div class="tabs" id="ca-f"><button type="button" data-f="all" class="${this.f !== "no" && this.f !== "yes" ? "on" : ""}">Усі</button><button type="button" data-f="no" class="${this.f === "no" ? "on" : ""}">Без фото ${deck.length - n}</button><button type="button" data-f="yes" class="${this.f === "yes" ? "on" : ""}">З фото ${n}</button></div>
-        <ul class="ca-list">${deck.filter((c) => this.f === "no" ? !this.photos.has(c.id) : this.f === "yes" ? this.photos.has(c.id) : true).map((c) => `<li>
+        <ul class="ca-list">${deck.filter((c) => this.f === "no" ? !this.photos.has(c.id) : this.f === "yes" ? this.photos.has(c.id) : true)
+          .filter((c) => !this.q || Cards.norm(c.name + " " + c.id + " " + c.aliases.join(" ")).includes(Cards.norm(this.q))).map((c) => `<li>
           ${this.photos.has(c.id) ? `<img class="th" loading="lazy" alt="" data-th="${c.id}">` : `<span class="dot"></span>`}<span class="nm">${esc(Logic.dispName(c.name))}<small>${esc(this.credits.get(c.id) || c.id)}</small></span>
-          <label class="ca-hard" title="Хардкор"><input type="checkbox" data-hard="${c.id}" ${c.hard ? "checked" : ""}>хардкор</label>
+          <label class="ca-hard" title="Хардкор"><input type="checkbox" data-hard="${c.id}" ${c.hard ? "checked" : ""}><span>хардкор</span></label>
           <button type="button" data-wiki="${c.id}" title="Інше фото з Вікісховища">🔎</button>
           <button type="button" data-up="${c.id}">${this.photos.has(c.id) ? "Замінити" : "Фото…"}</button>${this.photos.has(c.id) ? `<button type="button" data-del="${c.id}" title="Видалити фото">✕</button>` : ""}</li>`).join("")}</ul>
       </div>`;
@@ -104,6 +107,7 @@
       }));
       $("ca").querySelectorAll("[data-th]").forEach(async (im) => { im.src = await API.cardUrl(im.dataset.th, this.photos.get(im.dataset.th), this.pw).catch(() => ""); });
       $("ca-f").querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { this.f = b.dataset.f; this.render(); }));
+      $("ca-q").oninput = (e) => { this.q = e.target.value; const pos = e.target.selectionStart; this.render(); const q = $("ca-q"); q.focus(); try { q.setSelectionRange(pos, pos); } catch (er) { /* ок */ } };
       $("ca-bulk").onclick = () => $("ca-files").click();
       $("ca-files").onchange = (e) => this.bulk([...e.target.files]);
       $("ca-names").onclick = () => {

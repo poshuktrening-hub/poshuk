@@ -971,3 +971,23 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .main-menu .mm-wide { padding: 8px 12px; }
 #s-start .links { margin-top: 10px; padding-top: 8px; }
 #s-start .support { margin-top: 4px; }
+
+/* модальні вікна адмінки на телефоні: ніколи не ширші за екран, підписи кнопок переносяться */
+.modal { grid-template-columns: minmax(0, 1fr); }
+.m-card { min-width: 0; max-width: 100%; box-sizing: border-box; justify-self: center; }
+.m-card button { white-space: normal; }
+.m-card .m-head button.link { white-space: nowrap; }
+.ca-list li { flex-wrap: wrap; }
+.ca-list .nm { flex: 1 1 140px; }
+@media (max-width: 600px) {
+  .modal { padding: 0; -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(5,7,9,.94); }
+  .m-card { border-radius: 0; border-left: 0; border-right: 0; min-height: 100%; padding: 14px 12px 24px; }
+  .ca-list { max-height: 60vh; }
+}
+@media (max-width: 600px) {
+  .ca-list li { flex-wrap: nowrap; padding: 6px 8px; gap: 6px; }
+  .ca-list .nm { flex: 1 1 0; }
+  .ca-list .nm small { display: none; }
+  .ca-hard span { display: none; }
+  .ca-list button { padding: 6px 8px; }
+}
