@@ -77,7 +77,7 @@
       const wire = () => box.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => (box.hidden = true)));
       const fail = (e) => { box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status no">${esc(e && e.message || e)}</p><p class="muted small">Оновіть сторінку й спробуйте ще раз. Якщо повторюється — напишіть у підтримку цей текст.</p></div>`; wire(); };
       box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status">Завантажую список фото…</p></div>`; wire();
-      try { const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); } catch (e) { return fail(e); }
+      try { const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); this.fill = j.fill || null; } catch (e) { return fail(e); }
       try { this.render(); } catch (e) { console.error(e); fail(e); }
     },
     render() {
@@ -90,6 +90,9 @@
         <div class="row"><button type="button" id="ca-bulk">＋ Свої фото (кілька файлів)…</button><button type="button" id="ca-names">Список назв файлів</button></div>
         <input type="file" id="ca-files" accept="image/*" multiple hidden><input type="file" id="ca-one" accept="image/*" hidden>
         <p class="status" id="ca-st"></p>
+        ${this.fill ? `<div class="ca-fill"><p class="muted small">🤖 <b>Автопідбір у фоні</b> (сервер сам шукає вільні фото, креслення чи моделі у Вікісховищі): переглянуто ${this.fill.pos} з ${this.fill.total}, знайдено ${this.fill.ok}, не знайдено ${this.fill.miss.length}${this.fill.done ? " · завершено" : this.fill.paused ? " · пауза, Вікісховище не відповідає" : " · триває, поки сайтом користуються"}.</p>
+          ${this.fill.miss.length ? `<details class="small"><summary class="muted">Не знайдено (${this.fill.miss.length}) — додайте своє фото</summary><p class="muted small">${esc(this.fill.miss.join(", "))}</p></details>` : ""}
+          <div class="row"><button type="button" id="ca-fill-now" ${this.fill.done ? "disabled" : ""}>⏩ Наступні 2 картки зараз</button><button type="button" id="ca-fill-reset" title="Пройти перелік спочатку (вже знайдені фото лишаються)">Спочатку</button></div></div>` : ""}
         <input type="search" id="ca-q" placeholder="Пошук картки: Т-72, Бук, РЕБ…" value="${esc(this.q || "")}" autocomplete="off" style="margin-top:10px">
         <div class="tabs" id="ca-f"><button type="button" data-f="all" class="${this.f !== "no" && this.f !== "yes" ? "on" : ""}">Усі</button><button type="button" data-f="no" class="${this.f === "no" ? "on" : ""}">Без фото ${deck.length - n}</button><button type="button" data-f="yes" class="${this.f === "yes" ? "on" : ""}">З фото ${n}</button></div>
         <ul class="ca-list">${deck.filter((c) => this.f === "no" ? !this.photos.has(c.id) : this.f === "yes" ? this.photos.has(c.id) : true)
@@ -108,6 +111,16 @@
       }));
       $("ca").querySelectorAll("[data-th]").forEach(async (im) => { im.src = await API.cardUrl(im.dataset.th, this.photos.get(im.dataset.th), this.pw).catch(() => ""); });
       $("ca-f").querySelectorAll("[data-f]").forEach((b) => (b.onclick = () => { this.f = b.dataset.f; this.render(); }));
+      const fillNow = async (reset) => {
+        this.say(reset ? "Починаю спочатку…" : "Шукаю для наступних карток…");
+        try {
+          const j = await API.call("photo_fill_now", {reset: reset ? 1 : 0}, this.pw);
+          const ph = await API.call("card_photos", {}, this.pw); this.photos = new Map(ph.photos); this.credits = new Map(ph.credits || []); this.fill = j.fill || ph.fill;
+          this.render(); this.say(`Переглянуто ${j.fill.pos} з ${j.fill.total}, знайдено ${j.fill.ok}.`, "ok");
+        } catch (e) { this.say(e.message, "no"); }
+      };
+      if ($("ca-fill-now")) $("ca-fill-now").onclick = () => fillNow(false);
+      if ($("ca-fill-reset")) $("ca-fill-reset").onclick = () => { if (confirm("Пройти автопідбір спочатку? Знайдені фото лишаються; картки без фото буде перевірено ще раз.")) fillNow(true); };
       $("ca-q").oninput = (e) => { this.q = e.target.value; const pos = e.target.selectionStart; this.render(); const q = $("ca-q"); q.focus(); try { q.setSelectionRange(pos, pos); } catch (er) { /* ок */ } };
       $("ca-bulk").onclick = () => $("ca-files").click();
       $("ca-files").onchange = (e) => this.bulk([...e.target.files]);
