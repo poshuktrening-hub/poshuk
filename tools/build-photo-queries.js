@@ -20,7 +20,7 @@ for (const [id, name, al] of window.CARDS) {
   for (const x of v.slice(0, 2)) { const r = ru(x); if (r !== x && !v.includes(r)) v.splice(1, 0, r); }
   variants[id] = v.slice(0, 5);
 }
-const v = "2-" + crypto.createHash("sha1").update(JSON.stringify([order, queries, variants])).digest("hex").slice(0, 10);
+const v = "3-" + crypto.createHash("sha1").update(JSON.stringify([order, queries, variants])).digest("hex").slice(0, 10);
 const out = `/* Згенеровано tools/build-photo-queries.js — не редагувати вручну. Картки без фото з довідника та запити до Вікісховища. */
 export const LIST_V = ${JSON.stringify(v)};
 export const ORDER = ${JSON.stringify(order)};

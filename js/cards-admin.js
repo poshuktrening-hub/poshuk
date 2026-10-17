@@ -40,11 +40,14 @@
     if (files.length) { const j = await commons(Object.assign({action: "query", titles: files.map((f) => "File:" + f).join("|")}, ii)); take(j.query && j.query.pages); }
     if (q) {
       const j = await commons(Object.assign({action: "query", generator: "search", gsrsearch: q + " filetype:bitmap", gsrnamespace: "6", gsrlimit: "12"}, ii));
-      const pages = (j.query && j.query.pages || []).sort((a, b) => (a.index || 0) - (b.index || 0));
+      let pages = (j.query && j.query.pages || []).sort((a, b) => (a.index || 0) - (b.index || 0));
       // пошук повертає й сміття (туманності, газети, інші гелікоптери) — у назві файлу має бути позначення моделі
       const nz = (s) => String(s).toLowerCase().replace(/[^a-z0-9а-яіїєґ]/g, "");
       const keys = q.split(/\s+/).filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
-      const need = keys.length ? keys : q.split(/\s+/).map(nz).filter((w) => w.length >= 3);
+      const words = q.split(/\s+/).filter((w) => !/\d/.test(w)).map(nz).filter((w) => w.length >= 4 && !/^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military)$/.test(w));
+      const need = keys.length ? keys.concat(words.slice(0, 1)) : (words.length ? words : q.split(/\s+/).map(nz).filter((w) => w.length >= 3));
+      const OFF = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal/i;
+      pages = pages.filter((p) => !OFF.test(p.title));
       take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|emblem|logo|\bmap\b/i.test(p.title); }));
       // справжніх фото немає (концепт, рідкісний зразок) — беремо модель, макет з виставки чи візуалізацію
       if (!out.length) take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/toy|lego|emblem|logo|\bmap\b|interior|operators/i.test(p.title); }).map((p) => Object.assign(p, {model: true})));
