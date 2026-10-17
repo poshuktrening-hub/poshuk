@@ -8,7 +8,7 @@
  * куди дублювати результати (Google-скрипт таблиці). Перший вхід адміна сам переносить
  * налаштування й паролі з Google-таблиці.
  */
-import {fillTick, fillState, fillReset, fillInfo} from "./photofill.js";
+import {fillTick, fillState, fillReset, fillInfo, fillOne} from "./photofill.js";
 import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg} from "./cardref.js";
 const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
@@ -751,6 +751,12 @@ async function action(env, ctx, req, origin) {
       if (req.reset) await fillReset(env, metaSet);
       const s = await fillTick(env, metaGet, metaSet, true);
       return {ok: true, fill: fillInfo(s || await fillState(env, metaGet))};
+    }
+    case "photo_fill_card": {   // автопошук фото для однієї картки (усі джерела), skip — інший кандидат
+      const id = String(req.id || "");
+      if (!/^[a-z0-9_]+$/.test(id)) throw new HttpError("Невірний id картки");
+      const r = await fillOne(env, id, Math.max(0, Number(req.skip) || 0));
+      return {ok: true, put: !!r.ok, found: r.found || 0, credit: r.credit || "", updated: r.updated || ""};
     }
     case "card_photo_upload": {
       const id = String(req.id || "").slice(0, 40);
