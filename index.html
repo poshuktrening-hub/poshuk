@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Пошук техніки</title>
 <link rel="preload" href="fonts/geologica-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="fonts.css?v=202610172700">
-<link rel="stylesheet" href="style.css?v=202610172700">
+<link rel="stylesheet" href="fonts.css?v=202610172900">
+<link rel="stylesheet" href="style.css?v=202610172900">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1317">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -42,7 +42,7 @@
   <p class="credit" id="credit">Створено <span class="credit-icon" id="credit-icon">росомахою</span> для навчального&nbsp;центру&nbsp;А****</p>
   <form class="card narrow" id="start-form">
     <p class="off-badge" id="off-badge" hidden></p>
-    <h1 class="logo"><svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 2v9M20 29v9M2 20h9M29 20h9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="20" cy="20" r="2.5" fill="currentColor"/></svg><span>Пошук техніки</span></h1>
+    <h1 class="logo"><button type="button" class="hdr-menu" data-go="menu">Меню</button><svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 2v9M20 29v9M2 20h9M29 20h9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="20" cy="20" r="2.5" fill="currentColor"/></svg><span>Пошук техніки</span></h1>
     <label for="callsign" class="cs-field cs-label">Прізвище</label>
     <div class="cs-wrap cs-field"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><input id="callsign" autocomplete="family-name" maxlength="40" placeholder="Ваше прізвище" required></div>
     <div class="main-menu" id="main-menu">
@@ -54,7 +54,7 @@
       <button type="button" class="mm mm-fix mm-wide" data-go="fix" id="mm-fix" hidden><span class="mm-h"><span class="mm-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/></svg></span><b>Робота над помилками</b></span><span class="mm-sub" id="fix-info"></span></button>
     </div>
     <div class="sub" id="sub-search" hidden>
-      <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Пошук</h2></div>
+      <div class="sub-h"><h2>Пошук</h2></div>
       <div class="pick"><div class="pick-h">Режим</div><div class="modes" id="pick-mode" role="radiogroup" aria-label="Режим"></div></div>
       <div class="pick"><div class="pick-h">Напрямок</div><div class="chips" id="pick-region" role="radiogroup" aria-label="Напрямок"></div></div>
       <div class="pick"><div class="pick-h">Пора року</div><div class="chips" id="pick-season" role="radiogroup" aria-label="Пора року"></div></div>
@@ -63,7 +63,7 @@
       <button type="button" class="link help-link" data-help="search">Як грати?</button>
     </div>
     <div class="sub" id="sub-fix" hidden>
-      <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Робота над помилками</h2></div>
+      <div class="sub-h"><h2>Робота над помилками</h2></div>
       <p class="muted">Тут лише етапи й картки, де ви востаннє помилились. Пройшли правильно — вони зникають зі списку. Режим ігровий: з підказкою й розбором.</p>
       <div class="fix-btns">
         <button class="primary" type="button" id="fix-search">Етапи з помилками</button>
@@ -72,15 +72,15 @@
       <p class="muted" id="fix-none" hidden>Помилок немає — усе виправлено 💪</p>
     </div>
     <div class="sub" id="sub-my" hidden>
-      <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Мої результати</h2></div>
+      <div class="sub-h"><h2>Мої результати</h2></div>
       <div id="my-body"></div>
     </div>
     <div class="sub" id="sub-off" hidden>
-      <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Офлайн-версія</h2></div>
+      <div class="sub-h"><h2>Офлайн-версія</h2></div>
       <div id="off-body"></div>
     </div>
     <div class="sub" id="sub-cards" hidden>
-      <div class="sub-h"><button type="button" class="link back" data-go="menu">← Меню</button><h2>Картки</h2></div>
+      <div class="sub-h"><h2>Картки</h2></div>
       <div class="pick"><div class="pick-h">Режим</div><div class="modes" id="pick-cmode" role="radiogroup" aria-label="Режим"></div></div>
       <p class="muted" id="c-info"></p>
       <button class="primary" type="button" id="c-start">Почати</button>
@@ -152,7 +152,7 @@
 </section>
 
 <section id="s-ref" class="screen ref" hidden>
-  <header class="bar top"><button type="button" class="link" id="r-back">← Меню</button><div class="stage">Довідник техніки</div><span class="muted small" id="r-count"></span><button type="button" class="iconbtn" id="r-help" title="Як користуватись" aria-label="Як користуватись">?</button></header>
+  <header class="bar top"><button type="button" class="hdr-menu" id="r-back">Меню</button><div class="stage">Довідник техніки</div><span class="muted small" id="r-count"></span><button type="button" class="iconbtn" id="r-help" title="Як користуватись" aria-label="Як користуватись">?</button></header>
   <div class="r-tools"><input id="r-q" type="search" placeholder="Пошук: Т-72, Бук, РЕБ, катки…" autocomplete="off" aria-label="Пошук у довіднику"><div class="chips r-cats" id="r-cats"></div></div>
   <div class="r-list" id="r-list"></div>
   <div class="r-detail" id="r-detail" hidden></div>
@@ -215,26 +215,26 @@
 
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="config.js?v=202610172700"></script>
-<script src="js/sfx.js?v=202610172700"></script>
-<script src="js/fx.js?v=202610172700"></script>
-<script src="js/api.js?v=202610172700"></script>
-<script src="js/offline.js?v=202610172700"></script>
-<script src="js/tiles.js?v=202610172700"></script>
-<script src="js/viewer.js?v=202610172700"></script>
-<script src="js/logic.js?v=202610172700"></script>
-<script src="js/game.js?v=202610172700"></script>
-<script src="js/cards-data.js?v=202610172700"></script>
-<script src="js/cards-data3.js?v=202610172700"></script>
-<script src="js/cards-weak.js?v=202610172700"></script>
-<script src="js/cards-data2.js?v=202610172700"></script>
-<script src="js/cards.js?v=202610172700"></script>
-<script src="js/ref.js?v=202610172700"></script>
-<script src="js/help.js?v=202610172700"></script>
-<script src="js/compose.js?v=202610172700"></script>
-<script src="js/models.js?v=202610172700"></script>
-<script src="js/models2.js?v=202610172700"></script>
-<script src="js/duel.js?v=202610172700"></script>
-<script src="js/main.js?v=202610172700"></script>
+<script src="config.js?v=202610172900"></script>
+<script src="js/sfx.js?v=202610172900"></script>
+<script src="js/fx.js?v=202610172900"></script>
+<script src="js/api.js?v=202610172900"></script>
+<script src="js/offline.js?v=202610172900"></script>
+<script src="js/tiles.js?v=202610172900"></script>
+<script src="js/viewer.js?v=202610172900"></script>
+<script src="js/logic.js?v=202610172900"></script>
+<script src="js/game.js?v=202610172900"></script>
+<script src="js/cards-data.js?v=202610172900"></script>
+<script src="js/cards-data3.js?v=202610172900"></script>
+<script src="js/cards-weak.js?v=202610172900"></script>
+<script src="js/cards-data2.js?v=202610172900"></script>
+<script src="js/cards.js?v=202610172900"></script>
+<script src="js/ref.js?v=202610172900"></script>
+<script src="js/help.js?v=202610172900"></script>
+<script src="js/compose.js?v=202610172900"></script>
+<script src="js/models.js?v=202610172900"></script>
+<script src="js/models2.js?v=202610172900"></script>
+<script src="js/duel.js?v=202610172900"></script>
+<script src="js/main.js?v=202610172900"></script>
 </body>
 </html>

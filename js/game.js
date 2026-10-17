@@ -162,7 +162,7 @@
       const install = standalone ? "" : `<div class="off-inst"><b>Встановити як застосунок</b>
           ${this.installEvt ? `<button type="button" id="off-install">📲 Встановити на головний екран</button>` : ""}
           <p class="muted small">${ios ? "iPhone: відкрийте сайт у <b>Safari</b> → «Поділитися» → «На екран „Додому“»." : "Android: Chrome → меню ⋮ → «Встановити застосунок» або «Додати на головний екран»."}</p></div>`;
-      const back = `<button type="button" class="off-back" id="off-back">← Повернутися в меню</button>`;
+      const back = `<button type="button" class="off-back" id="off-back">Повернутися в меню</button>`;
       box.innerHTML = on
         ? `<p>Офлайн-версія <b>увімкнена</b>: тренажер працює без інтернету й не звертається до сервера.</p>
            <p class="muted">Дані від ${new Date(inf.at).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"})}: етапів — ${inf.stages}, фото карток — ${inf.cards}, записів довідника — ${inf.ref} (≈ ${mb(inf.bytes)} МБ).</p>
@@ -326,6 +326,7 @@
       // системна кнопка «Назад» (Android, встановлений застосунок) повертає з підменю в меню
       if (!fromPop) { if (v !== "menu") trap(); else if (inTrap()) history.back(); }
       this.lastView = v;
+      $("start-form").dataset.view = v;   // у підменю: «Меню» зліва вгорі, назва й приціл — праворуч
       [["main-menu", "menu"], ["sub-search", "search"], ["sub-cards", "cards"], ["sub-fix", "fix"], ["sub-off", "off"], ["sub-my", "my"]]
         .forEach(([id, k]) => { const el = $(id); if (el) el.hidden = v !== k; });
       if (v === "fix") this.renderFix();

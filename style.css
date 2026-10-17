@@ -1041,3 +1041,18 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 /* значки й назви всіх великих плиток — на одній висоті (зверху), топ дня — нижче */
 .main-menu .mm:not(.mm-wide):not(.mm-small) { justify-content: flex-start; padding-top: 16px; }
 .main-menu .mm:not(.mm-wide):not(.mm-small) .mm-h { flex: 0 0 auto; }
+
+/* шапка: у підменю кнопка «Меню» — лівий верхній кут, назва й приціл — праворуч */
+#s-start .logo .hdr-menu { display: none; }
+#start-form:not([data-view="menu"]) .logo { justify-content: flex-end; }
+#start-form:not([data-view="menu"]) .logo .hdr-menu { display: inline-flex; align-items: center; margin-right: auto; padding: 8px 16px; border-radius: 999px;
+  border: 1px solid var(--line); background: rgba(255,255,255,.05); color: var(--fg); font: 600 .9rem/1 var(--body); letter-spacing: 0; cursor: pointer; }
+#start-form:not([data-view="menu"]) .logo .hdr-menu:active { transform: scale(.97); }
+#start-form:not([data-view="menu"]) .logo .mark { order: 3; width: 32px; height: 32px; }
+#start-form:not([data-view="menu"]) .logo span { order: 2; font-size: .8em; }
+#s-start .sub-h { margin-top: 6px; }
+/* кнопка «Меню» (без стрілки) — однаково в усіх підменю */
+.hdr-menu { display: inline-flex; align-items: center; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--line); background: rgba(255,255,255,.05);
+  color: var(--fg); font: 600 .9rem/1 var(--body); letter-spacing: 0; text-transform: none; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
+.hdr-menu:active { transform: scale(.97); }
+#start-form[data-view="menu"] .logo .hdr-menu, #start-form:not([data-view]) .logo .hdr-menu { display: none; }
