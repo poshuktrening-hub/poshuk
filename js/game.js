@@ -379,7 +379,7 @@
         sel[b.dataset.g] = a.includes(v) ? a.filter((x) => x !== v) : [...a, v];
         save();
       }));
-      const pool = this.filtered(), n = Math.min(this.cfg.rounds_per_game, pool.length);
+      const pool = this.filtered(), n = Math.min(this.cfg.rounds_per_game, Logic.sceneCount(pool));
       if (!this.playable().length) {
         $("start-info").innerHTML = 'Поки немає жодного етапу. Адміністратору: <a href="#admin">відкрийте адмінку</a> й додайте знімки.';
       } else $("start-info").textContent = n ? `Етапів у грі: ${n}${pool.length > n ? ` (з ${pool.length})` : ""}.` : "Для вибраних напрямків і пір року етапів немає — додайте галочки.";
