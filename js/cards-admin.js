@@ -74,8 +74,9 @@
       let box = $("ca"); if (!box) { box = document.createElement("div"); box.id = "ca"; box.className = "modal"; document.body.appendChild(box); }
       box.hidden = false;
       box.onclick = (e) => { if (e.target === box && !this.busy) box.hidden = true; };
-      const fail = (e) => { box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" onclick="document.getElementById('ca').hidden=true">Закрити</button></div><p class="status no">${esc(e && e.message || e)}</p><p class="muted small">Оновіть сторінку й спробуйте ще раз. Якщо повторюється — напишіть у підтримку цей текст.</p></div>`; };
-      box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" onclick="document.getElementById('ca').hidden=true">Закрити</button></div><p class="status">Завантажую список фото…</p></div>`;
+      const wire = () => box.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => (box.hidden = true)));
+      const fail = (e) => { box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status no">${esc(e && e.message || e)}</p><p class="muted small">Оновіть сторінку й спробуйте ще раз. Якщо повторюється — напишіть у підтримку цей текст.</p></div>`; wire(); };
+      box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status">Завантажую список фото…</p></div>`; wire();
       try { const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); } catch (e) { return fail(e); }
       try { this.render(); } catch (e) { console.error(e); fail(e); }
     },
