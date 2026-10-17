@@ -99,7 +99,7 @@
     deck() {
       const ov = (window.Game && Game.cardHard) || {};
       return (window.CARDS || []).map(([id, name, al, p1, p2, x]) => ({id, name, aliases: al.split("|").map((x) => x.trim()).filter(Boolean), p1, p2,
-        concept: !!(x && x.concept), hard: ov[id] != null ? !!ov[id] : !!(x && x.hard) || this.HARD_TYPES.includes(name.split(" ")[0])}));
+        concept: !!(x && x.concept), hard: ov[id] != null ? !!ov[id] : x && x.hard === 0 ? false : !!(x && x.hard) || this.HARD_TYPES.includes(name.split(" ")[0])}));
     },
     withPhoto(hard) {
       const ph = (window.Game && Game.cardPhotos) || new Map(), ref = window.CARD_REF || {};
@@ -129,6 +129,8 @@
           if (new Set(parts.filter((x) => /\d/.test(x))).size > 1) continue;
           const hit = new Set();
           for (const p of new Set([norm(e.name), ...parts])) if (p.length >= 4 && idx.has(p)) hit.add(idx.get(p));
+          // довга назва («Машина розвідки … 1Л219 “Зоопарк”») — шукаємо позначення окремим словом
+          if (!hit.size) for (const w of String(e.name || "").split(/[\s\/\\;,()“”"«»]+/).map(norm)) if (w.length >= 4 && /\d/.test(w) && idx.has(w)) hit.add(idx.get(w));
           if (hit.size === 1) hit.forEach((cid) => add(cid, e));
         }
         this.refPics = map;
