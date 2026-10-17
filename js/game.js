@@ -107,6 +107,7 @@
       this.objects = j.objects || [];
       this.cardPhotos = new Map(j.cardPhotos || []);
       this.cardCredits = new Map(j.cardCredits || []);
+      this.cardPics = j.cardPics || {};   // фото карток із довідника: картка → [[id фото, версія, джерело]]
       this.cardHard = j.cardHard || {};
       this.typePool = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))];
     },

@@ -4,6 +4,7 @@
    Фото зберігається як у ручному підборі (card_photos: мініатюра 1280 px + підпис автора/ліцензії).
    Стан — у meta «photo_fill»: позиція у переліку, скільки знайдено, яких не знайдено. Перелік — photo-queries.js. */
 import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS} from "./photo-queries.js";
+import {cardPics, putCardImg, dropImg, CP} from "./cardref.js";
 
 const UA = "poshuk-trener/1.0 (https://poshuk.pages.dev; contact: mrqwerty841@gmail.com)";
 const PER_TICK = 1, TICK_MS = 20e3,   // до ~20 підзапитів на картку — в межах ліміту 50 на запит
@@ -123,16 +124,17 @@ async function fetchThumb(url) {
    Імпортуються в базу (card_photos) один раз на версію SEED_V (= сам перелік) і замінюють автопідібране фото.
    <картка>.jpg — головне фото картки; <картка>--altN — ще одне фото для гри й довідника;
    <картка>--refN — лише для довідника (з підписами, вид згори тощо). */
-export const SEED = ["tirada", "tirada--ref1", "murmansk", "murmansk--alt1", "murmansk--ref1"];
-const SEED_V = SEED.join(",");
+export const SEED = ["tirada", "tirada--ref1", "murmansk", "murmansk--alt1", "murmansk--ref1",
+  "r330bmv", "r330bmv--alt1", "marker", "marker--alt1"];
+const SEED_V = "ref:" + SEED.join(",");
 async function applySeeds(env, metaGet, metaSet) {
   if (!env.ASSETS || (await metaGet(env, "photo_seed")) === SEED_V) return;
   for (const id of SEED) {
     const r = await env.ASSETS.fetch(new Request("https://assets.local/media/seed/" + id + ".jpg"));
     if (!r.ok) throw new Error("seed " + id + " " + r.status);
-    const ex = await env.DB.prepare("SELECT credit FROM card_photos WHERE id=?").bind(id).first();
-    if (ex && ex.credit === "Фото надав адміністратор") continue;
-    await env.DB.prepare("INSERT OR REPLACE INTO card_photos (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(id, b64(await r.arrayBuffer()), "image/jpeg", new Date().toISOString(), "Фото надав адміністратор").run();
+    const iid = CP + id;   // фото — у довідник, у запис картки (див. cardref.js)
+    if (await env.DB.prepare("SELECT id FROM ref_images WHERE id=?").bind(iid).first()) continue;
+    await putCardImg(env, id.split("--")[0], {data: b64(await r.arrayBuffer()), credit: "Фото надав адміністратор", imgId: iid, front: !id.includes("--")});
   }
   await metaSet(env, "photo_seed", SEED_V);
 }
@@ -159,6 +161,13 @@ export async function fillTick(env, metaGet, metaSet, force) {
   s.lock = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s));
   if (!s.cleaned) {   // прибрати фото, підібрані раніше, у назві файлу яких явно не техніка (потяги тощо)
     const {results: cr} = await env.DB.prepare("SELECT id, credit FROM card_photos WHERE credit LIKE '%Wikimedia%'").all();
+    const {results: rr} = await env.DB.prepare("SELECT id, credit FROM ref_images WHERE id LIKE 'cp\\_%' ESCAPE '\\' AND credit LIKE '%Wikimedia%'").all();
+    for (const r of rr) {   // фото карток у довіднику: id cp_<картка>-…
+      const card = r.id.slice(CP.length).split("-")[0];
+      const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
+      const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || [])[1] || "";
+      if (OFF_TOPIC.test(cred) || (file && QUERIES[card] && !fileOk(card, file))) await dropImg(env, r.id);
+    }
     for (const r of cr) {
       const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
       const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || [])[1] || "";
@@ -167,7 +176,7 @@ export async function fillTick(env, metaGet, metaSet, force) {
     s.cleaned = 1;
   }
   const {results} = await env.DB.prepare("SELECT id FROM card_photos").all();
-  const have = new Set(results.map((r) => r.id));
+  const have = new Set(results.map((r) => r.id).concat(Object.keys(await cardPics(env))));
   let n = 0;
   try {
     while (n < PER_TICK && s.pos < ORDER.length) {
@@ -180,7 +189,7 @@ export async function fillTick(env, metaGet, metaSet, force) {
         try {
           const t = await fetchThumb(c.url);
           const credit = c.src === "armyinform" ? `АрміяInform, ${c.license} — ${c.page}` : `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}${c.loose ? " (креслення/модель)" : ""}`;
-          await env.DB.prepare("INSERT OR REPLACE INTO card_photos (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(id, t.data, t.mime, new Date().toISOString(), credit.slice(0, 400)).run();
+          await putCardImg(env, id, {data: t.data, mime: t.mime, credit: credit.slice(0, 400)});
           stored = true; break;
         } catch (e) { /* наступний кандидат */ }
       }

@@ -88,6 +88,7 @@
       $("ca").innerHTML = `<div class="m-card">
         <div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" id="ca-x">Закрити</button></div>
         <p class="muted small">Галочка «хардкор» — картка грає лише в режимі «Хардкор» (не в ігровому й не на іспиті). У хардкорі зараз: ${deck.filter((c) => c.hard).length}.</p>
+        <p class="muted small">Фото карток зберігаються в «Довіднику» (у записі цієї техніки) — там же можна додати кілька ракурсів.</p>
         <p class="muted small">У грі беруть участь лише картки з фото: зараз ${n} з ${deck.length}. Виберіть одразу багато фото — кожне прив'яжеться до картки за назвою файлу (напр. «Т-72Б3.jpg», «Град.png», «2С19 Мста-С.jpg»).</p>
         <div class="row"><button type="button" class="primary" id="ca-wiki" title="Знайти фото з вільною ліцензією у Wikimedia Commons для всіх карток без фото">🔎 Підібрати фото з Вікісховища</button></div>
         <div class="row"><button type="button" id="ca-bulk">＋ Свої фото (кілька файлів)…</button><button type="button" id="ca-names">Список назв файлів</button></div>
@@ -135,8 +136,8 @@
       $("ca-one").onchange = async (e) => { const f = e.target.files[0]; if (f) await this.upload(this.oneId, f); e.target.value = ""; this.render(); };
       $("ca").querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => {
         if (!confirm("Видалити фото цієї картки?")) return;
-        await API.call("card_photo_delete", {id: b.dataset.del}, this.pw).catch((e) => UI.toast(e.message));
-        this.photos.delete(b.dataset.del); this.render();
+        try { await API.call("card_photo_delete", {id: b.dataset.del}, this.pw); } catch (e) { this.say(e.message, "no"); return; }
+        const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); this.render();
       }));
     },
     say(t, cls = "") { const s = $("ca-st"); if (s) { s.textContent = t; s.className = "status " + cls; } },

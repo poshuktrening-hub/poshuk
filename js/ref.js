@@ -40,14 +40,24 @@
 
     /* Довідник = записи навчальної таблиці + картки, яких у таблиці немає (ТТХ, ознаки, фото картки).
        До кожного запису, що відповідає картці, додаються «Слабкі сторони». */
-    withCards(list) {
+    withCards(list, onlyLinks) {
       if (!window.Cards) return list;
-      const deck = Cards.deck(), idx = new Map();
+      const deck = Cards.deck(), idx = new Map(), byId = new Map(deck.map((c) => [c.id, c]));
+      // записи-оболонки c_<картка> (картки без запису в таблиці, але з фото): тексти й розділ — з картки
+      const shells = [];
+      list = list.filter((e) => {
+        if (!String(e.id).startsWith("c_")) return true;
+        const c = byId.get(e.card); if (!c) return false;
+        if (!onlyLinks) shells.push(Object.assign(e, {cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), name: c.name, ttx: c.p1, desc: c.p2, fromCard: true, concept: c.concept}));
+        return false;
+      });
       const good = (v) => v.length >= 4 || (v.length === 3 && /\d/.test(v));   // «т72», «д30», «мтлб», «шилка» — але не «бв», «уд»
       const brand = /^(камаз|урал|уаз|газ|зіл|зил|краз|маз|кзкт|тигр)$/;   // сама марка шасі ще не каже, що це за техніка
       for (const c of deck) for (const a of [c.name, ...c.aliases]) { const v = norm(a); if (good(v) && !brand.test(v) && !idx.has(v)) idx.set(v, c.id); }
-      const used = new Set();
+      const used = new Set(shells.map((e) => e.card));
       for (const e of list) {
+        if (e.card && byId.has(e.card)) { used.add(e.card); continue; }   // прив'язка збережена в базі
+        e.card = "";
         const name = String(e.name || "");
         // спершу вся назва й частини між роздільниками, далі окремі слова, потім слова ще й по дефісу («9К35-Стрела-10»)
         const parts = name.split(/[\/\\;,()“”"«»]|\s[-–—]\s|\sта\s|\sабо\s/).map(norm).filter(good);
@@ -60,9 +70,23 @@
         if (Object.prototype.hasOwnProperty.call(FIX, norm(name))) { const id = FIX[norm(name)]; if (id && deck.some((c) => c.id === id)) { e.card = id; used.add(id); } continue; }
         for (const p of [norm(name), ...parts, ...words, ...sub]) if (idx.has(p)) { e.card = idx.get(p); used.add(e.card); break; }
       }
+      if (onlyLinks) return list;
       const extra = deck.filter((c) => !used.has(c.id)).map((c, i) => ({id: "card:" + c.id, ord: 100000 + i, cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name),
         name: c.name, ttx: c.p1, desc: c.p2, imgs: [], card: c.id, fromCard: true, concept: c.concept}));
-      return list.concat(sortRef(extra));
+      return list.concat(sortRef(shells.concat(extra)));
+    },
+    /* Адмінка: один раз зберегти в базі прив'язки «запис → картка», знайдені за назвами, і перенести старі фото карток
+       у довідник. Далі прив'язки явні — їх можна змінити в записі довідника (поле «Картка»). */
+    async syncLinks(pw) {
+      if (!window.Cards || this._synced) return;
+      this._synced = true;
+      const list = (await API.call("ref_list", {}, pw)).entries || [];
+      const fresh = list.filter((e) => !e.card && !String(e.id).startsWith("c_"));
+      const links = this.withCards(fresh.map((e) => Object.assign({}, e)), true).filter((e) => e.card).map((e) => [e.id, e.card]);
+      let j = await API.call("ref_link", {links}, pw), n = 0;
+      while (j.left > 0 && n++ < 100) j = await API.call("ref_link", {}, pw);
+      this.entries = null;
+      return j;
     },
     weakHtml(e) {
       const w = e.card && (window.CARD_WEAK || {})[e.card];
@@ -222,6 +246,9 @@
     },
     async load() {
       try { this.entries = sortRef((await API.call("ref_list", {}, this.pw)).entries || []); } catch (e) { this.entries = []; this.err = e.message; }
+      // записи-оболонки карток (c_…): розділ і назва — з картки
+      const byId = new Map((window.Cards ? Cards.deck() : []).map((c) => [c.id, c]));
+      for (const e of this.entries) { const c = byId.get(e.card); if (String(e.id).startsWith("c_") && c) { if (!e.cat) e.cat = c.concept ? "Концепти й новітні розробки" : Logic.category(c.name); e.name = e.name || c.name; } }
       Ref.entries = null;   // курсантський список перечитається
     },
     cats() { const out = []; this.entries.forEach((e) => { if (!out.includes(e.cat)) out.push(e.cat); }); return out; },
@@ -234,7 +261,7 @@
         <p class="status" id="ra-st">${this.err ? esc(this.err) : ""}</p>
         <div class="row ra-filt"><input id="ra-q" type="search" placeholder="Пошук за назвою" value="${esc(this.f)}"><select id="ra-c"><option value="">Усі розділи</option>${this.cats().map((c) => `<option${c === this.fcat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
         <ul class="ra-list">${list.map((e) => `<li><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : ""}</span>
-          <span class="nm">${esc(Logic.dispName(e.name))}<small>${esc(e.cat)} · фото: ${e.imgs.length}</small></span>
+          <span class="nm">${esc(Logic.dispName(e.name))}<small>${esc(e.cat)} · фото: ${e.imgs.length}${e.card ? " · 🃏 картка" : ""}</small></span>
           <button type="button" data-edit="${esc(e.id)}" title="Змінити">✎</button><button type="button" data-del="${esc(e.id)}" title="Видалити">✕</button></li>`).join("") || `<li class="muted small">Нічого не знайдено</li>`}</ul></div>`;
       $("ra-x").onclick = () => { if (!this.busy) $("ra").hidden = true; };
       $("ra-new").onclick = () => this.edit(null);
@@ -272,10 +299,11 @@
           <label>Назва<input id="re-name" maxlength="200" value="${esc(e ? e.name : "")}" placeholder="напр. Т-72Б3М"></label>
           <label>Розділ<select id="re-cat">${cats.map((c) => `<option${(e ? e.cat : this.fcat || cats[0]) === c ? " selected" : ""}>${esc(c)}</option>`).join("")}<option value="__new">＋ Новий розділ…</option></select></label>
           <label id="re-newcat-l" hidden>Назва нового розділу<input id="re-newcat" maxlength="80"></label>
+          <label>Картка цілей (фото цього запису йдуть у гру)<select id="re-card"><option value="">— не прив'язано —</option>${(window.Cards ? Cards.deck() : []).slice().sort((a, b) => a.name.localeCompare(b.name, "uk")).map((c) => `<option value="${esc(c.id)}"${e && e.card === c.id ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>
           <label>ТТХ<textarea id="re-ttx" rows="6" placeholder="Озброєння: …&#10;Калібр: …">${esc(unesc(e ? e.ttx : ""))}</textarea></label>
           <label>Ознаки та опис<textarea id="re-desc" rows="8">${esc(unesc(e ? e.desc : ""))}</textarea></label>
           <p class="muted small">Жирний текст: оберніть слова в **зірочки**. Кожен рядок — з нового рядка.</p>
-          <div class="re-ph-h"><b>Фото</b> <span class="muted small">перше — обкладинка в списку; до 12 шт.</span></div>
+          <div class="re-ph-h"><b>Фото</b> <span class="muted small">перше — обкладинка в списку; до 20 шт.</span></div>
           <div class="re-photos" id="re-photos"></div>
           <div class="row"><button type="button" id="re-add">＋ Додати фото…</button></div>
           <input type="file" id="re-files" accept="image/*" multiple hidden>
@@ -288,7 +316,7 @@
       $("re-add").onclick = () => $("re-files").click();
       $("re-files").onchange = async (ev) => {
         for (const f of [...ev.target.files]) {
-          if (this.photos.length >= 12) { this.say("Не більше 12 фото в записі.", "no"); break; }
+          if (this.photos.length >= 20) { this.say("Не більше 20 фото в записі.", "no"); break; }
           try { this.photos.push({id: null, url: await toJpeg(f)}); } catch (err) { this.say(err.message, "no"); }
         }
         ev.target.value = ""; this.renderPhotos();
@@ -324,7 +352,7 @@
         const inCat = this.entries.filter((x) => x.cat === cat && x !== e);
         ord = (inCat.length ? Math.max(...inCat.map((x) => x.ord || 0)) : Math.max(0, ...this.entries.map((x) => x.ord || 0))) + 1;
       }
-      const entry = {id, ord, cat, name, ttx: toHtml($("re-ttx").value), desc: toHtml($("re-desc").value), imgs};
+      const entry = {id, ord, cat, name, ttx: toHtml($("re-ttx").value), desc: toHtml($("re-desc").value), imgs, card: $("re-card").value};
       this.busy = true; $("re-save").disabled = true; this.say("Зберігаю…");
       try {
         // нові фото — по одному запиту на кілька штук, щоб не впертися в розмір запиту
@@ -378,7 +406,7 @@
           this.say(`${i + 1}/${b.entries.length}: ${e.name}…`);
           const images = (e.imgs || []).filter((x) => b.images[x]).map((x) => ({id: x, data: b.images[x], mime: "image/jpeg"}));
           for (let k = 0; ; k++) {
-            try { await API.call("ref_put", {entry: Object.assign({}, e, {ord: i}), images}, this.pw); break; }
+            try { await API.call("ref_put", {entry: Object.assign({}, e, {ord: i, card: undefined}), images, keepCp: 1}, this.pw); break; }
             catch (err) { if (k >= 2) throw err; await new Promise((r) => setTimeout(r, 1500)); }
           }
         }
