@@ -12,13 +12,19 @@ for (const [id, name, al] of window.CARDS) {
   // запасні запити кирилицею: шифр у лапках, позначення з назви, синоніми (у т. ч. російське написання)
   const code = (name.match(/«([^»]+)»/) || [])[1] || "";
   const desig = name.replace(/^[^\s]+\s+/, "").replace(/\s*«[^»]*»/g, "").replace(/[()]/g, "").trim();
-  const alts = String(al || "").split("|").map((x) => x.trim()).filter((x) => x.length >= 4 && /[а-яіїєґ]/i.test(x));
+  // синоніми — лише з позначенням (цифри) або шифр із назви; загальні слова («цистерна», «бензовоз») дають чужі фото
+  const lc = name.toLowerCase();
+  const alts = String(al || "").split("|").map((x) => x.trim()).filter((x) => x.length >= 4 && /[а-яіїєґ]/i.test(x) && (/\d/.test(x) || (code && lc.includes(x.toLowerCase()))));
   const v = [];
   for (const x of [code && desig ? `${desig} ${code}` : "", code, desig, ...alts]) if (x && x.length >= 3 && !v.some((y) => y.toLowerCase() === x.toLowerCase())) v.push(x);
   // російське написання (на Вікісховищі багато файлів з mil.ru): і/ї→и, є→е
   const ru = (x) => x.replace(/[іїІЇ]/g, (c) => (c === c.toLowerCase() ? "и" : "И")).replace(/є/g, "е").replace(/Є/g, "Е");
   for (const x of v.slice(0, 2)) { const r = ru(x); if (r !== x && !v.includes(r)) v.splice(1, 0, r); }
-  variants[id] = v.slice(0, 5);
+  // лише запити з позначенням (цифри) або шифром: самі «КамАЗ», «Урал» знаходять будь-яку машину на тому ж шасі
+  const has = (x, c) => c && (x.toLowerCase().includes(c.toLowerCase()) || x.toLowerCase().includes(ru(c).toLowerCase()));
+  let good = v.filter((x) => /\d/.test(x) || has(x, code));
+  if (!good.length && desig.split(/\s+/).length >= 2) good = [desig];
+  variants[id] = good.slice(0, 5);
 }
 const v = "3-" + crypto.createHash("sha1").update(JSON.stringify([order, queries, variants])).digest("hex").slice(0, 10);
 const out = `/* Згенеровано tools/build-photo-queries.js — не редагувати вручну. Картки без фото з довідника та запити до Вікісховища. */
