@@ -176,15 +176,24 @@
            <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}${back}`
         : `<p>Тренажер один раз завантажує етапи, картки й довідник на пристрій і далі працює <b>без інтернету</b> — у полі й без витрат сервера.</p>
            <p class="muted small">Результати в офлайн-версії бачите лише ви — інструктору вони не надсилаються. Дуель і «Топ дня» офлайн недоступні. Потрібно вільне місце — зазвичай 50–300 МБ.</p>
-           <div class="fix-btns"><button class="primary" type="button" id="off-dl">📥 Завантажити офлайн-версію</button></div>
-           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${install}${back}`;
+           <div class="fix-btns"><button class="primary" type="button" id="off-dl">📥 ${standalone ? "Завантажити офлайн-версію" : "Завантажити й встановити застосунок"}</button></div>
+           ${standalone || this.installEvt ? "" : `<p class="muted small">${ios ? "Після завантаження на iPhone: у <b>Safari</b> → «Поділитися» → «На екран „Додому“»." : "Якщо вікно встановлення не з'явиться: Chrome → меню ⋮ → «Встановити застосунок»."}</p>`}
+           <div class="off-prog" id="off-prog" hidden><div class="u-bar"><i id="off-bar"></i></div><p class="muted small" id="off-st"></p></div>${back}`;
       const prog = (t, f) => { $("off-prog").hidden = false; $("off-st").textContent = t; $("off-bar").style.width = Math.round(100 * f) + "%"; };
-      const run = async (btn) => {
+      const run = async (btn, withInstall) => {
         btn.disabled = true;
+        // одна кнопка: системне вікно «Встановити застосунок» — одразу (браузер дозволяє його лише в момент натискання),
+        // завантаження даних іде паралельно, незалежно від відповіді
+        let asked = false;
+        if (withInstall && this.installEvt && !standalone) {
+          const ev = this.installEvt; this.installEvt = null; asked = true;
+          try { ev.prompt(); ev.userChoice.catch(() => {}); } catch (er) { this.installEvt = ev; asked = false; }
+        }
         try {
           if (!(window.Offline && Offline.on)) await this.flushPending();   // спершу відправити ще не надіслані результати
           await Offline.download(this.password, prog);
-          if (this.installEvt && !standalone) {   // Android: одразу системне вікно «Встановити застосунок»
+          if (asked) { /* вікно встановлення вже показано */ }
+          else if (this.installEvt && !standalone) {   // Android: системне вікно «Встановити застосунок»
             prog("Готово ✓ Встановлюю застосунок…", 1);
             const ev = this.installEvt;
             try { await ev.prompt(); await ev.userChoice; this.installEvt = null; }
@@ -203,7 +212,7 @@
         } catch (e) { prog("Помилка: " + e.message, 0); btn.disabled = false; }
       };
       $("off-back").onclick = () => { SFX.click(); this.view("menu"); };
-      if ($("off-dl")) $("off-dl").onclick = () => run($("off-dl"));
+      if ($("off-dl")) $("off-dl").onclick = () => run($("off-dl"), true);
       if ($("off-update")) $("off-update").onclick = () => run($("off-update"));
       if ($("off-online")) $("off-online").onclick = () => this.switchMode(false);
       if ($("off-offline")) $("off-offline").onclick = () => this.switchMode(true);
