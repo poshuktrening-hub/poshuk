@@ -172,14 +172,36 @@ async function applySeeds(env, metaGet, metaSet) {
 }
 
 const FILL_V = LIST_V + "+ov1";   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
+const WEEK = 7 * 24 * 3600e3;   // фоновий прохід — раз на тиждень (між проходами сервер Вікісховище не чіпає)
 const S0 = () => ({v: FILL_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
 export async function fillState(env, metaGet) {
   let s; try { s = JSON.parse(await metaGet(env, "photo_fill") || "null"); } catch (e) { s = null; }
   if (!s || s.v !== FILL_V) s = S0();
+  if (s.pos >= ORDER.length && s.doneAt && Date.now() - s.doneAt > WEEK) s = S0();   // минув тиждень — новий прохід по картках без фото
   return Object.assign(s, {total: ORDER.length, done: s.pos >= ORDER.length});
 }
 export async function fillReset(env, metaSet, onlyMiss) {
   await metaSet(env, "photo_fill", JSON.stringify(S0()));
+}
+
+const creditOf = (c) => (c.src === "armyinform" ? `АрміяInform, ${c.license} — ${c.page}` : c.src === "openverse" ? `${c.author}, ${c.license}, ${c.provider} — ${c.page}`
+  : `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}${c.loose ? " (креслення/модель)" : ""}`).slice(0, 400);
+
+/* Пошук для однієї картки (кнопка 🔎 в адмінці): skip — скільки кандидатів пропустити, щоб щоразу було інше фото.
+   Знайдене замінює попереднє фото «з картки»; фото з навчальної таблиці не чіпаються. */
+export async function fillOne(env, id, skip = 0) {
+  if (!QUERIES[id] && !NAMES[id]) return {ok: false, error: "Невідома картка"};
+  const list = await candidates(env, id);
+  if (!list.length) return {ok: false, found: 0};
+  for (let k = 0; k < list.length; k++) {
+    const c = list[(skip + k) % list.length];
+    try {
+      const t = await fetchThumb(c.url).catch((e) => { if (c.alt) return fetchThumb(c.alt); throw e; });
+      const r = await putCardImg(env, id, {data: t.data, mime: t.mime, credit: creditOf(c), replace: true});
+      return {ok: true, found: list.length, credit: creditOf(c), updated: r.updated};
+    } catch (e) { /* наступний кандидат */ }
+  }
+  return {ok: false, found: list.length};
 }
 
 let lastTick = 0;
@@ -189,7 +211,7 @@ export async function fillTick(env, metaGet, metaSet, force) {
   lastTick = Date.now();
   try { await applySeeds(env, metaGet, metaSet); } catch (e) { /* наступного разу */ }
   const s = await fillState(env, metaGet);
-  if (s.done) return s;
+  if (s.done) { if (!s.doneAt) { s.doneAt = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s)); } return s; }
   if (!force && s.lock > Date.now() - LOCK_MS) return s;   // інший дата-центр саме працює, або пауза після збою
   s.lock = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s));
   if (!s.cleaned) {   // прибрати фото, підібрані раніше, у назві файлу яких явно не техніка (потяги тощо)
@@ -221,8 +243,7 @@ export async function fillTick(env, metaGet, metaSet, force) {
       for (const c of list.slice(0, 3)) {
         try {
           const t = await fetchThumb(c.url).catch((e) => { if (c.alt) return fetchThumb(c.alt); throw e; });
-          const credit = c.src === "armyinform" ? `АрміяInform, ${c.license} — ${c.page}` : c.src === "openverse" ? `${c.author}, ${c.license}, ${c.provider} — ${c.page}` : `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}${c.loose ? " (креслення/модель)" : ""}`;
-          await putCardImg(env, id, {data: t.data, mime: t.mime, credit: credit.slice(0, 400)});
+          await putCardImg(env, id, {data: t.data, mime: t.mime, credit: creditOf(c)});
           stored = true; break;
         } catch (e) { /* наступний кандидат */ }
       }
@@ -230,11 +251,13 @@ export async function fillTick(env, metaGet, metaSet, force) {
       s.pos++; n++;
     }
     s.at = Date.now(); s.lock = 0;
+    if (s.pos >= ORDER.length) s.doneAt = Date.now();
   } catch (e) {
     s.lock = Date.now() + BACKOFF_MS - LOCK_MS;   // Вікісховище не відповіло — пауза 10 хв, позиція не зсувається
   }
   await metaSet(env, "photo_fill", JSON.stringify(s));
   return Object.assign(s, {total: ORDER.length, done: s.pos >= ORDER.length, names: NAMES});
 }
-export const fillInfo = (s) => ({pos: s.pos, total: ORDER.length, ok: s.ok, miss: s.miss.map((id) => NAMES[id] || id), done: s.pos >= ORDER.length, at: s.at, paused: s.lock > Date.now()});
+export const fillInfo = (s) => ({pos: s.pos, total: ORDER.length, ok: s.ok, miss: s.miss.map((id) => NAMES[id] || id), done: s.pos >= ORDER.length, at: s.at, paused: s.lock > Date.now(),
+  next: s.doneAt ? s.doneAt + WEEK : 0});
 export {candidates};   // для локальних перевірок
