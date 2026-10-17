@@ -6,7 +6,7 @@
   const LS = API.LS;
   const ROUND_SEC = 30, REVEAL_SEC = 15, ROUNDS = 10;
   const MODES = {
-    game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» — характерна ознака з довідника.", hint: true, choice: true, sign: true},
+    game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Слабка сторона» — з довідника.", hint: true, choice: true, sign: true},
     exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
     hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
@@ -192,6 +192,7 @@
       if (!this._keys) { this._keys = (e) => { if (!this.mode.choice || this.over || document.body.dataset.mode !== "cards" || $("s-cards").hidden) return; const b = $("c-choices").querySelectorAll("button")[Number(e.key) - 1]; if (b && !b.disabled) b.click(); }; addEventListener("keydown", this._keys); }
       $("c-hint-btn").onclick = () => this.hint();
       $("c-sign-btn").onclick = () => this.sign();
+      $("c-weak-btn").onclick = () => this.weak();
       this.used5050 = false;   // 50/50 — один раз за всю гру
       $("c-next").onclick = () => this.next();
       $("c-quit").onclick = () => { if (confirm("Перервати? Результат не буде збережено.")) { this.stop(); Game.showStart(); } };
@@ -212,7 +213,7 @@
       this.idx++;
       if (this.idx >= this.rounds.length) return this.summary();
       const c = this.cur = this.rounds[this.idx];
-      this.hintUsed = false; this.signUsed = false; this.over = false;
+      this.hintUsed = false; this.signUsed = false; this.weakUsed = false; this.over = false;
       const errs = this.results.filter((r) => !r.ok).length;
       $("c-stage").textContent = `${this.mode.id === "exam" ? "Іспит · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
       if ($("c-concept")) $("c-concept").hidden = !c.concept;
@@ -222,6 +223,7 @@
       $("c-hint-btn").disabled = !!(this.mode.choice && this.used5050);
       $("c-hint-btn").title = this.mode.choice ? (this.used5050 ? "50/50 уже використано в цій грі" : "Прибрати два хибні варіанти — один раз за гру") : "";
       $("c-sign-btn").hidden = !this.mode.sign; $("c-sign-btn").disabled = !this.signOf(c);
+      $("c-weak-btn").hidden = !this.mode.sign; $("c-weak-btn").disabled = !this.weakOf(c);
       $("c-answer").value = ""; $("c-answer").disabled = false; $("c-check").disabled = false;
       if (this.mode.choice) {
         const opts = this.opts = options(c, this._deck);
@@ -270,21 +272,45 @@
       if (c._signs) return c._signs;
       const ref = (this.refDesc && this.refDesc.get(c.id)) || "";
       const strip = (t) => String(t || "").replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
-      const bad = [c.name, ...c.aliases].flatMap((a) => String(a).split(/[\s«»"“”()]+/)).map(norm).filter((w) => w.length >= 3 && /\d|^[а-яіїєґa-z]{4,}$/.test(w) && !/^(танк|машина|комплекс|ракета|система|станція)/.test(w));
-      const parts = (strip(ref) + " . " + strip(c.p2).replace(/^Ознаки:\s*/i, ""))
-        .split(/(?<=[.!?])\s+(?=[А-ЯІЇЄҐA-Z])|\n|;\s*|\s—\s/).map((x) => x.replace(/^[-•–.,;:\s]+|[\s.;,]+$/g, "").trim())
+      const bad = this.badWords(c);
+      const parts = (strip(ref) + " ¶ " + strip(c.p2).replace(/^Ознаки:\s*/i, ""))
+        .split(/(?<=[.!?])\s+(?=[А-ЯІЇЄҐA-Z])|\s*¶\s*|;\s*|\s—\s/).map((x) => x.replace(/^[-•–.,;:\s]+|[\s.;,]+$/g, "").trim())
         .filter((x) => x.length >= 20 && x.length <= 180 && !/^\d/.test(x) && !/^ознаки$/i.test(x));
       const ok = parts.filter((x) => { const n = norm(x); return !bad.some((w) => n.includes(w)); });
       c._signs = [...new Set(ok)];
       return c._signs.length ? c._signs : null;
+    },
+    /* «Слабка сторона»: одна зі слабких сторін техніки з довідника, без назви й позначень. */
+    weakOf(c) {
+      if (c._weak) return c._weak.length ? c._weak : null;
+      const bad = this.badWords(c);
+      c._weak = ((window.CARD_WEAK || {})[c.id] || []).map((x) => String(x).replace(/[\s.;,]+$/g, "").trim()).filter((x) => x.length >= 10 && !bad.some((w) => norm(x).includes(w)));
+      return c._weak.length ? c._weak : null;
+    },
+    weak() {
+      if (!this.mode.sign || this.weakUsed || this.over) return;
+      const list = this.weakOf(this.cur); if (!list) return;
+      this.weakUsed = true; this.hintUsed = true;
+      const s = list[Math.floor(Math.random() * list.length)];
+      this.showHint(`🎯 Слабка сторона: ${esc(s.charAt(0).toUpperCase() + s.slice(1))}`);
+      $("c-weak-btn").disabled = true; SFX.click();
+    },
+    /* кілька підказок на одній картці — показуються разом, кожна з нового рядка */
+    showHint(html) {
+      const h = $("c-hint");
+      h.innerHTML = (h.hidden ? "" : h.innerHTML + "<br>") + html; h.hidden = false;
+    },
+    badWords(c) {
+      // слова з назви й синонімів, що видають відповідь (позначення, шифр, абревіатура типу «БАТ»), крім загальних
+      return [c.name, ...c.aliases].flatMap((a) => String(a).split(/[\s«»"“”()\-]+/)).map(norm).filter((w) => w.length >= 3 && !/^(танк|машина|комплекс|ракета|система|станція|автомобіль|вантажівка|бронеавтомобіль|гаубиця|тягач|катер|літак|гелікоптер|обр|модернізований|самохідна|буксирувана)/.test(w));
     },
     sign() {
       if (!this.mode.sign || this.signUsed || this.over) return;
       const list = this.signOf(this.cur); if (!list) return;
       this.signUsed = true; this.hintUsed = true;
       const s = list[Math.floor(Math.random() * list.length)];
-      $("c-hint").innerHTML = `🔎 Ознака: ${esc(s.charAt(0).toUpperCase() + s.slice(1))}`;
-      $("c-hint").hidden = false; $("c-sign-btn").disabled = true; SFX.click();
+      this.showHint(`🔎 Ознака: ${esc(s.charAt(0).toUpperCase() + s.slice(1))}`);
+      $("c-sign-btn").disabled = true; SFX.click();
     },
 
     choose(o) {
