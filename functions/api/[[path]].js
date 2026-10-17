@@ -740,8 +740,12 @@ async function action(env, ctx, req, origin) {
     }
     case "ref_link": {   // прив'язки «запис довідника → картка» + перенесення старих фото карток у довідник (порція)
       const merged = req.links ? await setLinks(env, req.links) : 0;
+      // розділ і назва записів-оболонок карток (їх рахує браузер адміністратора з даних карток)
+      const sh = (req.shells || []).slice(0, 1000).filter((x) => Array.isArray(x) && /^c_[a-z0-9_]+$/.test(String(x[0])));
+      for (let i = 0; i < sh.length; i += 100) await env.DB.batch(sh.slice(i, i + 100).map(([id, cat, name]) => env.DB.prepare("UPDATE ref_entries SET cat=?, name=? WHERE id=?").bind(String(cat || "").slice(0, 80), String(name || "").slice(0, 200), String(id))));
+      const before = await env.DB.prepare("SELECT COUNT(*) AS n FROM ref_entries WHERE id LIKE 'c\\_%' ESCAPE '\\' AND (cat IS NULL OR cat='')").first();
       const left = await migrateLegacy(env, 15);
-      return {ok: true, merged, left};
+      return {ok: true, merged, left, created: (before && before.n) || 0};
     }
     case "photo_fill_now": {   // крок автопідбору негайно (кнопка в адмінці); reset — почати перелік спочатку
       if (req.reset) await fillReset(env, metaSet);
