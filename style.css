@@ -1093,3 +1093,8 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   .hdr-menu { padding: 10px 20px; font-size: 1rem; }
   .fix-btns button { min-height: 52px; font-size: 1rem; }
 }
+/* ПК, офлайн (без «Дуелі»): три однакові плитки в ряд — симетрично */
+@media (min-width: 900px) and (min-height: 600px) {
+  .main-menu:has(.mm-duel[hidden]) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .main-menu .mm-duel[hidden] + .mm-ref { grid-column: auto; }
+}
