@@ -62,7 +62,7 @@ Object.assign(window.CARD_COMMONS = window.CARD_COMMONS || {}, {
   tor_m2: ["Tor-M2", "9K332_Tor-M2U.jpg", "9K331M_Tor-M2.jpg"],
   pantsir: ["Pantsir-S1", "96K6_Pantsir_S1.jpg", "Pantsir-S1_SAM.jpg"],
   tunguska: ["2K22 Tunguska", "2S6M1_Tunguska_M1_at_ARMY-2016.JPG", "Tunguska_SAM_of_the_Ukrainian_military.jpg"],
-  osa: ["Osa-AKM 9A33", "9A33BM3_Osa-AKM_of_Ukraine.jpg", "9K33M3_Osa-AKM_in_VDNKh.jpg"],
+  osa: ["9K33 Osa", "9A33BM3_Osa-AKM_of_Ukraine.jpg", "9K33M3_Osa-AKM_in_VDNKh.jpg"],
   strela10: ["9K35 Strela-10", "9A35_Strela-10.JPG", "9K35_Strela-10_02.JPG"],
   s300ps: ["S-300PS 5P85S launcher", "Side_view_of_a_S-300_launcher.JPG", "5P85_at_the_MAKS-2011_(01).jpg"],
   s400: ["S-400 launcher", "51P6_launcher_S-400_Triumf_Army-2022_2022-08-20_2416.jpg", "Russian_S-400_Triumf_missile_launcher.jpg"],

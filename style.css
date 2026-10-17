@@ -604,6 +604,10 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .ra-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
 .ra-list li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 6px; border: 1px solid var(--line); border-radius: 10px; }
 .ra-list .r-th { width: 64px; height: 46px; }
+.ra-list .r-th.empty { display: grid; place-items: center; border: 1px dashed var(--line); background: transparent; color: var(--muted); font-size: 1.3rem; cursor: pointer; }
+.ra-list .r-th.empty:active { border-color: var(--accent); color: var(--accent); }
+.ca-list .dot[data-up] { cursor: pointer; width: 14px; height: 14px; border: 2px solid var(--line); background: transparent; box-sizing: border-box; }
+.ca-rules { margin: 8px 0 0; } .ca-rules ol { margin: 4px 0 0; padding-left: 1.2rem; } .ca-rules li { margin: 2px 0; }
 .ra-list .nm { min-width: 0; display: grid; overflow: hidden; }
 .ra-list .nm small { color: var(--muted); font-size: .76rem; }
 .ra-list button { padding: .45rem .6rem; }

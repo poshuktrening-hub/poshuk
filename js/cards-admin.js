@@ -52,12 +52,19 @@
         <input type="file" id="ca-files" accept="image/*" multiple hidden><input type="file" id="ca-one" accept="image/*" hidden>
         <p class="status" id="ca-st"></p>
         ${this.fill ? `<div class="ca-fill"><p class="muted small">🤖 <b>Автопошук</b>: переглянуто ${this.fill.pos} з ${this.fill.total}, знайдено ${this.fill.ok}, не знайдено ${this.fill.miss.length}${this.fill.done ? ` · завершено${this.fill.next ? `, наступний фоновий прохід — ${new Date(this.fill.next).toLocaleDateString("uk-UA")}` : ""}` : this.fill.paused ? " · пауза, джерела не відповідають" : " · фоновий прохід триває"}. У фоні сервер шукає раз на тиждень; кнопка вище — одразу.</p>
-          ${this.fill.miss.length ? `<details class="small"><summary class="muted">Не знайдено (${this.fill.miss.length}) — додайте своє фото</summary><p class="muted small">${esc(this.fill.miss.join(", "))}</p></details>` : ""}</div>` : ""}
+          ${this.fill.miss.length ? `<details class="small"><summary class="muted">Не знайдено (${this.fill.miss.length}) — додайте своє фото</summary><p class="muted small">${esc(this.fill.miss.join(", "))}</p></details>` : ""}
+          <details class="small ca-rules"><summary class="muted">Правила автопошуку</summary><ol class="muted small">
+            <li>Джерела по черзі: Вікісховище → Openverse (Flickr та ін.) → креслення чи модель з Вікісховища (з позначкою) → АрміяInform. Лише вільні ліцензії (CC0, суспільне надбання, CC BY, CC BY-SA), ширина від 600 пкс.</li>
+            <li>У назві файлу (чи тегах) мають бути всі ключі запиту картки: кожне позначення з цифрами + шифр; загальні слова (tank, truck, army, цистерна…) ключами не є.</li>
+            <li>Індекс — лише цілим: 2С1 не підходить до «2С19», 9К33 — до «9К330», Tigr — до «Tigris». Модифікації (Т-72Б3М для Т-72Б3) підходять.</li>
+            <li>У файлі має бути індекс самої картки або її шифр — кирилицею чи латиницею (Т-72Б3 / T-72B3, Іскандер-М / Iskander-M). Короткий індекс із цифри (2С1, 9К33) без шифру не рахується.</li>
+            <li>Не беруться: потяги, вагони, станції, цивільні авто, іграшки, макети, інтер'єри, схеми, емблеми. Невдалі фото, підібрані раніше, сервер прибирає сам за цими ж правилами.</li>
+            <li>Фоновий прохід — раз на тиждень; кнопка «Автопошук фото» — одразу; 🔎 у рядку — інше фото для однієї картки.</li></ol></details></div>` : ""}
         <input type="search" id="ca-q" placeholder="Пошук картки: Т-72, Бук, РЕБ…" value="${esc(this.q || "")}" autocomplete="off" style="margin-top:10px">
         <div class="tabs" id="ca-f"><button type="button" data-f="all" class="${this.f !== "no" && this.f !== "yes" ? "on" : ""}">Усі</button><button type="button" data-f="no" class="${this.f === "no" ? "on" : ""}">Без фото ${deck.length - n}</button><button type="button" data-f="yes" class="${this.f === "yes" ? "on" : ""}">З фото ${n}</button></div>
         <ul class="ca-list">${deck.filter((c) => this.f === "no" ? !this.photos.has(c.id) : this.f === "yes" ? this.photos.has(c.id) : true)
           .filter((c) => { const k = Cards.norm(c.name + " " + c.id + " " + c.aliases.join(" ")); return String(this.q || "").split(/[\s,;\/]+/).map(Cards.norm).filter(Boolean).every((w) => k.includes(w)); }).map((c) => `<li>
-          ${this.photos.has(c.id) ? `<img class="th" loading="lazy" alt="" data-th="${c.id}">` : `<span class="dot"></span>`}<span class="nm">${esc(Logic.dispName(c.name))}<small>${esc(this.credits.get(c.id) || c.id)}</small></span>
+          ${this.photos.has(c.id) ? `<img class="th" loading="lazy" alt="" data-th="${c.id}">` : `<span class="dot" data-up="${c.id}" title="Додати фото"></span>`}<span class="nm">${esc(Logic.dispName(c.name))}<small>${esc(this.credits.get(c.id) || c.id)}</small></span>
           <label class="ca-hard" title="Хардкор"><input type="checkbox" data-hard="${c.id}" ${c.hard ? "checked" : ""}><span>хардкор</span></label>
           <button type="button" data-wiki="${c.id}" title="Автопошук фото для цієї картки (ще раз — інше фото)">🔎</button>
           <button type="button" data-up="${c.id}">${this.photos.has(c.id) ? "Замінити" : "Фото…"}</button>${this.photos.has(c.id) ? `<button type="button" data-del="${c.id}" title="Видалити фото">✕</button>` : ""}</li>`).join("")}</ul>

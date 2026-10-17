@@ -3,7 +3,7 @@
    лише вільні ліцензії (CC0, PD, CC BY, CC BY-SA), ширина ≥ 700; якщо справжнього фото немає — креслення, модель або макет.
    Фото зберігається як у ручному підборі (card_photos: мініатюра 1280 px + підпис автора/ліцензії).
    Стан — у meta «photo_fill»: позиція у переліку, скільки знайдено, яких не знайдено. Перелік — photo-queries.js. */
-import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS} from "./photo-queries.js";
+import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS, DESIG, CODES} from "./photo-queries.js";
 import {cardPics, putCardImg, dropImg, CP} from "./cardref.js";
 
 const UA = "poshuk-trener/1.0 (https://poshuk.pages.dev; contact: mrqwerty841@gmail.com)";
@@ -14,18 +14,64 @@ const BAD_STRICT = /decoy|inflatable|maket|макет|model|toy|replica|lego|int
 const BAD_LOOSE = /toy|lego|emblem|logo|\bmap\b|interior|operators|stamp|poster|flag|coat of arms/i;
 /* Явно не військова техніка (позначення «2S42» буває номером потяга тощо) — ніколи не беремо. */
 export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b|tank car|tankcar|tank wagon|railcar|rail car|freight|wagon|вагон|цистерна \d|залізнич|железнодорож|\bржд\b|\bуз\b/i;
-const STOP = /^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military|mod|obr)$/;
-/* Ключі, які мають бути в назві файлу: позначення з цифрами + шифр (якщо є), або лише слова. */
+/* Загальні слова запиту — не ключі (правило А): тип техніки, країна, рід військ, місце. */
+const STOP = /^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military|mod|obr|russia|soviet|ukraine|ukrainian|army|navy|force|forces|federation|ground|armed|parade|exhibition|museum|forum|complex|combat|artillery|rocket|infantry|fighting|armoured|armored|carrier|personnel|command|post|station|mobile|electronic|warfare|jamming|drone|uav|helicopter|aircraft|bomber|fighter|attack|jet|corvette|frigate|submarine|landing|craft|minesweeper|patrol|cruise|ballistic|anti|defense|defence|surface|mlrs|atgm|apc|ifv|mbt|tel|telar|transporter|loader|tractor|engineering|bridge|pontoon|layer|mine|clearing|recovery|repair|ambulance|fuel|tanker|cargo|utility|light|heavy|medium|tactical|strategic|coastal|naval|air|sam|spg|sph|gun|cannon|mortar|antitank|antiaircraft|battery|regiment|brigade|division|photo|image|picture|view|front|side|rear|left|right|top)$/;
+/* ---------- Правила відбору фото (ті самі для Вікісховища, Openverse, АрміяInform і для перевірки вже підібраних):
+   А. Запит: у назві файлу (чи тегах) — усі ключі запиту: кожне слово з цифрами (індекс) + перше не загальне слово;
+      якщо в запиті немає індексу — усі його слова (загальні «tank», «truck», «russian»… не рахуються).
+   Б. Індекс — лише цілим: не частина довшого (2С1 ≠ 2С19, 9К33 ≠ 9К330), але «АТЗ-10-4320», «2С19М2», «Т-72Б3М» — підходять.
+   В. Своя назва: у файлі має бути індекс самої картки (Т-72Б3 / T-72B3 / 2C19 латиницею) або її шифр («Іскандер-М» / Iskander-M)
+      у будь-якому написанні — крім карток, запит яких суто описовий («turtle tank»): там досить правила А.
+   Г. Не беремо: потяги, вагони, станції, цивільні авто…; для справжніх фото — також макети, іграшки, моделі, схеми, інтер'єри;
+      ширина < 600 пкс; невільні ліцензії (NC, ND, fair use).
+   Д. Порядок джерел: Вікісховище → Openverse (Flickr та ін.) → креслення/моделі з Вікісховища (з позначкою) → АрміяInform. */
+/* Нормалізований текст із картою позицій — щоб бачити, що стоїть навколо збігу в оригіналі (правило Б). */
+function nzMap(s) {
+  const o = String(s || "").toLowerCase(); let t = ""; const map = [];
+  for (let i = 0; i < o.length; i++) if (/[a-z0-9а-яіїєґ]/.test(o[i])) { t += o[i]; map.push(i); }
+  return {t, o, map};
+}
+/* Ключ є в тексті як ціле слово/позначення (правило Б): збіг не може бути приклеєний до цифри цифрою (2С1 ≠ 2С19)
+   чи до літери літерою (Tigr ≠ Tigris, Оса ≠ Мімоза); літера після цифри — можна (Т-72Б3М для Т-72Б3). */
+function hasKey(m, k) {
+  const d = /\d/, l = /[a-zа-яіїєґё]/, glued = (a, b) => a !== undefined && b !== undefined && ((d.test(a) && d.test(b)) || (l.test(a) && l.test(b)));
+  for (let i = m.t.indexOf(k); i >= 0; i = m.t.indexOf(k, i + 1)) {
+    const before = m.o[m.map[i] - 1], after = m.o[m.map[i + k.length - 1] + 1];
+    if (glued(k[0], before) || glued(k[k.length - 1], after)) continue;
+    return true;
+  }
+  return false;
+}
+/* Ключі запиту (правило А). */
 function needOf(q) {
   const t = String(q || "").split(/\s+/);
   const keys = t.filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
   const words = t.filter((w) => !/\d/.test(w)).map(nz).filter((w) => w.length >= 4 && !STOP.test(w));
   return keys.length ? keys.concat(words.slice(0, 1)) : words;
 }
-/* Назва файлу підходить картці хоча б за одним із її запитів. */
+/* Правило А для одного запиту. Короткий індекс із цифри (2С1, 9К33 — схожі на номери потягів тощо) сам по собі не достатній:
+   якщо в картки є шифр, у файлі має бути і він. */
+function queryOk(q, text, id) {
+  const n = needOf(q); if (!n.length) return false;
+  const m = nzMap(text);
+  if (!n.every((k) => hasKey(m, k))) return false;
+  const weak = n.every((k) => /^\d/.test(k) && k.length <= 5);
+  if (weak && id && (CODES[id] || []).length && !CODES[id].some((k) => hasKey(m, k))) return false;
+  return true;
+}
+/* Правило В: індекс або шифр самої картки. */
+function cardOk(id, text) {
+  const own = [...(DESIG[id] || []), ...(CODES[id] || [])];
+  if (!own.length) return true;
+  const m = nzMap(text);
+  if (own.some((k) => hasKey(m, k))) return true;
+  if ((DESIG[id] || []).length) return false;   // картка з індексом: індекс або шифр обов'язкові
+  const q = (QUERIES[id] || [])[0] || "", qm = nzMap(q);
+  return !(/\d/.test(q) || own.some((k) => hasKey(qm, k)));   // шифр є, але запит суто описовий («turtle tank») — досить правила А
+}
+/* Назва файлу підходить картці: правило В + хоча б один із запитів картки за правилом А. */
 function fileOk(id, title) {
-  const t = nz(title);
-  return [(QUERIES[id] || [])[0], ...(VARIANTS[id] || [])].filter(Boolean).some((q) => { const n = needOf(q); return n.length && n.every((k) => t.includes(k)); });
+  return cardOk(id, title) && [(QUERIES[id] || [])[0], ...(VARIANTS[id] || [])].filter(Boolean).some((q) => queryOk(q, title, id));
 }
 const strip = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
 const nz = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9а-яіїєґ]/g, "");
@@ -65,9 +111,8 @@ async function candidates(env, id) {
     const pages = (j.query && j.query.pages || []).sort((a, b) => (a.index || 0) - (b.index || 0));
     // у назві файлу — усі позначення з цифрами із запиту («T-72B3» → t72b3), а без цифр — шифр
     // позначення з цифрами (напр. «2s42») саме по собі ненадійне — разом із шифром («lotos»), якщо він є в запиті
-    const need = needOf(q);
-    if (!need.length) continue;
-    const fit = pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)); });
+    if (!needOf(q).length) continue;
+    const fit = pages.filter((p) => queryOk(q, p.title, id) && cardOk(id, p.title));
     take(fit, false);
     if (out.length) return out;
     pool.push(fit);
@@ -87,15 +132,14 @@ async function openverse(env, id, queries) {
   const base = env.OPENVERSE_API || "https://api.openverse.org/v1";
   const out = [], seen = new Set();
   for (const q of queries.filter((x) => !/[а-яіїєґ]/i.test(x)).slice(0, 2)) {
-    const need = needOf(q); if (!need.length) continue;
+    if (!needOf(q).length) continue;
     const r = await fetch(`${base}/images/?q=${encodeURIComponent(q)}&license=by,by-sa,cc0,pdm&page_size=20`, {headers: {"User-Agent": UA, "Accept": "application/json"}});
     if (!r.ok) continue;
     const j = await r.json();
     for (const x of j.results || []) {
       const text = [x.title, ...(x.tags || []).map((t) => t.name)].join(" ");
       if (!x.url || seen.has(x.url) || (x.width && x.width < 600) || BAD_STRICT.test(text) || OFF_TOPIC.test(text)) continue;
-      const t = nz(x.title) + " " + nz((x.tags || []).map((t) => t.name).join(" "));
-      if (!need.every((k) => t.includes(k))) continue;
+      if (!queryOk(q, text, id) || !cardOk(id, text)) continue;
       seen.add(x.url);
       // Flickr: середній розмір (1024 пкс) замість оригіналу на кілька МБ
       const url = /staticflickr\.com/.test(x.url) ? x.url.replace(/(_[a-z])?\.(jpg|jpeg|png)$/i, "_b.$2") : x.url;
@@ -123,7 +167,8 @@ async function armyInform(env, id) {
     let tries = 0;
     for (const p of posts || []) {
       if (tries >= 2) break;
-      if (!p.featured_media || !nz(strip(p.title && p.title.rendered)).includes(k)) continue;
+      const title = strip(p.title && p.title.rendered);
+      if (!p.featured_media || !nz(title).includes(k) || !cardOk(id, title) || OFF_TOPIC.test(title)) continue;
       tries++;
       const mr = await fetch(`${base}/media/${p.featured_media}?_fields=source_url,media_details`, {headers: {"User-Agent": UA, "Accept": "application/json"}});
       if (!mr.ok) continue;
@@ -260,4 +305,4 @@ export async function fillTick(env, metaGet, metaSet, force) {
 }
 export const fillInfo = (s) => ({pos: s.pos, total: ORDER.length, ok: s.ok, miss: s.miss.map((id) => NAMES[id] || id), done: s.pos >= ORDER.length, at: s.at, paused: s.lock > Date.now(),
   next: s.doneAt ? s.doneAt + WEEK : 0});
-export {candidates, fileOk};   // для локальних перевірок
+export {candidates, fileOk, cardOk, queryOk};   // для локальних перевірок
