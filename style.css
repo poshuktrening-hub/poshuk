@@ -1010,3 +1010,7 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .ca-fill { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.03); }
 .ca-fill p { margin: 0 0 6px; }
 .ca-fill details p { margin: 4px 0 0; }
+
+/* назви плиток меню — переносяться лише між словами; задовге слово зменшує шрифт (fitMenuTitles у game.js) */
+.main-menu .mm .mm-h, .main-menu .mm .mm-h b { overflow-wrap: normal; word-break: normal; hyphens: none; }
+.main-menu .mm .mm-h b { overflow: hidden; }
