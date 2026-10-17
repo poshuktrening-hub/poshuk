@@ -35,6 +35,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS results (ts TEXT, callsign TEXT, total INTEGER, max INTEGER, pct INTEGER, conclusion TEXT, scores TEXT)`,
   `CREATE TABLE IF NOT EXISTS card_photos (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
   `CREATE TABLE IF NOT EXISTS answers (ts TEXT, callsign TEXT, kind TEXT, mode TEXT, item TEXT, name TEXT, cat TEXT, ok INTEGER)`,
+  `CREATE TABLE IF NOT EXISTS callsign_owner (cs TEXT PRIMARY KEY, dev TEXT, ts TEXT)`,
   `CREATE INDEX IF NOT EXISTS answers_ts ON answers (ts)`,
   `CREATE TABLE IF NOT EXISTS ref_entries (id TEXT PRIMARY KEY, ord INTEGER, cat TEXT, name TEXT, ttx TEXT, descr TEXT, imgs TEXT, updated TEXT)`,
   `CREATE TABLE IF NOT EXISTS ref_images (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
@@ -106,7 +107,7 @@ const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj)
 });
 
 // ------------------------------------------------------------------ база
-const SCHEMA_V = "2026-10-17a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
+const SCHEMA_V = "2026-10-17b";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
 let schemaReady = false;
 async function db(env) {
   if (!env.DB) throw new HttpError("База D1 не підключена (Settings → Functions → D1 binding: DB)");
@@ -501,6 +502,7 @@ async function action(env, ctx, req, origin) {
       await auth(env, req, "player");
       const cs = String(req.callsign || "").trim().slice(0, 40);
       if (!cs) return {ok: true, results: [], answers: []};
+      await ownCallsign(env, cs, req.dev);
       const {results} = await env.DB.prepare("SELECT ts, pct, total, max, mode, conclusion FROM results WHERE callsign=? ORDER BY ts DESC LIMIT 60").bind(cs).all();
       const {results: answers} = await env.DB.prepare("SELECT kind, item, name, cat, ok, ts FROM answers WHERE callsign=? AND COALESCE(archived,0)=0 ORDER BY ts DESC LIMIT 2000").bind(cs).all();
       return {ok: true, results, answers};
@@ -509,6 +511,7 @@ async function action(env, ctx, req, origin) {
       await auth(env, req, "player");
       const cs = String(req.callsign || "").trim().slice(0, 40);
       if (!cs) return {ok: true, stages: [], cards: []};
+      await ownCallsign(env, cs, req.dev);
       const {results} = await env.DB.prepare("SELECT kind, item, ts, MIN(ok) ok FROM answers WHERE callsign=? AND COALESCE(archived,0)=0 AND kind IN ('search','cards') GROUP BY kind, item, ts").bind(cs).all();
       const last = new Map();
       for (const r of results) { const k = r.kind + "|" + r.item, p = last.get(k); if (!p || r.ts >= p.ts) last.set(k, r); }
@@ -636,6 +639,14 @@ async function action(env, ctx, req, origin) {
       return {ok: true, clicks: results.map((r) => [r.x, r.y, !!r.hit]), players: pl ? pl.n : 0};
     }
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
+    case "callsign_owners": {   // прив'язки прізвищ до пристроїв (для скидання)
+      const {results} = await env.DB.prepare("SELECT cs, ts FROM callsign_owner ORDER BY cs").all();
+      return {ok: true, owners: results};
+    }
+    case "callsign_reset": {   // скинути прив'язку: наступний пристрій, що відкриє «Мої результати» з цим прізвищем, стане власником
+      await env.DB.prepare("DELETE FROM callsign_owner WHERE cs=? COLLATE NOCASE").bind(String(req.callsign || "").trim().slice(0, 40)).run();
+      return {ok: true};
+    }
     case "revoke_offline_keys": {   // усі офлайн-пристрої перестануть оновлюватись, доки не завантажать офлайн-версію заново
       await bumpGen(env, "off");
       return {ok: true};
@@ -898,6 +909,10 @@ async function submit(env, ctx, req) {
   const when = req.date || new Date().toISOString().slice(0, 16).replace("T", " ");
   const cs = String(req.callsign || "").slice(0, 40);
   if (isTestName(cs)) return {ok: true, test: true};   // тестовий запуск — нікуди не записуємо
+  // перший пристрій, з якого грають під цим прізвищем, стає його власником («Мої результати» відкриваються лише на ньому)
+  if (cs.trim() && /^[a-f0-9]{16,64}$/.test(String(req.dev || ""))) {
+    try { await env.DB.prepare("INSERT OR IGNORE INTO callsign_owner (cs, dev, ts) VALUES (?,?,?)").bind(cs.trim(), String(req.dev), new Date().toISOString()).run(); } catch (e) { /* не критично */ }
+  }
   const scores = (req.scores || []).slice(0, MAX_ROUNDS).map(Number);
   const total = scores.reduce((a, b) => a + b, 0);
   const max = Number(req.max) || scores.length * 10;
@@ -920,6 +935,22 @@ async function submit(env, ctx, req) {
     ctx.waitUntil(gas(env, body).catch(() => {}));
   }
   return {ok: true};
+}
+
+/* Особисті дані («Мої результати», «Робота над помилками») — лише з пристрою, що першим відкрив їх із цим прізвищем.
+   Пароль курсантів спільний, тож прізвище саме по собі не доводить, хто це; пристрій (випадковий id у браузері) — доводить.
+   Інший пристрій того ж курсанта — адміністратор скидає прив'язку в налаштуваннях. Загальна аналітика — лише в адмінці. */
+async function ownCallsign(env, cs, dev) {
+  dev = String(dev || "").slice(0, 64);
+  if (!/^[a-f0-9]{16,64}$/.test(dev)) throw new HttpError("Оновіть сторінку — потрібна нова версія застосунку", 400);
+  const row = await env.DB.prepare("SELECT dev FROM callsign_owner WHERE cs=? COLLATE NOCASE").bind(cs).first();
+  if (!row) {
+    // результатів під цим прізвищем ще немає — нічого захищати, прив'язку не створюємо (щоб випадкові «Ро», «Рос» нічого не займали)
+    const any = await env.DB.prepare("SELECT 1 FROM results WHERE callsign=? LIMIT 1").bind(cs).first();
+    if (any) await env.DB.prepare("INSERT OR IGNORE INTO callsign_owner (cs, dev, ts) VALUES (?,?,?)").bind(cs, dev, new Date().toISOString()).run();
+    return;
+  }
+  if (row.dev !== dev) throw new HttpError(`Результати «${cs}» відкриваються лише на пристрої цього курсанта. Якщо це ваше прізвище і ви змінили телефон чи браузер — попросіть адміністратора скинути прив'язку.`, 403);
 }
 
 // ------------------------------------------------------------------ зображення техніки для брифінгу курсанта

@@ -232,7 +232,7 @@
       if (!cs) { box.innerHTML = `<p class="muted">Впишіть прізвище в меню — і тут з'являться ваші результати.</p>`; return; }
       box.innerHTML = `<p class="muted">Завантажую…</p>`;
       let j;
-      try { j = await API.call("my_results", {callsign: cs}, this.password); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+      try { j = await API.call("my_results", {callsign: cs, dev: deviceId()}, this.password); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
       const res = j.results || [], ans = (j.answers || []).filter((a) => /^(search|cards)$/.test(a.kind));
       if (!res.length && !ans.length) { box.innerHTML = `<p class="muted">Поки немає жодної гри під прізвищем «${esc(cs)}». Пройдіть пошук цілей або картки — результати з'являться тут.</p>`; return; }
       const MODE = {game: "Ігровий", exam: "Іспит", hard: "Хардкор", cards: "Картки", cards_exam: "Картки · іспит", cards_hard: "Картки · складний"};
@@ -293,7 +293,7 @@
       this.mist = {stages: [], cards: []};
       if (cs) {
         try {
-          const j = await API.call("mistakes", {callsign: cs}, this.password);
+          const j = await API.call("mistakes", {callsign: cs, dev: deviceId()}, this.password);
           const ids = new Set(j.stages || []);
           this.mist.stages = this.playable().filter((s) => ids.has(s.id));
           if (window.Cards) { await Cards.loadRefPics().catch(() => null); const c = new Set(j.cards || []); this.mist.cards = Cards.withPhoto().filter((x) => c.has(x.id)); }
@@ -851,7 +851,7 @@
       this._flushing = true;
       try {
         while (q.length) {
-          await API.call("submit", q[0], this.password);
+          await API.call("submit", Object.assign({dev: deviceId()}, q[0]), this.password);
           q.shift();
           LS.set("poshuk_pending", q);
         }
@@ -868,6 +868,12 @@
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])); }
 
   window.Game = Game;
+  /* Випадковий id цього пристрою (браузера): «Мої результати» прізвища відкриваються лише на пристрої, що відкрив їх першим. */
+  function deviceId() {
+    let d = LS.get("poshuk_dev", null);
+    if (!d || !/^[a-f0-9]{32}$/.test(d)) { const b = new Uint8Array(16); crypto.getRandomValues(b); d = [...b].map((x) => x.toString(16).padStart(2, "0")).join(""); LS.set("poshuk_dev", d); }
+    return d;
+  }
   /* Назви плиток меню не розриваються посеред слова («Довідни-к»): якщо слово не влазить (вузький екран,
      збільшений шрифт у налаштуваннях телефону) — назва трохи зменшується, поки не вміститься. */
   function fitMenuTitles() {
