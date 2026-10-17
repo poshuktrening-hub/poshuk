@@ -75,16 +75,26 @@
         name: c.name, ttx: c.p1, desc: c.p2, imgs: [], card: c.id, fromCard: true, concept: c.concept}));
       return list.concat(sortRef(shells.concat(extra)));
     },
+    async shellCats(pw) {
+      const list = (await API.call("ref_list", {}, pw)).entries || [], byId = new Map(Cards.deck().map((c) => [c.id, c]));
+      return list.filter((e) => String(e.id).startsWith("c_") && byId.has(e.card)).map((e) => { const c = byId.get(e.card); return [e.id, c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), c.name]; })
+        .filter(([id, cat]) => list.find((x) => x.id === id).cat !== cat);
+    },
     /* Адмінка: один раз зберегти в базі прив'язки «запис → картка», знайдені за назвами, і перенести старі фото карток
        у довідник. Далі прив'язки явні — їх можна змінити в записі довідника (поле «Картка»). */
     async syncLinks(pw) {
       if (!window.Cards || this._synced) return;
-      this._synced = true;
       const list = (await API.call("ref_list", {}, pw)).entries || [];
       const fresh = list.filter((e) => !e.card && !String(e.id).startsWith("c_"));
       const links = this.withCards(fresh.map((e) => Object.assign({}, e)), true).filter((e) => e.card).map((e) => [e.id, e.card]);
-      let j = await API.call("ref_link", {links}, pw), n = 0;
+      // записи-оболонки карток: розділ і назва — в базу (щоб розділ «Концепти…» був і в старих версіях застосунку)
+      const byId = new Map(Cards.deck().map((c) => [c.id, c]));
+      const shells = list.filter((e) => String(e.id).startsWith("c_") && byId.has(e.card)).map((e) => { const c = byId.get(e.card);
+        return [e.id, c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), c.name]; }).filter(([id, cat, name]) => { const e = list.find((x) => x.id === id); return e.cat !== cat || e.name !== name; });
+      let j = await API.call("ref_link", {links, shells}, pw), n = 0;
       while (j.left > 0 && n++ < 100) j = await API.call("ref_link", {}, pw);
+      const more = await this.shellCats(pw); if (more.length) await API.call("ref_link", {shells: more}, pw);   // оболонки, створені під час перенесення
+      this._synced = true;
       this.entries = null;
       return j;
     },
