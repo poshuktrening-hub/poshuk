@@ -842,6 +842,7 @@
   window.Game = Game;
   function today() { const n = new Date(), p2 = (x) => String(x).padStart(2, "0"); return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())}`; }
   /* Назва техніки для показу: позначення з дефісом («Тайфун-К», «Т-72Б3») не розриваються на рядки. */
-  const nameHtml = (name) => esc(Logic.dispName(name)).replace(/(\S*-\S*)/g, '<span class="nb">$1</span>');
+  // позначення з дефісом («Т-72Б3», «Тайфун-К») не розривати; довгі слова («(ремонтно-евакуаційна)») — можна, інакше вилазять за екран
+  const nameHtml = (name) => esc(Logic.dispName(name)).replace(/(\S*-\S*)/g, (w) => (w.replace(/&[a-z#0-9]+;|[«»“”"()]/g, "").length <= 10 ? `<span class="nb">${w}</span>` : w));
   window.UI = {show, toast, esc, nameHtml};
 })();
