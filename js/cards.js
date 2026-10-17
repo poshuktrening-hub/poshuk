@@ -142,6 +142,7 @@
     picPool(id) {
       const pool = [];
       if (Game.cardPhotos.has(id)) pool.push({own: true});
+      for (const k of Game.cardPhotos.keys()) if (k.startsWith(id + "--alt")) pool.push({own: true, key: k});   // додаткові фото від адміністратора
       const r = this.refPics && this.refPics.get(id);
       if (r && r.length) r.forEach((x) => pool.push(x));
       else if ((window.CARD_REF || {})[id]) pool.push({id: window.CARD_REF[id], v: "1"});
@@ -152,7 +153,7 @@
     photoUrl(id, pic) {
       pic = pic || this.pickPic(id);
       if (!pic) return Promise.resolve(null);
-      if (pic.own) return API.cardUrl(id, Game.cardPhotos.get(id), Game.password);
+      if (pic.own) return API.cardUrl(pic.key || id, Game.cardPhotos.get(pic.key || id), Game.password);
       return API.refUrl(pic.id, pic.v, Game.password);
     },
 

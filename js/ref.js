@@ -3,6 +3,8 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => UI.esc(s);
+  /* Додаткові фото від адміністратора (у базі серед фото карток: <картка>--altN, <картка>--refN). */
+  const extraPics = (card) => (window.Game && Game.cardPhotos ? [...Game.cardPhotos.keys()].filter((k) => k.startsWith(card + "--")).sort() : []);
   const norm = (s) => (window.Cards ? Cards.norm(s) : String(s || "").toLowerCase().replace(/[^a-zа-яіїєґ0-9]/g, ""));
   const plain = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
   // у текстах із таблиці дозволено лише <b>; решта вже екранована при імпорті
@@ -74,19 +76,38 @@
         `<button type="button" class="chip${this.cat === v ? " on" : ""}" data-cat="${esc(v)}">${esc(t)}<small>${n}</small></button>`).join("");
       $("r-cats").querySelectorAll("[data-cat]").forEach((b) => (b.onclick = () => { this.cat = b.dataset.cat; SFX.click(); this.renderCats(); this.renderList(); }));
     },
+    /* Пошук: кілька слів у будь-якому порядку, частина слова, одруківка в назві (1 літера на 5+ літер), латиниця/кирилиця,
+       і/и/ы, без дефісів і лапок. Шукає в назві, синонімах прив'язаної картки, ТТХ, описі й слабких сторонах. */
     filtered() {
       const q = norm(this.q), pool = this.entries.filter((e) => !this.cat || e.cat === this.cat);
       if (!q) return pool;
-      // спершу збіг у назві, далі — згадки в ТТХ/описі
-      // збіг на початку слова («армата» → Т-14 «Армата» раніше за «гаубиця-гармата»)
-      const starts = (e) => String(e.name || "").split(/[\s\/\\;,()“”"«»\-–—]+/).some((w) => norm(w).startsWith(q));
-      // назва запису + назва й синоніми прив'язаної картки («зоопарк 1» знаходить «1Л219 “Зоопарк”»)
       const deck = this._deckMap || (this._deckMap = new Map((window.Cards ? Cards.deck() : []).map((c) => [c.id, c])));
-      const keysOf = (e) => { const c = e.card && deck.get(e.card); return [norm(e.name), ...(c ? [norm(c.name), ...c.aliases.map(norm)] : [])]; };
-      const byName = pool.filter((e) => keysOf(e).some((k) => k.includes(q))).sort((a, b) => (starts(b) ? 1 : 0) - (starts(a) ? 1 : 0));
-      const byText = q.length >= 3 ? pool.filter((e) => !byName.includes(e) && norm(plain(e.ttx) + plain(e.desc)).includes(q)) : [];
-      byText.forEach((e) => (e._txt = true)); byName.forEach((e) => (e._txt = false));
-      return byName.concat(byText);
+      const qw = String(this.q).split(/[\s,;\/]+/).map(norm).filter(Boolean);
+      const lev1 = (a, b) => {   // відстань Левенштейна ≤ 1?
+        if (Math.abs(a.length - b.length) > 1) return false;
+        let i = 0, j = 0, d = 0;
+        while (i < a.length && j < b.length) { if (a[i] === b[j]) { i++; j++; continue; } if (++d > 1) return false; if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; } }
+        return d + (a.length - i) + (b.length - j) <= 1;
+      };
+      const fuzzyIn = (w, text) => {   // w — частина тексту або майже-збіг з початком якогось слова
+        if (text.includes(w)) return 2;
+        if (w.length < 5) return 0;
+        for (let k = 0; k + w.length - 1 <= text.length; k++) { const seg = text.slice(k, k + w.length); if (lev1(w, seg) || lev1(w, text.slice(k, k + w.length + 1)) || lev1(w, text.slice(k, k + w.length - 1))) return 1; }
+        return 0;
+      };
+      const scored = [];
+      for (const e of pool) {
+        const c = e.card && deck.get(e.card);
+        const name = [norm(e.name), ...(c ? [norm(c.name), ...c.aliases.map(norm)] : [])].join("|");
+        const text = norm(plain(e.ttx) + " " + plain(e.desc) + " " + ((c && (window.CARD_WEAK || {})[c.id]) || []).join(" "));
+        let sN = 0, sT = 0, ok = true;   // у тексті — лише точна частина слова, без одруківок (інакше зайві збіги)
+        for (const w of qw) { const n = fuzzyIn(w, name); if (n) { sN += n; continue; } const t = w.length >= 3 && text.includes(w) ? 1 : 0; if (t) { sT += t; continue; } ok = false; break; }
+        if (!ok) continue;
+        const whole = name.includes(q) ? 3 : 0, start = name.split("|").some((k) => k.startsWith(qw[0] || q)) ? 2 : 0;
+        e._txt = sN === 0;
+        scored.push([e, (sN ? 10 : 0) + whole + start + sN + sT * 0.2]);
+      }
+      return scored.sort((a, b) => b[1] - a[1]).map((x) => x[0]);
     },
     renderList() {
       if (!this.entries) return;
@@ -134,8 +155,9 @@
           <button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
           ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
-          ${e.imgs.length && e.card && window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card) ? `<div class="r-gal r-gal-card"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(e.card)}"></button></div><p class="muted small r-hint">Фото з картки цілей</p>` : ""}
-          ${!e.imgs.length && e.card ? `<div class="r-gal"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-card="${esc(e.card)}"></button></div>` : ""}
+          ${e.card && window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card) ? `<div class="r-gal r-gal-card"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(e.card)}"></button></div>${e.imgs.length ? `<p class="muted small r-hint">Фото з картки цілей</p>` : ""}` : ""}
+          ${!e.imgs.length && e.card && !(window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card)) ? `<div class="r-gal"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-card="${esc(e.card)}"></button></div>` : ""}
+          ${e.card && extraPics(e.card).length ? `<div class="r-gal">${extraPics(e.card).map((x) => `<button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(x)}"></button>`).join("")}</div><p class="muted small r-hint">Додаткові фото</p>` : ""}
           ${e.imgs.length ? `<div class="r-gal">${e.imgs.map((x) => `<button type="button" class="r-ph" data-zoom="${esc(x)}"><img alt="" data-img="${esc(x)}" data-v="${esc(e.v)}"></button>`).join("")}</div>
           ${e.imgs.length > 1 ? `<p class="muted small r-hint">Гортайте фото вбік · торкніться, щоб збільшити</p>` : `<p class="muted small r-hint">Торкніться фото, щоб збільшити</p>`}` : ""}
           ${e.ttx ? `<section class="r-sec"><h3>ТТХ</h3><div class="r-txt">${safe(e.ttx)}</div></section>` : ""}
