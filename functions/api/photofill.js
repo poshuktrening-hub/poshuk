@@ -11,6 +11,21 @@ const PER_TICK = 1, TICK_MS = 20e3,   // до ~20 підзапитів на ка
 const FREE = (lic) => { const l = String(lic || "").toLowerCase(); return !/nc|nd|fair|non-free/.test(l) && /(cc0|public domain|pd|cc by|cc-by|attribution)/.test(l); };
 const BAD_STRICT = /decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|drawing|blueprint|emblem|logo|\bmap\b|poster|stamp/i;
 const BAD_LOOSE = /toy|lego|emblem|logo|\bmap\b|interior|operators|stamp|poster|flag|coat of arms/i;
+/* Явно не військова техніка (позначення «2S42» буває номером потяга тощо) — ніколи не беремо. */
+export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal/i;
+const STOP = /^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military|mod|obr)$/;
+/* Ключі, які мають бути в назві файлу: позначення з цифрами + шифр (якщо є), або лише слова. */
+function needOf(q) {
+  const t = String(q || "").split(/\s+/);
+  const keys = t.filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
+  const words = t.filter((w) => !/\d/.test(w)).map(nz).filter((w) => w.length >= 4 && !STOP.test(w));
+  return keys.length ? keys.concat(words.slice(0, 1)) : words;
+}
+/* Назва файлу підходить картці хоча б за одним із її запитів. */
+function fileOk(id, title) {
+  const t = nz(title);
+  return [(QUERIES[id] || [])[0], ...(VARIANTS[id] || [])].filter(Boolean).some((q) => { const n = needOf(q); return n.length && n.every((k) => t.includes(k)); });
+}
 const strip = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
 const nz = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9а-яіїєґ]/g, "");
 
@@ -36,7 +51,7 @@ async function candidates(env, id) {
     const m = i.extmetadata || {}, lic = (m.LicenseShortName && m.LicenseShortName.value) || "";
     const svg = /svg/.test(i.mime || "");
     if (!/^image\/(jpeg|png|webp|svg)/.test(i.mime || "") || (svg && !loose) || (i.width || 0) < 600 || !FREE(lic)) return;
-    if ((loose ? BAD_LOOSE : BAD_STRICT).test(p.title)) return;
+    if ((loose ? BAD_LOOSE : BAD_STRICT).test(p.title) || OFF_TOPIC.test(p.title)) return;
     seen.add(p.title);
     out.push({title: p.title, url: i.thumburl || i.url, page: i.descriptionurl, license: lic, author: strip(m.Artist && m.Artist.value).slice(0, 120), loose: !!loose});
   });
@@ -47,8 +62,8 @@ async function candidates(env, id) {
     const j = await api(env, Object.assign({action: "query", generator: "search", gsrsearch: q + " filetype:bitmap", gsrnamespace: "6", gsrlimit: "12"}, ii));
     const pages = (j.query && j.query.pages || []).sort((a, b) => (a.index || 0) - (b.index || 0));
     // у назві файлу — усі позначення з цифрами із запиту («T-72B3» → t72b3), а без цифр — шифр
-    const keys = q.split(/\s+/).filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
-    const need = keys.length ? keys : q.split(/\s+/).map(nz).filter((w) => w.length >= 4);
+    // позначення з цифрами (напр. «2s42») саме по собі ненадійне — разом із шифром («lotos»), якщо він є в запиті
+    const need = needOf(q);
     if (!need.length) continue;
     const fit = pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)); });
     take(fit, false);
@@ -123,6 +138,15 @@ export async function fillTick(env, metaGet, metaSet, force) {
   if (s.done) return s;
   if (!force && s.lock > Date.now() - LOCK_MS) return s;   // інший дата-центр саме працює, або пауза після збою
   s.lock = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s));
+  if (!s.cleaned) {   // прибрати фото, підібрані раніше, у назві файлу яких явно не техніка (потяги тощо)
+    const {results: cr} = await env.DB.prepare("SELECT id, credit FROM card_photos WHERE credit LIKE '%Wikimedia%'").all();
+    for (const r of cr) {
+      const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
+      const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || [])[1] || "";
+      if (OFF_TOPIC.test(cred) || (file && QUERIES[r.id] && !fileOk(r.id, file))) await env.DB.prepare("DELETE FROM card_photos WHERE id=?").bind(r.id).run();
+    }
+    s.cleaned = 1;
+  }
   const {results} = await env.DB.prepare("SELECT id FROM card_photos").all();
   const have = new Set(results.map((r) => r.id));
   let n = 0;
