@@ -114,6 +114,7 @@
 
     showStart() {
       show("s-start");
+      requestAnimationFrame(fitMenuTitles);
       const saved = LS.get("poshuk_menu", {}) || {};
       this.sel = {mode: Logic.MODES[saved.mode] ? saved.mode : "game",
         regions: Array.isArray(saved.regions) ? saved.regions.filter((r) => Logic.REGIONS.includes(r)) : Logic.REGIONS.slice(),
@@ -840,6 +841,24 @@
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c])); }
 
   window.Game = Game;
+  /* Назви плиток меню не розриваються посеред слова («Довідни-к»): якщо слово не влазить (вузький екран,
+     збільшений шрифт у налаштуваннях телефону) — назва трохи зменшується, поки не вміститься. */
+  function fitMenuTitles() {
+    const fit = (b) => {
+      b.style.fontSize = "";
+      if (!b.clientWidth) return 0;
+      let fs = parseFloat(getComputedStyle(b).fontSize), n = 0;
+      while (b.scrollWidth > b.clientWidth + 1 && n++ < 14) { fs *= 0.94; b.style.fontSize = fs + "px"; }
+      return fs;
+    };
+    // чотири великі плитки — однаковий розмір назв (найменший із потрібних), решта — кожна окремо
+    const big = [...document.querySelectorAll(".main-menu .mm:not(.mm-wide):not(.mm-small) .mm-h b")];
+    const min = Math.min(...big.map(fit).filter(Boolean));
+    if (isFinite(min)) big.forEach((b) => { if (b.clientWidth) b.style.fontSize = min + "px"; });
+    document.querySelectorAll(".main-menu .mm.mm-wide .mm-h b, .main-menu .mm.mm-small .mm-h b").forEach(fit);
+  }
+  window.addEventListener("resize", () => requestAnimationFrame(fitMenuTitles));
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(fitMenuTitles));
   function today() { const n = new Date(), p2 = (x) => String(x).padStart(2, "0"); return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())}`; }
   /* Назва техніки для показу: позначення з дефісом («Тайфун-К», «Т-72Б3») не розриваються на рядки. */
   // позначення з дефісом («Т-72Б3», «Тайфун-К») не розривати; довгі слова («(ремонтно-евакуаційна)») — можна, інакше вилазять за екран
