@@ -6,7 +6,7 @@
   const LS = API.LS;
   const ROUND_SEC = 30, REVEAL_SEC = 15, ROUNDS = 10;
   const MODES = {
-    game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Є підказка 50/50.", hint: true, choice: true},
+    game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» — характерна ознака з довідника.", hint: true, choice: true, sign: true},
     exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
     hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
@@ -116,6 +116,7 @@
         let list = [];
         try { list = (await API.call("ref_list", {}, Game.password)).entries || []; } catch (e) { this._refP = null; return null; }
         const byId = new Map(list.map((e) => [e.id, e])), map = new Map();
+        this.refDesc = new Map(list.filter((e) => e.card && e.desc).map((e) => [e.card, e.desc]));   // для підказки «Ознака»
         const add = (cid, e) => { if (!e || !e.imgs || !e.imgs.length) return; const a = map.get(cid) || []; e.imgs.forEach((im) => { if (!a.some((x) => x.id === im)) a.push({id: im, v: e.v || "1"}); }); map.set(cid, a); };
         const ref = window.CARD_REF || {};
         // 1) явні відповідності: картка → запис (id зображення «r024-2» → запис r024)
@@ -190,6 +191,8 @@
       this._deck = this.fix ? this.deck() : this.deck().filter((c) => c.hard === !!this.mode.hard);   // хибні варіанти — з того ж рівня
       if (!this._keys) { this._keys = (e) => { if (!this.mode.choice || this.over || document.body.dataset.mode !== "cards" || $("s-cards").hidden) return; const b = $("c-choices").querySelectorAll("button")[Number(e.key) - 1]; if (b && !b.disabled) b.click(); }; addEventListener("keydown", this._keys); }
       $("c-hint-btn").onclick = () => this.hint();
+      $("c-sign-btn").onclick = () => this.sign();
+      this.used5050 = false;   // 50/50 — один раз за всю гру
       $("c-next").onclick = () => this.next();
       $("c-quit").onclick = () => { if (confirm("Перервати? Результат не буде збережено.")) { this.stop(); Game.showStart(); } };
       this.fitViewport();
@@ -209,13 +212,16 @@
       this.idx++;
       if (this.idx >= this.rounds.length) return this.summary();
       const c = this.cur = this.rounds[this.idx];
-      this.hintUsed = false; this.over = false;
+      this.hintUsed = false; this.signUsed = false; this.over = false;
       const errs = this.results.filter((r) => !r.ok).length;
       $("c-stage").textContent = `${this.mode.id === "exam" ? "Іспит · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
       if ($("c-concept")) $("c-concept").hidden = !c.concept;
       $("c-score").textContent = this.results.reduce((a, r) => a + r.score, 0);
       $("c-reveal").hidden = true; $("c-nextbox").hidden = true; $("c-form").hidden = false;
-      $("c-hint").hidden = true; $("c-hint-btn").hidden = !this.mode.hint; $("c-hint-btn").disabled = false; $("c-hint-btn").textContent = this.mode.choice ? "💡 50/50" : "💡 Підказка";
+      $("c-hint").hidden = true; $("c-hint-btn").hidden = !this.mode.hint; $("c-hint-btn").textContent = this.mode.choice ? "💡 50/50" : "💡 Підказка";
+      $("c-hint-btn").disabled = !!(this.mode.choice && this.used5050);
+      $("c-hint-btn").title = this.mode.choice ? (this.used5050 ? "50/50 уже використано в цій грі" : "Прибрати два хибні варіанти — один раз за гру") : "";
+      $("c-sign-btn").hidden = !this.mode.sign; $("c-sign-btn").disabled = !this.signOf(c);
       $("c-answer").value = ""; $("c-answer").disabled = false; $("c-check").disabled = false;
       if (this.mode.choice) {
         const opts = this.opts = options(c, this._deck);
@@ -245,16 +251,40 @@
     },
 
     hint() {
-      if (!this.mode.hint || this.hintUsed || this.over) return;
-      this.hintUsed = true;
-      if (this.mode.choice) {   // 50/50: прибрати два хибні варіанти
+      if (!this.mode.hint || this.over) return;
+      if (this.mode.choice) {   // 50/50: прибрати два хибні варіанти (раз за гру)
+        if (this.used5050) return;
+        this.used5050 = true; this.hintUsed = true;
         const wrong = Logic.shuffle(this.opts.filter((o) => o !== this.cur)).slice(0, 2);
         $("c-choices").querySelectorAll("button").forEach((b) => { if (wrong.includes(this.opts[+b.dataset.ci])) { b.disabled = true; b.classList.add("gone"); } });
         $("c-hint-btn").disabled = true; SFX.click(); return;
       }
+      this.hintUsed = true;
       $("c-hint").innerHTML = `Тип: <b>${esc(this.cur.name.split(" ")[0])}</b> …`;
       $("c-hint").hidden = false; $("c-hint-btn").disabled = true;
       SFX.click();
+    },
+
+    /* «Ознака»: одна характерна ознака з довідника (опис запису техніки або ознаки картки), без назви й позначень. */
+    signOf(c) {
+      if (c._signs) return c._signs;
+      const ref = (this.refDesc && this.refDesc.get(c.id)) || "";
+      const strip = (t) => String(t || "").replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+      const bad = [c.name, ...c.aliases].flatMap((a) => String(a).split(/[\s«»"“”()]+/)).map(norm).filter((w) => w.length >= 3 && /\d|^[а-яіїєґa-z]{4,}$/.test(w) && !/^(танк|машина|комплекс|ракета|система|станція)/.test(w));
+      const parts = (strip(ref) + " . " + strip(c.p2).replace(/^Ознаки:\s*/i, ""))
+        .split(/(?<=[.!?])\s+(?=[А-ЯІЇЄҐA-Z])|\n|;\s*|\s—\s/).map((x) => x.replace(/^[-•–.,;:\s]+|[\s.;,]+$/g, "").trim())
+        .filter((x) => x.length >= 20 && x.length <= 180 && !/^\d/.test(x) && !/^ознаки$/i.test(x));
+      const ok = parts.filter((x) => { const n = norm(x); return !bad.some((w) => n.includes(w)); });
+      c._signs = [...new Set(ok)];
+      return c._signs.length ? c._signs : null;
+    },
+    sign() {
+      if (!this.mode.sign || this.signUsed || this.over) return;
+      const list = this.signOf(this.cur); if (!list) return;
+      this.signUsed = true; this.hintUsed = true;
+      const s = list[Math.floor(Math.random() * list.length)];
+      $("c-hint").innerHTML = `🔎 Ознака: ${esc(s.charAt(0).toUpperCase() + s.slice(1))}`;
+      $("c-hint").hidden = false; $("c-sign-btn").disabled = true; SFX.click();
     },
 
     choose(o) {

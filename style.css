@@ -1098,3 +1098,6 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   .main-menu:has(.mm-duel[hidden]) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .main-menu .mm-duel[hidden] + .mm-ref { grid-column: auto; }
 }
+
+.c-hints { display: inline-flex; gap: 8px; flex-wrap: wrap; }
+#c-sign-btn[hidden] { display: none; }
