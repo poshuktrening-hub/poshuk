@@ -57,6 +57,8 @@
   }
   const tq = (t) => (cookieOk ? "" : `&t=${encodeURIComponent(t)}`);
 
+  /* Ключ офлайн-пристрою (офлайн-версія оновлюється ним, навіть якщо паролі змінили): «пароль» "" + цей токен. */
+  function useKey(key) { if (key) tokens[""] = key; else delete tokens[""]; }
   async function token(password) {
     if (!tokens[password]) await callNet("login", {}, password);
     return tokens[password];
@@ -145,5 +147,5 @@
     return `${url}/ref/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}${tq(await token(password))}`;
   }
 
-  window.API = {call, callNet, fetchPack, token, noteStages, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
+  window.API = {useKey, call, callNet, fetchPack, token, noteStages, loadImage, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
 })();

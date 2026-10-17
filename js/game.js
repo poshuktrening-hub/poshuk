@@ -163,7 +163,9 @@
           ${this.installEvt ? `<button type="button" id="off-install">📲 Встановити на головний екран</button>` : ""}
           <p class="muted small">${ios ? "iPhone: відкрийте сайт у <b>Safari</b> → «Поділитися» → «На екран „Додому“»." : "Android: Chrome → меню ⋮ → «Встановити застосунок» або «Додати на головний екран»."}</p></div>`;
       const back = `<button type="button" class="off-back" id="off-back">Повернутися в меню</button>`;
-      const autoTxt = `<p class="muted small">🔄 Автооновлення: о 08:00 і 20:00, якщо є інтернет і застосунок відкритий (або при наступному відкритті) — докачуються лише зміни.</p>`;
+      const au = LS.get("poshuk_off_auto", {}) || {};
+      const autoTxt = `<p class="muted small">🔄 Автооновлення: о 08:00 і 20:00, якщо є інтернет і застосунок відкритий (або при наступному відкритті) — докачуються лише зміни. Зміна паролів оновленням не заважає.</p>`
+        + (au.err && !au.at ? `<p class="small err">Останнє автооновлення не вдалося: ${esc(au.err)}</p>` : "");
       box.innerHTML = on
         ? `<p>Офлайн-версія <b>увімкнена</b>: тренажер працює без інтернету й не звертається до сервера.</p>
            <p class="muted">Дані від ${new Date(inf.at).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"})}: етапів — ${inf.stages}, фото карток — ${inf.cards}, записів довідника — ${inf.ref} (≈ ${mb(inf.bytes)} МБ).</p>
@@ -885,7 +887,7 @@
   window.addEventListener("resize", () => requestAnimationFrame(fitMenuTitles));
   /* Офлайн-дані: автооновлення о 08:00 і 20:00 — перевірка при відкритті, при появі мережі й щоп'ять хвилин. */
   const autoOff = () => {
-    if (!window.Offline || !Offline.ready || !Game.password) return;
+    if (!window.Offline || !Offline.ready) return;   // лише пристрої з офлайн-версією; онлайн бачить зміни одразу
     Offline.autoUpdate(Game.password, (n) => { if (n) { toast("Офлайн-дані оновлено з сервера ✓"); Game.offUi(); if ($("off-body") && !$("sub-off").hidden) Game.renderOff(); } });
   };
   setTimeout(autoOff, 15000); setInterval(autoOff, 5 * 60e3); window.addEventListener("online", () => setTimeout(autoOff, 5000));

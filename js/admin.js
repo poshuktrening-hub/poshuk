@@ -533,6 +533,10 @@
         `</div><p class="status muted">Паролі — щонайменше 6 символів. Після зміни пароля курсантам потрібно ввести новий.</p>
         <div class="row"><button class="primary" type="button" id="st-save">Зберегти</button><button type="button" id="st-close">Закрити</button></div>
         <p class="status" id="st-status"></p>
+        <h3>Офлайн-пристрої</h3>
+        <p class="status muted">Офлайн-версії оновлюються двічі на добу власним ключем пристрою — і після зміни паролів теж. Щоб зупинити оновлення на всіх пристроях (наприклад, телефон загублено), відкличте ключі: оновлюватись далі зможуть лише ті, хто завантажить офлайн-версію заново з чинним паролем.</p>
+        <div class="row"><button type="button" id="st-offrevoke">🔒 Відкликати офлайн-ключі</button></div>
+        <p class="status" id="st-offrevoke-status"></p>
         <h3>Історія гри</h3>
         <p class="status muted">Переносить усі поточні результати в архів: в аналітиці, топі меню й теплових картах вони більше не рахуються. Нічого не видаляється — у Google-таблиці рядки переїжджають на сусідній аркуш «Архів».</p>
         <div class="row"><button type="button" id="st-archive">📦 Перенести історію в архів</button></div>
@@ -548,6 +552,11 @@
             (!sh ? "Google-таблиця не підключена." : sh.ok ? `У таблиці перенесено рядків: ${sh.moved || 0} → аркуш «${sh.sheet || "Архів"}».` : `Таблиця: ${sh.error || "не вдалося перенести"}.`);
           out.className = sh && !sh.ok ? "status no" : "status ok";
         } catch (e) { out.textContent = e.message; out.className = "status no"; }
+      };
+      box.querySelector("#st-offrevoke").onclick = async () => {
+        const out = box.querySelector("#st-offrevoke-status");
+        if (!confirm("Відкликати ключі всіх офлайн-пристроїв? Вони перестануть оновлюватись, доки не завантажать офлайн-версію заново.")) return;
+        try { await API.call("revoke_offline_keys", {}, this.pw); out.textContent = "Відкликано ✓"; out.className = "status ok"; } catch (e) { out.textContent = e.message; out.className = "status no"; }
       };
       box.querySelector("#st-close").onclick = () => { box.hidden = true; this.renderStage(); };
       box.querySelector("#st-save").onclick = async () => {
