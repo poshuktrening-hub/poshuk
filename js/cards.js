@@ -103,7 +103,8 @@
     },
     withPhoto(hard) {
       const ph = (window.Game && Game.cardPhotos) || new Map(), ref = window.CARD_REF || {};
-      return this.deck().filter((c) => (hard === undefined || c.hard === hard) && (ph.has(c.id) || ref[c.id] || (this.refPics && this.refPics.has(c.id))));
+      const cp = (window.Game && Game.cardPics) || {};
+      return this.deck().filter((c) => (hard === undefined || c.hard === hard) && (ph.has(c.id) || cp[c.id] || ref[c.id] || (this.refPics && this.refPics.has(c.id))));
     },
 
     /* Фото з довідника для карток: усі зображення запису, до якого належить картка (явна відповідність CARD_REF
@@ -123,6 +124,7 @@
         const idx = new Map();
         for (const c of this.deck()) for (const v of answers(c)) if (v.length >= 4 && /\d/.test(v) && !idx.has(v)) idx.set(v, c.id);
         for (const e of list) {
+          if (e.card) { add(e.card, Object.assign({}, e, {imgs: (e.imgs || []).filter((x) => !String(x).includes("--ref"))})); continue; }   // явна прив'язка
           if (/^відмінност|порівнян/i.test(e.name || "")) continue;   // порівняльні таблиці — не фото техніки
           const parts = String(e.name || "").split(/[\/\\;,()“”"«»]|\s[-–—]\s|\sта\s|\sабо\s/).map(norm).filter((x) => x.length >= 3);
           // кілька зразків в одному записі («2С1/2С34», «ИМР-2, ИМР-3М») — невідомо, хто на котрому фото: не беремо
@@ -138,14 +140,15 @@
       })();
       return this._refP;
     },
-    /* Варіанти фото картки: своє/Вікісховище + усі з довідника. */
+    /* Варіанти фото картки: фото записів довідника цієї картки (+ старі фото карток, поки не перенесені). */
     picPool(id) {
       const pool = [];
+      for (const [im, v, credit] of ((window.Game && Game.cardPics) || {})[id] || []) pool.push({id: im, v, credit});
       if (Game.cardPhotos.has(id)) pool.push({own: true});
       for (const k of Game.cardPhotos.keys()) if (k.startsWith(id + "--alt")) pool.push({own: true, key: k});   // додаткові фото від адміністратора
       const r = this.refPics && this.refPics.get(id);
-      if (r && r.length) r.forEach((x) => pool.push(x));
-      else if ((window.CARD_REF || {})[id]) pool.push({id: window.CARD_REF[id], v: "1"});
+      if (r && r.length) r.forEach((x) => { if (!pool.some((p) => p.id === x.id)) pool.push(x); });
+      else if (!pool.length && (window.CARD_REF || {})[id]) pool.push({id: window.CARD_REF[id], v: "1"});
       return pool;
     },
     pickPic(id) { const p = this.picPool(id); return p.length ? p[Math.floor(Math.random() * p.length)] : null; },
@@ -277,7 +280,7 @@
       const verdict = r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +10</p>`
         : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
       $("c-choices").innerHTML = "";
-      const cr = c.pic && !c.pic.own ? "навчальний довідник ВОС276" : (Game.cardCredits && Game.cardCredits.get(c.id)) || "";
+      const cr = c.pic && !c.pic.own ? (c.pic.credit ? (() => { try { return decodeURIComponent(c.pic.credit); } catch (e) { return c.pic.credit; } })() : "навчальний довідник ВОС276") : (Game.cardCredits && Game.cardCredits.get(c.id)) || "";
       const weak = (window.CARD_WEAK || {})[c.id];
       // хардкор: одна можлива помилка, друга — кінець гри
       const over = this.mode.lives != null && this.results.filter((x) => !x.ok).length > this.mode.lives;
