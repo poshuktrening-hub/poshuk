@@ -141,7 +141,7 @@
       const badge = $("off-badge");
       if (badge) {
         badge.hidden = !on;
-        if (on) badge.innerHTML = `<b>ОФЛАЙН</b><span>дані від ${new Date(inf.at).toLocaleDateString("uk-UA")} · торкніться, щоб в онлайн</span>`;
+        if (on) badge.innerHTML = `<b>ОФЛАЙН</b><span>Торкніться для переходу в онлайн</span><span>Оновлено: ${new Date(inf.at).toLocaleTimeString("uk-UA", {hour: "2-digit", minute: "2-digit"})}, ${new Date(inf.at).toLocaleDateString("uk-UA")}</span>`;
         badge.onclick = () => this.switchMode(false);
       }
       document.querySelectorAll(".mm-duel, .admin-link, .top3, .cs-field").forEach((el) => { if (on) el.hidden = true; else if (!el.classList.contains("top3")) el.hidden = false; });
@@ -886,7 +886,7 @@
   /* Офлайн-дані: автооновлення о 08:00 і 20:00 — перевірка при відкритті, при появі мережі й щоп'ять хвилин. */
   const autoOff = () => {
     if (!window.Offline || !Offline.ready || !Game.password) return;
-    Offline.autoUpdate(Game.password, (n) => { if (n) { toast("Офлайн-дані оновлено з сервера ✓"); if ($("off-body") && !$("sub-off").hidden) Game.renderOff(); } });
+    Offline.autoUpdate(Game.password, (n) => { if (n) { toast("Офлайн-дані оновлено з сервера ✓"); Game.offUi(); if ($("off-body") && !$("sub-off").hidden) Game.renderOff(); } });
   };
   setTimeout(autoOff, 15000); setInterval(autoOff, 5 * 60e3); window.addEventListener("online", () => setTimeout(autoOff, 5000));
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestAnimationFrame(fitMenuTitles));
