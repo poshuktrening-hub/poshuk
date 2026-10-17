@@ -76,7 +76,7 @@
         <div class="m-head"><h2>Аналітика${who ? ` · ${esc(who)}` : ""}</h2><button type="button" class="link" id="an-x">Закрити</button></div>
         <div class="row an-filters">
           ${sel("an-period", [["today", "Сьогодні"], ["7", "7 днів"], ["30", "30 днів"], ["90", "90 днів"], ["", "Увесь час"]], this.period)}
-          ${sel("an-kind", [["", "Усі тести"], ["search", "Пошук цілей"], ["cards", "Картки цілей"]], this.kind)}
+          ${sel("an-kind", [["", "Усі тести"], ["search", "Пошук"], ["cards", "Картки"]], this.kind)}
           ${sel("an-who", [["", "Уся група"], ...people.map((p) => [p, p])], who)}
         </div>
         <div class="an-kpi">
