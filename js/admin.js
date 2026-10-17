@@ -55,7 +55,7 @@
           <button type="button" class="primary" id="a-gen" title="Поставити техніку вручну">✎ Генератор</button>
           <button type="button" id="a-variants" title="Зимові й нічні тепловізійні варіанти етапів">❄ Зима / 🌡 ТПВ</button>
           <button type="button" id="a-restage" title="Перемалювати техніку на вже створених етапах новою обробкою (з бекапом)">♻ Оновити етапи</button>
-          <button type="button" id="a-cards" title="Фото для режиму «Картки цілей»">🃏 Картки</button>
+          <button type="button" id="a-cards" title="Фото для режиму «Картки»">🃏 Картки</button>
           <button type="button" id="a-stats" title="Слабкі місця групи й кожного курсанта">📊 Аналітика</button>
           <button type="button" id="a-ref" title="Довідник техніки для курсантів">📘 Довідник</button>
         </div>

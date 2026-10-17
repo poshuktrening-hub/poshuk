@@ -35,15 +35,15 @@
       box.hidden = false;
       box.onclick = (e) => { if (e.target === box && !this.busy) box.hidden = true; };
       const wire = () => box.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => (box.hidden = true)));
-      const fail = (e) => { box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status no">${esc(e && e.message || e)}</p><p class="muted small">Оновіть сторінку й спробуйте ще раз. Якщо повторюється — напишіть у підтримку цей текст.</p></div>`; wire(); };
-      box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status">Завантажую список фото…</p></div>`; wire();
+      const fail = (e) => { box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status no">${esc(e && e.message || e)}</p><p class="muted small">Оновіть сторінку й спробуйте ще раз. Якщо повторюється — напишіть у підтримку цей текст.</p></div>`; wire(); };
+      box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status">Завантажую список фото…</p></div>`; wire();
       try { const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); this.fill = j.fill || null; } catch (e) { return fail(e); }
       try { this.render(); } catch (e) { console.error(e); fail(e); }
     },
     render() {
       const deck = Cards.deck(), n = deck.filter((c) => this.photos.has(c.id)).length;
       $("ca").innerHTML = `<div class="m-card">
-        <div class="m-head"><h2>Картки цілей</h2><button type="button" class="link" id="ca-x">Закрити</button></div>
+        <div class="m-head"><h2>Картки</h2><button type="button" class="link" id="ca-x">Закрити</button></div>
         <p class="muted small">Галочка «хардкор» — картка грає лише в режимі «Хардкор» (не в ігровому й не на іспиті). У хардкорі зараз: ${deck.filter((c) => c.hard).length}.</p>
         <p class="muted small">Фото карток зберігаються в «Довіднику» (у записі цієї техніки) — там же можна додати кілька ракурсів.</p>
         <p class="muted small">У грі беруть участь лише картки з фото: зараз ${n} з ${deck.length}. Виберіть одразу багато фото — кожне прив'яжеться до картки за назвою файлу (напр. «Т-72Б3.jpg», «Град.png», «2С19 Мста-С.jpg»).</p>
