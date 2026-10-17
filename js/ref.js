@@ -50,7 +50,12 @@
         // спершу вся назва й частини між роздільниками, далі окремі слова, потім слова ще й по дефісу («9К35-Стрела-10»)
         const parts = name.split(/[\/\\;,()“”"«»]|\s[-–—]\s|\sта\s|\sабо\s/).map(norm).filter(good);
         const words = name.split(/[\s\/\\;,()“”"«»]+/).map(norm).filter(good);
-        const sub = name.split(/[\s\/\\;,()“”"«»\-–—]+/).map(norm).filter(good);
+        // шматки через дефіс — лише якщо це не загальне слово типу («брем», «бмп»): інакше «БРЕМ-2» прив'язувався б до БРЕМ-1
+        const TYPE = /^(брем|бмп|бмд|бтр|брдм|бат|имр|пмп|птс|сау|рсзв|зрк|рлс|реб|танк|камаз|урал|газ|зил|маз|краз|тигр)$/;
+        const sub = name.split(/[\s\/\\;,()“”"«»\-–—]+/).map(norm).filter((w) => good(w) && !TYPE.test(w) && (/\d/.test(w) ? w.length >= 4 : w.length >= 5));
+        // ручні відповідності там, де автоматичний збіг неоднозначний (той самий шасі в різних машин)
+        const FIX = {[norm("КамАЗ-53949 Линза")]: "linza", [norm("Тайфун-К 53949 4х4")]: "typhoonk4", [norm("Панцирь-СА")]: null};
+        if (Object.prototype.hasOwnProperty.call(FIX, norm(name))) { const id = FIX[norm(name)]; if (id && deck.some((c) => c.id === id)) { e.card = id; used.add(id); } continue; }
         for (const p of [norm(name), ...parts, ...words, ...sub]) if (idx.has(p)) { e.card = idx.get(p); used.add(e.card); break; }
       }
       const extra = deck.filter((c) => !used.has(c.id)).map((c, i) => ({id: "card:" + c.id, ord: 100000 + i, cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name),
@@ -106,6 +111,11 @@
         if (im.getAttribute("src")) continue;
         API.refUrl(im.dataset.img, im.dataset.v, pw || Game.password).then((u) => { im.src = u; }).catch(() => {});
       }
+      for (const im of root.querySelectorAll("img[data-cardown]")) {
+        if (im.getAttribute("src")) continue;
+        const id = im.dataset.cardown;
+        API.cardUrl(id, Game.cardPhotos.get(id), pw || Game.password).then((u) => { if (u) im.src = u; else im.closest(".r-gal").remove(); }).catch(() => {});
+      }
       for (const im of root.querySelectorAll("img[data-card]")) {
         if (im.getAttribute("src") || !window.Cards) continue;
         im.setAttribute("src", "data:,"); im.style.visibility = "hidden";
@@ -124,6 +134,7 @@
           <button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
           ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
+          ${e.imgs.length && e.card && window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card) ? `<div class="r-gal r-gal-card"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(e.card)}"></button></div><p class="muted small r-hint">Фото з картки цілей</p>` : ""}
           ${!e.imgs.length && e.card ? `<div class="r-gal"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-card="${esc(e.card)}"></button></div>` : ""}
           ${e.imgs.length ? `<div class="r-gal">${e.imgs.map((x) => `<button type="button" class="r-ph" data-zoom="${esc(x)}"><img alt="" data-img="${esc(x)}" data-v="${esc(e.v)}"></button>`).join("")}</div>
           ${e.imgs.length > 1 ? `<p class="muted small r-hint">Гортайте фото вбік · торкніться, щоб збільшити</p>` : `<p class="muted small r-hint">Торкніться фото, щоб збільшити</p>`}` : ""}
