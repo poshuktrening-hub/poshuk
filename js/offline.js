@@ -131,8 +131,10 @@
       if (!navigator.onLine) throw new Error("Немає інтернету. Завантаження потрібне один раз — з мережею.");
       try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) { /* ок */ }
       progress("Отримую список етапів…", 0);
-      const cfg = await API.callNet("config", {}, password);
-      const ref = (await API.callNet("ref_list", {}, password)).entries || [];
+      // ключем офлайн-пристрою (password === "") — з позначкою off; паролем — як завжди
+      const off = password === "" ? {off: 1} : {};
+      const cfg = await API.callNet("config", off, password);
+      const ref = (await API.callNet("ref_list", off, password)).entries || [];
       const stages = (cfg.stages || []).filter((s) => s.targets && s.targets.some((t) => !t.decoy));
       const keep = new Set(["snap"]);
       let bytes = 0;
@@ -179,6 +181,8 @@
       LS.set(KEY, {at: new Date().toISOString(), stages: stages.length, cards: (cfg.cardPhotos || []).length, ref: ref.length, bytes, pw: await sha(password),
         ver: Object.fromEntries(stages.map((s) => [s.id, s.v || ""]))});
       if (!opt.auto) LS.del(PAUSE);   // після завантаження вручну — одразу в офлайн
+      // ключ пристрою для автооновлень (не залежить від зміни паролів); з кожним оновленням продовжується
+      try { const k = await API.callNet("offline_key", password === "" ? {off: 1} : {}, password); if (k.key) LS.set("poshuk_off_key", k.key); } catch (e) { /* лишається старий */ }
       progress("Готово", 1);
       return changed;
     },
@@ -191,7 +195,10 @@
       const y = new Date(d); y.setDate(y.getDate() - 1); y.setHours(20, 0, 0, 0); return y.getTime();
     },
     async autoUpdate(password, onDone) {
-      if (!this.ready || !password || !navigator.onLine || this._auto) return;
+      // оновлюємо ключем пристрою; немає ключа (завантажено до цієї версії) — паролем, і тоді ключ з'явиться
+      const key = LS.get("poshuk_off_key", null);
+      if (key) { API.useKey(key); password = ""; }
+      if (!this.ready || (password !== "" && !password) || !navigator.onLine || this._auto) return;
       const st = LS.get("poshuk_off_auto", {}) || {}, slot = this.autoSlot();
       const last = Math.max(st.at || 0, Date.parse((this.info() || {}).at || "") || 0);
       if (last >= slot) return;                                   // у цьому строку вже оновлено
@@ -201,11 +208,14 @@
         const changed = await this.download(password, () => {}, {auto: true});
         LS.set("poshuk_off_auto", {at: Date.now()});
         if (onDone) onDone(changed);
-      } catch (e) { LS.set("poshuk_off_auto", Object.assign(st, {fail: Date.now()})); }
+      } catch (e) {
+        LS.set("poshuk_off_auto", Object.assign(st, {fail: Date.now(), err: String(e.message || e).slice(0, 160)}));
+        if (/недійсний/.test(e.message || "")) LS.del("poshuk_off_key");   // ключ відкликано — далі лише після завантаження паролем
+      }
       finally { this._auto = false; }
     },
     async disable() {
-      LS.del(KEY); LS.del(RES); LS.del(PAUSE);
+      LS.del(KEY); LS.del(RES); LS.del(PAUSE); LS.del("poshuk_off_key"); LS.del("poshuk_off_auto");
       this.snap = null; urls.forEach((u) => URL.revokeObjectURL(u)); urls.clear();
       try { await clearAll(); } catch (e) { /* ок */ }
     },

@@ -285,12 +285,23 @@ async function makeToken(env, role) {
   return `${role}.${exp}.${gen}.${await hmac(env, role + "." + exp + "." + gen)}`;
 }
 
-/* Повертає роль; null — токен чужий/прострочений; "stale" — підпис справжній, але пароль відтоді змінили. */
+/* Ключ офлайн-пристрою: лише для оновлення офлайн-даних (читання етапів, карток, довідника), діє 180 днів
+   і продовжується з кожним оновленням. Від зміни паролів не залежить — його відкликає адміністратор
+   («Відкликати офлайн-ключі» в налаштуваннях: змінюється покоління pw_gen_off). */
+const OFF_DAYS = 180;
+async function makeOffToken(env) {
+  const exp = Math.floor(Date.now() / 1000) + OFF_DAYS * 86400, gen = await pwGen(env, "off");
+  return `off.${exp}.${gen}.${await hmac(env, "off." + exp + "." + gen)}`;
+}
+
+/* Повертає роль; null — токен чужий/прострочений; "stale" — підпис справжній, але пароль відтоді змінили.
+   need: "player" | "admin" | "offline" (оновлення офлайн-даних: гравець, адмін або ключ офлайн-пристрою). */
 async function tokenState(env, t, need) {
   const [role, exp, gen, sig] = String(t || "").split(".");
   if (!role || !exp || !gen || !sig || Number(exp) * 1000 < Date.now()) return null;
   if (sig !== await hmac(env, role + "." + exp + "." + gen)) return null;
   if (need === "admin" && role !== "admin") return null;
+  if (role === "off" && need !== "offline") return null;   // ключ офлайн-пристрою — лише для оновлення офлайн-даних
   if (gen !== await pwGen(env, role)) return "stale";
   return role;
 }
@@ -317,6 +328,7 @@ async function auth(env, req, need) {
   const isAdmin = !!p && safeEqual(p, s.admin_password);
   const isPlayer = isAdmin || (!!p && safeEqual(p, s.player_password));
   if (need === "admin" ? isAdmin : isPlayer) { await loginOk(env, ip); return isAdmin ? "admin" : "player"; }
+  if (!p && req.t && need === "offline") throw new HttpError("Ключ офлайн-пристрою недійсний — завантажте офлайн-версію заново", 401);   // не рахуємо як перебір
   // пароль змінили в Google-таблиці — сайт підхоплює його звідти (не частіше разу на 20 с)
   if (p && p.length >= 6 && Date.now() - lastSync > 20e3) {
     lastSync = Date.now();
@@ -447,16 +459,20 @@ async function action(env, ctx, req, origin) {
     }
     case "login": { const role = await auth(env, req, "player"); return {ok: true, role, token: await makeToken(env, role)}; }
     case "config": {
-      const role = await auth(env, req, "player");
+      const role = await auth(env, req, req.off ? "offline" : "player");
       const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects").all();
       const {results: cp} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
       let cardHard = {}; try { cardHard = JSON.parse((await metaGet(env, "cards_hard")) || "{}"); } catch (e) { cardHard = {}; }
       return {ok: true, brandIcon: (await metaGet(env, "brand_icon")) || "", settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]), cardPics: await cardPics(env),
-        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), cardHard, token: await makeToken(env, role)};
+        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), cardHard, token: role === "off" ? undefined : await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
+    case "offline_key": {   // ключ офлайн-пристрою (видається після входу паролем; ключем — продовжується)
+      await auth(env, req, "offline");
+      return {ok: true, key: await makeOffToken(env), days: OFF_DAYS};
+    }
     case "ref_list": {
-      await auth(env, req, "player");
+      await auth(env, req, req.off ? "offline" : "player");
       const {results} = await env.DB.prepare("SELECT id, ord, cat, name, ttx, descr, imgs, updated, card FROM ref_entries ORDER BY ord").all();
       return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated, card: r.card || ""}))};
     }
@@ -467,7 +483,7 @@ async function action(env, ctx, req, origin) {
       return {ok: true, top};
     }
     case "offline_assets": {   // офлайн-версія: багато зображень одним запитом (base64), до ~8 МБ за раз; решта — в "rest"
-      await auth(env, req, "player");
+      await auth(env, req, "offline");
       const want = (Array.isArray(req.items) ? req.items : []).slice(0, 400), items = {}, rest = [];
       let size = 0;
       for (const it of want) {
@@ -620,6 +636,10 @@ async function action(env, ctx, req, origin) {
       return {ok: true, clicks: results.map((r) => [r.x, r.y, !!r.hit]), players: pl ? pl.n : 0};
     }
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
+    case "revoke_offline_keys": {   // усі офлайн-пристрої перестануть оновлюватись, доки не завантажать офлайн-версію заново
+      await bumpGen(env, "off");
+      return {ok: true};
+    }
     case "set_settings": {
       const before = await settings(env), v = req.settings || {};
       await saveSettings(env, v);
@@ -960,7 +980,7 @@ async function getObject(env, ctx, request, id, t) {
 
 // ------------------------------------------------------------------ знімки
 async function getImage(env, ctx, request, id, t, v) {
-  if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
+  if (!await checkToken(env, t, "offline")) return new Response("Потрібен вхід", {status: 403});
   const cache = caches.default;
   const key = new Request(new URL(`/api/img/${id}${v ? `?v=${encodeURIComponent(v)}` : ""}`, request.url).toString());
   let res = await cache.match(key);
