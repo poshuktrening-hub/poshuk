@@ -1038,3 +1038,6 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 /* вузько — значок над підписом, щоб підпис не обрізався */
 .foot-btn { flex-direction: column; gap: 4px; min-height: 54px; padding: 7px 4px; font-size: .78rem; }
 .foot-btn span { white-space: nowrap; overflow: visible; }
+/* значки й назви всіх великих плиток — на одній висоті (зверху), топ дня — нижче */
+.main-menu .mm:not(.mm-wide):not(.mm-small) { justify-content: flex-start; padding-top: 16px; }
+.main-menu .mm:not(.mm-wide):not(.mm-small) .mm-h { flex: 0 0 auto; }
