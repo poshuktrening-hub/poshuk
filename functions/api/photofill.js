@@ -41,7 +41,8 @@ async function api(env, params) {
 /* Кандидати для картки. Порядок пошуку:
    1) названі файли; 2) пошук англійською (запит картки); 3) пошук кирилицею — шифр, позначення, російське написання
       (на Вікісховищі багато фото mil.ru з російськими назвами); 4) якщо справжніх фото немає — креслення, модель, макет;
-   5) АрміяInform (сайт Міноборони, ліцензія CC BY 4.0): фото до статті про знищення/захоплення цього зразка. */
+   5) Openverse (Flickr та інші вільні джерела), 6) АрміяInform (сайт Міноборони, CC BY 4.0): фото до статті про знищення/захоплення зразка.
+   (порядок 4↔5: креслення з Вікісховища — лише якщо ніде немає справжнього фото) */
 async function candidates(env, id) {
   const spec = QUERIES[id] || [], files = spec.slice(1);
   const queries = [spec[0], ...(VARIANTS[id] || [])].filter(Boolean);
@@ -71,9 +72,40 @@ async function candidates(env, id) {
     if (out.length) return out;
     pool.push(fit);
   }
+  // інші вільні джерела (Flickr тощо через Openverse) — справжнє фото краще за креслення з Вікісховища
+  const ov = await openverse(env, id, queries).catch(() => []);
+  if (ov.length) return ov;
   for (const fit of pool) take(fit, true);   // креслення, модель, макет
   if (out.length) return out;
   return armyInform(env, id).catch(() => []);
+}
+
+/* Openverse — відкритий каталог зображень під вільними ліцензіями (Flickr, музеї, Вікісховище…).
+   Лише CC0, суспільне надбання, CC BY, CC BY-SA; у назві або тегах — ті самі позначення, що й для Вікісховища. */
+async function openverse(env, id, queries) {
+  if (env.OPENVERSE === "0") return [];
+  const base = env.OPENVERSE_API || "https://api.openverse.org/v1";
+  const out = [], seen = new Set();
+  for (const q of queries.filter((x) => !/[а-яіїєґ]/i.test(x)).slice(0, 2)) {
+    const need = needOf(q); if (!need.length) continue;
+    const r = await fetch(`${base}/images/?q=${encodeURIComponent(q)}&license=by,by-sa,cc0,pdm&page_size=20`, {headers: {"User-Agent": UA, "Accept": "application/json"}});
+    if (!r.ok) continue;
+    const j = await r.json();
+    for (const x of j.results || []) {
+      const text = [x.title, ...(x.tags || []).map((t) => t.name)].join(" ");
+      if (!x.url || seen.has(x.url) || (x.width && x.width < 600) || BAD_STRICT.test(text) || OFF_TOPIC.test(text)) continue;
+      const t = nz(x.title) + " " + nz((x.tags || []).map((t) => t.name).join(" "));
+      if (!need.every((k) => t.includes(k))) continue;
+      seen.add(x.url);
+      // Flickr: середній розмір (1024 пкс) замість оригіналу на кілька МБ
+      const url = /staticflickr\.com/.test(x.url) ? x.url.replace(/(_[a-z])?\.(jpg|jpeg|png)$/i, "_b.$2") : x.url;
+      const lic = x.license === "pdm" ? "Public domain" : x.license === "cc0" ? "CC0" : `CC ${String(x.license).toUpperCase()} ${x.license_version || ""}`.trim();
+      out.push({title: x.title || "", url, alt: x.thumbnail, page: x.foreign_landing_url || x.url, license: lic, author: String(x.creator || "автор невідомий").slice(0, 120),
+        provider: x.source || x.provider || "Openverse", src: "openverse"});
+      if (out.length >= 3) return out;
+    }
+  }
+  return out;
 }
 
 /* АрміяInform: WordPress-сайт Міноборони; матеріали — CC BY 4.0 з обов'язковим посиланням.
@@ -139,10 +171,11 @@ async function applySeeds(env, metaGet, metaSet) {
   await metaSet(env, "photo_seed", SEED_V);
 }
 
-const S0 = () => ({v: LIST_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
+const FILL_V = LIST_V + "+ov1";   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
+const S0 = () => ({v: FILL_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
 export async function fillState(env, metaGet) {
   let s; try { s = JSON.parse(await metaGet(env, "photo_fill") || "null"); } catch (e) { s = null; }
-  if (!s || s.v !== LIST_V) s = S0();
+  if (!s || s.v !== FILL_V) s = S0();
   return Object.assign(s, {total: ORDER.length, done: s.pos >= ORDER.length});
 }
 export async function fillReset(env, metaSet, onlyMiss) {
@@ -187,8 +220,8 @@ export async function fillTick(env, metaGet, metaSet, force) {
       let stored = false;
       for (const c of list.slice(0, 3)) {
         try {
-          const t = await fetchThumb(c.url);
-          const credit = c.src === "armyinform" ? `АрміяInform, ${c.license} — ${c.page}` : `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}${c.loose ? " (креслення/модель)" : ""}`;
+          const t = await fetchThumb(c.url).catch((e) => { if (c.alt) return fetchThumb(c.alt); throw e; });
+          const credit = c.src === "armyinform" ? `АрміяInform, ${c.license} — ${c.page}` : c.src === "openverse" ? `${c.author}, ${c.license}, ${c.provider} — ${c.page}` : `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}${c.loose ? " (креслення/модель)" : ""}`;
           await putCardImg(env, id, {data: t.data, mime: t.mime, credit: credit.slice(0, 400)});
           stored = true; break;
         } catch (e) { /* наступний кандидат */ }
@@ -204,3 +237,4 @@ export async function fillTick(env, metaGet, metaSet, force) {
   return Object.assign(s, {total: ORDER.length, done: s.pos >= ORDER.length, names: NAMES});
 }
 export const fillInfo = (s) => ({pos: s.pos, total: ORDER.length, ok: s.ok, miss: s.miss.map((id) => NAMES[id] || id), done: s.pos >= ORDER.length, at: s.at, paused: s.lock > Date.now()});
+export {candidates};   // для локальних перевірок
