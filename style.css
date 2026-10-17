@@ -991,3 +991,15 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   .ca-hard span { display: none; }
   .ca-list button { padding: 6px 8px; }
 }
+
+/* позначення з дефісом не розриваються («Тайфун-К» не лишає «К» на новому рядку); довідник трохи дрібніший на телефоні */
+.nb { white-space: nowrap; }
+.r-nm b { overflow-wrap: break-word; font-size: .92rem; }
+.r-nm small { font-size: .76rem; }
+@media (max-width: 600px) {
+  .r-body h2 { font-size: 1.1rem; }
+  .r-txt { font-size: .9rem; }
+  .r-weak ul { font-size: .88rem; }
+  .screen.ref .stage { font-size: .92rem; }
+}
+.r-th:empty::after { content: "немає фото"; display: grid; place-items: center; width: 100%; height: 100%; font-size: .66rem; color: var(--muted); opacity: .6; }

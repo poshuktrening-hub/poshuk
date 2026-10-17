@@ -162,14 +162,41 @@ function publicSettings(s) {
 }
 
 async function saveSettings(env, vals, lenient = false) {
-  const st = [];
+  const st = [], before = await settings(env), bump = [];
   for (const k of Object.keys(DEFAULTS)) {
     if (vals[k] === undefined) continue;
     const v = String(vals[k]).trim();
     if (!lenient && /password/.test(k) && v.length < 6) throw new HttpError("Пароль має бути не коротший за 6 символів");
+    if (/password/.test(k) && v !== String(before[k] || "")) bump.push(k === "admin_password" ? "admin" : "player");
     st.push(env.DB.prepare("INSERT INTO settings (k,v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, v));
   }
   if (st.length) await env.DB.batch(st);
+  for (const role of bump) await bumpGen(env, role);   // старі токени цієї ролі — недійсні
+}
+
+/* Паролі з Google-таблиці підтягуються самі (раз на 10 хв, у фоні): змінили пароль у таблиці — старий
+   перестає діяти на сайті без жодних дій, а пристрої зі старим паролем просять увійти знову. */
+let lastSheetCheck = 0;
+function sheetSyncTick(env, ctx) {
+  if (!env.SHEETS_URL || Date.now() - lastSheetCheck < 5 * 60e3) return;
+  lastSheetCheck = Date.now();
+  ctx.waitUntil((async () => {
+    const at = Number(await metaGet(env, "sheet_sync_at") || 0);
+    if (Date.now() - at < 10 * 60e3) return;
+    await metaSet(env, "sheet_sync_at", String(Date.now()));
+    const s = await settings(env);
+    if (s._empty || !s.admin_password) return;
+    let j;
+    try { j = await gas(env, {action: "get_settings", p: s.admin_password}); } catch (e) { return; }
+    if (!j || !j.ok || !j.settings) {
+      // пароль адміна в таблиці вже інший — звіримося, коли адмін увійде новим; до того не турбуємо скрипт 6 годин
+      await metaSet(env, "sheet_sync_at", String(Date.now() + 6 * 3600e3 - 10 * 60e3));
+      return;
+    }
+    const vals = {};
+    for (const k of ["player_password", "admin_password"]) { const v = String(j.settings[k] || "").trim(); if (v && v !== String(s[k] || "")) vals[k] = v; }
+    if (Object.keys(vals).length) await saveSettings(env, vals, true);
+  })().catch(() => {}));
 }
 
 // ------------------------------------------------------------------ Google-скрипт (перенесення й дублювання результатів)
@@ -234,23 +261,39 @@ async function hmac(env, msg) {
 }
 
 /* Токен стабільний у межах 12-годинного вікна — тоді адреси знімків однакові й браузер їх кешує. */
+/* «Покоління» пароля ролі: змінюється разом із паролем (в адмінці, з таблиці, при синхронізації) —
+   і всі токени, видані за старого пароля, перестають діяти. Кешується в пам'яті на 30 с. */
+const genCache = {};
+async function pwGen(env, role) {
+  const c = genCache[role];
+  if (c && Date.now() - c.t < 30e3) return c.v;
+  const v = (await metaGet(env, "pw_gen_" + role)) || "0";
+  genCache[role] = {v, t: Date.now()};
+  return v;
+}
+async function bumpGen(env, role) { const v = String(Date.now()); await metaSet(env, "pw_gen_" + role, v); genCache[role] = {v, t: Date.now()}; }
+
 async function makeToken(env, role) {
   const win = TOKEN_HOURS * 3600;
-  const exp = (Math.floor(Date.now() / 1000 / win) + 2) * win;
-  return `${role}.${exp}.${await hmac(env, role + "." + exp)}`;
+  const exp = (Math.floor(Date.now() / 1000 / win) + 2) * win, gen = await pwGen(env, role);
+  return `${role}.${exp}.${gen}.${await hmac(env, role + "." + exp + "." + gen)}`;
 }
 
-async function checkToken(env, t, need) {
-  const [role, exp, sig] = String(t || "").split(".");
-  if (!role || !exp || !sig || Number(exp) * 1000 < Date.now()) return null;
-  if (sig !== await hmac(env, role + "." + exp)) return null;
+/* Повертає роль; null — токен чужий/прострочений; "stale" — підпис справжній, але пароль відтоді змінили. */
+async function tokenState(env, t, need) {
+  const [role, exp, gen, sig] = String(t || "").split(".");
+  if (!role || !exp || !gen || !sig || Number(exp) * 1000 < Date.now()) return null;
+  if (sig !== await hmac(env, role + "." + exp + "." + gen)) return null;
   if (need === "admin" && role !== "admin") return null;
+  if (gen !== await pwGen(env, role)) return "stale";
   return role;
 }
+async function checkToken(env, t, need) { const r = await tokenState(env, t, need); return r === "stale" ? null : r; }
 
 let lastSync = 0;   // коли востаннє питали таблицю про невідомий пароль (не частіше разу на 20 с — захист квоти скрипта)
 async function auth(env, req, need) {
-  if (req.t) { const r = await checkToken(env, req.t, need); if (r) return r; }
+  let stale = false;
+  if (req.t) { const r = await tokenState(env, req.t, need); if (r === "stale") stale = true; else if (r) return r; }
   const ip = req._ip || "local";
   rateLimit(ip, "login");
   const locked = await loginLocked(env, ip);
@@ -274,6 +317,7 @@ async function auth(env, req, need) {
     const role = await syncFromSheet(env, p);
     if (role && (need !== "admin" || role === "admin")) { await loginOk(env, ip); return role; }
   }
+  if (stale) throw new HttpError("Пароль змінено — увійдіть із новим паролем", 401);   // пристрій зі старим паролем: не рахуємо як перебір
   await loginFail(env, ip);
   throw new HttpError("Невірний пароль");
 }
@@ -1103,6 +1147,7 @@ export async function onRequest(context) {
   try {
     await db(env);
     try { usageTick(env, context); } catch (e) { /* ок */ }
+    try { sheetSyncTick(env, context); } catch (e) { /* ок */ }
     // токен для картинок: у запиті (?t=), у заголовку (fetch) або в cookie (<img>) — тоді адреса стала й кеш браузера живе довго
     const t = url.searchParams.get("t") || request.headers.get("X-Token") || cookieOf(request, "pt");
     if (request.method === "GET" && path[0]) rateLimit(ipOf(request), "img");

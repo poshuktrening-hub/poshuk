@@ -92,7 +92,7 @@
         if (q) { const h = e._txt ? "Згадується в описі" : "Назва"; if (h !== last) { html += `<h3 class="r-h">${h}</h3>`; last = h; } }
         else if (!this.cat && e.cat !== last) { html += `<h3 class="r-h">${esc(e.cat)}</h3>`; last = e.cat; }
         html += `<button type="button" class="r-item" data-id="${esc(e.id)}"><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : e.card ? `<img loading="lazy" alt="" data-card="${esc(e.card)}">` : ""}${e.concept ? `<em class="r-cpt">КОНЦЕПТ</em>` : ""}</span>
-          <span class="r-nm"><b>${esc(Logic.dispName(e.name))}</b><small>${esc(plain(e.desc || e.ttx).slice(0, 90))}</small></span></button>`;
+          <span class="r-nm"><b>${UI.nameHtml(e.name)}</b><small>${esc(plain(e.desc || e.ttx).slice(0, 90))}</small></span></button>`;
       }
       $("r-list").innerHTML = html;
       $("r-list").querySelectorAll("[data-id]").forEach((b) => (b.onclick = () => this.show(b.dataset.id)));
@@ -105,8 +105,9 @@
       }
       for (const im of root.querySelectorAll("img[data-card]")) {
         if (im.getAttribute("src") || !window.Cards) continue;
-        im.setAttribute("src", "data:,");
-        (Cards.loadRefPics ? Cards.loadRefPics() : Promise.resolve()).then(() => Cards.photoUrl(im.dataset.card)).then((u) => { if (u) im.src = u; else im.removeAttribute("src"); }).catch(() => im.removeAttribute("src"));
+        im.setAttribute("src", "data:,"); im.style.visibility = "hidden";
+        const none = () => { im.remove(); };   // фото ще немає — лишається порожня рамка без «битої» іконки
+        (Cards.loadRefPics ? Cards.loadRefPics() : Promise.resolve()).then(() => Cards.photoUrl(im.dataset.card)).then((u) => { if (u) { im.src = u; im.style.visibility = ""; } else none(); }).catch(none);
       }
     },
 
@@ -119,7 +120,7 @@
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
           <button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
-          ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${esc(e.cat)}</p><h2>${esc(Logic.dispName(e.name))}</h2>
+          ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
           ${!e.imgs.length && e.card ? `<div class="r-gal"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-card="${esc(e.card)}"></button></div>` : ""}
           ${e.imgs.length ? `<div class="r-gal">${e.imgs.map((x) => `<button type="button" class="r-ph" data-zoom="${esc(x)}"><img alt="" data-img="${esc(x)}" data-v="${esc(e.v)}"></button>`).join("")}</div>
           ${e.imgs.length > 1 ? `<p class="muted small r-hint">Гортайте фото вбік · торкніться, щоб збільшити</p>` : `<p class="muted small r-hint">Торкніться фото, щоб збільшити</p>`}` : ""}

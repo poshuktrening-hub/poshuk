@@ -69,7 +69,7 @@
       if (!this.password) return this.showLogin();
       try { await this.loadConfig(); this.showStart(); } catch (e) {
         if (window.Offline && Offline.ready && !Offline.on && /зв'язку/.test(e.message)) { Offline.goOffline(); return location.reload(); }
-        this.showLogin(e.auth ? "" : e.message);
+        this.showLogin(e.auth && !/змінено/i.test(e.message) ? "" : e.message);   // «пароль змінено» — показати, щоб було зрозуміло, чому просить вхід
       }
     },
 
@@ -553,7 +553,7 @@
         const len = o && o.length_m ? `<p class="len">Довжина ≈ ${o.length_m} м</p>` : "";
         const name = Logic.dispName(o && o.name ? o.name.replace(/\s*\(вбудована\)$/, "") : (t.type || "ціль"));
         const sub = o && o.name && t.type && !Logic.nameHasType(name, t.type) ? `<p class="len">${esc(t.type)}</p>` : "";   // тип окремим рядком — лише якщо його немає в назві
-        return `<div class="b-card">${pic ? `<div class="b-pic">${pic}</div>` : ""}<div class="b-txt"><h3>${esc(name)}</h3>${sub}${len}${ttx ? `<p>${esc(ttx).replace(/\n/g, "<br>")}</p>` : ""}</div></div>`;
+        return `<div class="b-card">${pic ? `<div class="b-pic">${pic}</div>` : ""}<div class="b-txt"><h3>${UI.nameHtml(name)}</h3>${sub}${len}${ttx ? `<p>${esc(ttx).replace(/\n/g, "<br>")}</p>` : ""}</div></div>`;
       }));
       const n = st.targets.filter((x) => !x.decoy).length;
       const types = [...new Set(st.targets.filter((x) => !x.decoy).map((x) => x.type).filter(Boolean))].join(", ");
@@ -840,5 +840,7 @@
 
   window.Game = Game;
   function today() { const n = new Date(), p2 = (x) => String(x).padStart(2, "0"); return `${n.getFullYear()}-${p2(n.getMonth() + 1)}-${p2(n.getDate())}`; }
-  window.UI = {show, toast, esc};
+  /* Назва техніки для показу: позначення з дефісом («Тайфун-К», «Т-72Б3») не розриваються на рядки. */
+  const nameHtml = (name) => esc(Logic.dispName(name)).replace(/(\S*-\S*)/g, '<span class="nb">$1</span>');
+  window.UI = {show, toast, esc, nameHtml};
 })();
