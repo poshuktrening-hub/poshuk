@@ -1105,3 +1105,4 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .cs-wrap.locked { opacity: .75; } .cs-wrap.locked input { cursor: default; pointer-events: none; }
 .cs-wrap.locked::after { content: "🔒"; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: .9rem; }
 .cs-wrap { position: relative; }
+#c-weak-btn[hidden] { display: none; }
