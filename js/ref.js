@@ -75,7 +75,10 @@
       // спершу збіг у назві, далі — згадки в ТТХ/описі
       // збіг на початку слова («армата» → Т-14 «Армата» раніше за «гаубиця-гармата»)
       const starts = (e) => String(e.name || "").split(/[\s\/\\;,()“”"«»\-–—]+/).some((w) => norm(w).startsWith(q));
-      const byName = pool.filter((e) => norm(e.name).includes(q)).sort((a, b) => (starts(b) ? 1 : 0) - (starts(a) ? 1 : 0));
+      // назва запису + назва й синоніми прив'язаної картки («зоопарк 1» знаходить «1Л219 “Зоопарк”»)
+      const deck = this._deckMap || (this._deckMap = new Map((window.Cards ? Cards.deck() : []).map((c) => [c.id, c])));
+      const keysOf = (e) => { const c = e.card && deck.get(e.card); return [norm(e.name), ...(c ? [norm(c.name), ...c.aliases.map(norm)] : [])]; };
+      const byName = pool.filter((e) => keysOf(e).some((k) => k.includes(q))).sort((a, b) => (starts(b) ? 1 : 0) - (starts(a) ? 1 : 0));
       const byText = q.length >= 3 ? pool.filter((e) => !byName.includes(e) && norm(plain(e.ttx) + plain(e.desc)).includes(q)) : [];
       byText.forEach((e) => (e._txt = true)); byName.forEach((e) => (e._txt = false));
       return byName.concat(byText);
