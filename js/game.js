@@ -326,7 +326,9 @@
       // системна кнопка «Назад» (Android, встановлений застосунок) повертає з підменю в меню
       if (!fromPop) { if (v !== "menu") trap(); else if (inTrap()) history.back(); }
       this.lastView = v;
-      $("start-form").dataset.view = v;   // у підменю: «Меню» зліва вгорі, назва й приціл — праворуч
+      $("start-form").dataset.view = v;   // у підменю: «Меню» зліва вгорі, назва розділу й приціл — праворуч
+      const TITLE = {menu: "Пошук техніки", search: "Пошук цілей", cards: "Картки цілей", fix: "Робота над помилками", my: "Мої результати", off: "Офлайн-версія"};
+      const lt = document.querySelector("#start-form .logo span"); if (lt) lt.textContent = TITLE[v] || TITLE.menu;
       [["main-menu", "menu"], ["sub-search", "search"], ["sub-cards", "cards"], ["sub-fix", "fix"], ["sub-off", "off"], ["sub-my", "my"]]
         .forEach(([id, k]) => { const el = $(id); if (el) el.hidden = v !== k; });
       if (v === "fix") this.renderFix();
@@ -345,7 +347,9 @@
     playable() { return this.stages.filter((s) => s.targets && s.targets.some((t) => !t.decoy)); },
     /* Галочки: усі вибрані = без фільтра (разом з етапами, де напрямок/пора не вказані). */
     filtered(regions = this.sel.regions, seasons = this.sel.seasons) {
-      const allR = regions.length === Logic.REGIONS.length, allS = seasons.length === Logic.SEASONS.length;
+      // напрямки й пори року без жодного етапу приховано — вони не обмежують вибір
+      const pl = this.playable(), hasR = (r) => pl.some((s) => Logic.region(s) === r), hasS = (x) => pl.some((s) => s.season === x);
+      const allR = Logic.REGIONS.every((r) => regions.includes(r) || !hasR(r)), allS = Logic.SEASONS.every((x) => seasons.includes(x) || !hasS(x));
       const pool = this.playable().filter((s) => (allR || regions.includes(Logic.region(s))) && (allS || seasons.includes(s.season)));
       // хардкор-етапи (техніка сховано понад 60%) — лише в «Хардкорі»; там вони йдуть першими
       if ((this.sel && this.sel.mode) !== "hard") return pool.filter((s) => !s.hard);
@@ -356,10 +360,18 @@
       const sel = this.sel;
       const chip = (group, v, list, n) => { const on = sel[group].includes(v);
         return `<button type="button" role="checkbox" aria-checked="${on}" class="chip${on ? " on" : ""}" data-g="${group}" data-v="${esc(v)}"><i aria-hidden="true">${on ? "✓" : ""}</i>${esc(v)}<small>${n}</small></button>`; };
-      $("pick-mode").innerHTML = Object.values(Logic.MODES).map((m) =>
+      // «Хардкор» — лише коли в адмінці є етапи з позначкою хардкор
+      const hasHard = this.playable().some((s) => s.hard);
+      if (sel.mode === "hard" && !hasHard) sel.mode = "game";
+      $("pick-mode").innerHTML = Object.values(Logic.MODES).filter((m) => m.id !== "hard" || hasHard).map((m) =>
         `<button type="button" role="radio" aria-checked="${sel.mode === m.id}" class="mode${sel.mode === m.id ? " on" : ""}" data-m="${m.id}"><b>${m.name}</b><span>${esc(m.desc)}</span></button>`).join("");
-      $("pick-region").innerHTML = Logic.REGIONS.map((r) => chip("regions", r, sel.regions, this.playable().filter((s) => Logic.region(s) === r).length)).join("");
-      $("pick-season").innerHTML = Logic.SEASONS.map((x) => chip("seasons", x, sel.seasons, this.playable().filter((s) => s.season === x).length)).join("");
+      // лише напрямки й пори року, для яких є етапи; один варіант — вибору немає, блок ховається
+      const rs = Logic.REGIONS.map((r) => [r, this.playable().filter((s) => Logic.region(s) === r).length]).filter(([, n]) => n);
+      const ss = Logic.SEASONS.map((x) => [x, this.playable().filter((s) => s.season === x).length]).filter(([, n]) => n);
+      $("pick-region").innerHTML = rs.map(([r, n]) => chip("regions", r, sel.regions, n)).join("");
+      $("pick-season").innerHTML = ss.map(([x, n]) => chip("seasons", x, sel.seasons, n)).join("");
+      $("pick-region").closest(".pick").hidden = rs.length < 2;
+      $("pick-season").closest(".pick").hidden = ss.length < 2;
       const save = () => { LS.set("poshuk_menu", sel); SFX.click(); this.renderMenu(); };
       document.querySelectorAll("#pick-mode [data-m]").forEach((b) => (b.onclick = () => { sel.mode = b.dataset.m; save(); }));
       document.querySelectorAll("#s-start [data-g]").forEach((b) => (b.onclick = () => {

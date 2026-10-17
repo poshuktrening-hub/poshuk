@@ -1056,3 +1056,40 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   color: var(--fg); font: 600 .9rem/1 var(--body); letter-spacing: 0; text-transform: none; cursor: pointer; white-space: nowrap; flex: 0 0 auto; }
 .hdr-menu:active { transform: scale(.97); }
 #start-form[data-view="menu"] .logo .hdr-menu, #start-form:not([data-view]) .logo .hdr-menu { display: none; }
+
+/* підменю: заголовок розділу — у шапці праворуч, окремий рядок із назвою не потрібен */
+#s-start .sub-h { display: none; }
+#start-form:not([data-view="menu"]) .logo span { text-align: right; line-height: 1.1; }
+.pick[hidden] { display: none; }
+
+/* ---------- ПК: ширша картка, великі плитки й кнопки (як у меню веб-ігор: усе видно без прокрутки, великі цілі для миші) */
+@media (min-width: 900px) and (min-height: 600px) {
+  #s-start .card.narrow { max-width: 760px; padding: 28px 32px 22px; }
+  #s-start .logo { font-size: 1.9rem; }
+  #s-start .logo .mark { width: 46px; height: 46px; }
+  /* головне меню: 4 великі плитки в ряд */
+  .main-menu { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto; gap: 14px; margin-top: 18px; }
+  .main-menu .mm:not(.mm-wide):not(.mm-small) { min-height: 170px; padding: 22px 14px 16px; border-radius: 20px; }
+  .main-menu .mm:not(.mm-wide):not(.mm-small) .mm-ic { width: 58px; height: 58px; border-radius: 16px; }
+  .main-menu .mm:not(.mm-wide):not(.mm-small) .mm-ic svg { width: 30px; height: 30px; }
+  .main-menu .mm-wide { padding: 14px 18px; }
+  .main-menu .mm-wide b { font-size: 1.05rem !important; }
+  .main-menu .mm:hover { transform: translateY(-2px); transition: transform .15s, border-color .15s; }
+  #s-start .foot-btns { gap: 14px; }
+  .foot-btn { flex-direction: row; min-height: 52px; font-size: .95rem; gap: 10px; }
+  .foot-btn svg { width: 20px; height: 20px; }
+  /* підменю: режими — три картки в ряд, фільтри — поруч, велика кнопка старту */
+  #start-form:not([data-view="menu"]) .logo { font-size: 1.6rem; }
+  .modes { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .mode { padding: 16px; min-height: 110px; border-radius: 16px; align-content: start; row-gap: 6px; }
+  .mode b { font-size: 1.05rem; }
+  .mode span { font-size: .88rem; }
+  #sub-search { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; }
+  #sub-search[hidden] { display: none; }
+  #sub-search > .pick:has(#pick-mode), #sub-search > #start-info, #sub-search > #start-btn, #sub-search > .help-link { grid-column: 1 / -1; }
+  .chips { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .chip { min-height: 46px; font-size: .95rem; }
+  #start-btn, #c-start { min-height: 58px; font-size: 1.1rem; border-radius: 16px; margin-top: 8px; }
+  .hdr-menu { padding: 10px 20px; font-size: 1rem; }
+  .fix-btns button { min-height: 52px; font-size: 1rem; }
+}
