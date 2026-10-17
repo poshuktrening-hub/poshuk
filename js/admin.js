@@ -533,6 +533,10 @@
         `</div><p class="status muted">Паролі — щонайменше 6 символів. Після зміни пароля курсантам потрібно ввести новий.</p>
         <div class="row"><button class="primary" type="button" id="st-save">Зберегти</button><button type="button" id="st-close">Закрити</button></div>
         <p class="status" id="st-status"></p>
+        <h3>Прізвища й пристрої</h3>
+        <p class="status muted">«Мої результати» й «Робота над помилками» відкриваються лише на пристрої, з якого курсант грає під своїм прізвищем, — інші не бачать чужих результатів. Курсант змінив телефон чи браузер — скиньте прив'язку його прізвища: власником стане наступний пристрій.</p>
+        <div class="row"><input id="st-cs" placeholder="Прізвище" maxlength="40" list="st-cs-list"><datalist id="st-cs-list"></datalist><button type="button" id="st-csreset">Скинути прив'язку</button></div>
+        <p class="status" id="st-cs-status"></p>
         <h3>Офлайн-пристрої</h3>
         <p class="status muted">Офлайн-версії оновлюються двічі на добу власним ключем пристрою — і після зміни паролів теж. Щоб зупинити оновлення на всіх пристроях (наприклад, телефон загублено), відкличте ключі: оновлюватись далі зможуть лише ті, хто завантажить офлайн-версію заново з чинним паролем.</p>
         <div class="row"><button type="button" id="st-offrevoke">🔒 Відкликати офлайн-ключі</button></div>
@@ -552,6 +556,12 @@
             (!sh ? "Google-таблиця не підключена." : sh.ok ? `У таблиці перенесено рядків: ${sh.moved || 0} → аркуш «${sh.sheet || "Архів"}».` : `Таблиця: ${sh.error || "не вдалося перенести"}.`);
           out.className = sh && !sh.ok ? "status no" : "status ok";
         } catch (e) { out.textContent = e.message; out.className = "status no"; }
+      };
+      API.call("callsign_owners", {}, this.pw).then((j) => { const dl = box.querySelector("#st-cs-list"); if (dl) dl.innerHTML = (j.owners || []).map((o) => `<option value="${esc(o.cs)}">`).join(""); }).catch(() => {});
+      box.querySelector("#st-csreset").onclick = async () => {
+        const cs = box.querySelector("#st-cs").value.trim(), out = box.querySelector("#st-cs-status");
+        if (!cs) { out.textContent = "Вкажіть прізвище"; out.className = "status no"; return; }
+        try { await API.call("callsign_reset", {callsign: cs}, this.pw); out.textContent = `Прив'язку «${cs}» скинуто ✓`; out.className = "status ok"; } catch (e) { out.textContent = e.message; out.className = "status no"; }
       };
       box.querySelector("#st-offrevoke").onclick = async () => {
         const out = box.querySelector("#st-offrevoke-status");
