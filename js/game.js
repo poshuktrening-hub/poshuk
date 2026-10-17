@@ -329,7 +329,11 @@
       // системна кнопка «Назад» (Android, встановлений застосунок) повертає з підменю в меню
       if (!fromPop) { if (v !== "menu") trap(); else if (inTrap()) history.back(); }
       this.lastView = v;
-      $("start-form").dataset.view = v;   // у підменю: «Меню» зліва вгорі, назва розділу й приціл — праворуч
+      $("start-form").dataset.view = v;
+      // «Мої результати» й «Робота над помилками» — лише за своїм прізвищем: тут поле не редагується
+      const lock = v === "my" || v === "fix";
+      $("callsign").readOnly = lock; $("callsign").closest(".cs-wrap").classList.toggle("locked", lock);
+      $("callsign").title = lock ? "Прізвище змінюється в головному меню" : "";   // у підменю: «Меню» зліва вгорі, назва розділу й приціл — праворуч
       const TITLE = {menu: "Пошук техніки", search: "Пошук цілей", cards: "Картки цілей", fix: "Робота над помилками", my: "Мої результати", off: "Офлайн-версія"};
       const lt = document.querySelector("#start-form .logo span"); if (lt) lt.textContent = TITLE[v] || TITLE.menu;
       [["main-menu", "menu"], ["sub-search", "search"], ["sub-cards", "cards"], ["sub-fix", "fix"], ["sub-off", "off"], ["sub-my", "my"]]
