@@ -394,7 +394,7 @@ Object.assign(window.CARD_COMMONS = window.CARD_COMMONS || {}, {
   "rtut": ["SPR-2 Rtut-BM"],
   "lesochek": ["RP-377UVM1L Lesochek"],
   "volnorez": ["Volnorez electronic warfare"],
-  "repellent1": ["Repellent-1"],
+  "repellent1": ["Repellent-1 electronic warfare"],
   "silok": ["Silok-01"],
   "serp": ["Serp-VS5"],
   "stupor": ["Stupor anti-drone"],

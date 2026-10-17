@@ -12,7 +12,7 @@ const FREE = (lic) => { const l = String(lic || "").toLowerCase(); return !/nc|n
 const BAD_STRICT = /decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|drawing|blueprint|emblem|logo|\bmap\b|poster|stamp/i;
 const BAD_LOOSE = /toy|lego|emblem|logo|\bmap\b|interior|operators|stamp|poster|flag|coat of arms/i;
 /* Явно не військова техніка (позначення «2S42» буває номером потяга тощо) — ніколи не беремо. */
-export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal/i;
+export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b/i;
 const STOP = /^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military|mod|obr)$/;
 /* Ключі, які мають бути в назві файлу: позначення з цифрами + шифр (якщо є), або лише слова. */
 function needOf(q) {
@@ -119,6 +119,24 @@ async function fetchThumb(url) {
   throw new Error("thumb too big");
 }
 
+/* Фото, які надіслав адміністратор: файли media/seed/<id>.jpg, перелік — SEED.
+   Імпортуються в базу (card_photos) один раз на версію SEED_V (= сам перелік) і замінюють автопідібране фото.
+   <картка>.jpg — головне фото картки; <картка>--altN — ще одне фото для гри й довідника;
+   <картка>--refN — лише для довідника (з підписами, вид згори тощо). */
+export const SEED = ["tirada", "tirada--ref1", "murmansk", "murmansk--alt1", "murmansk--ref1"];
+const SEED_V = SEED.join(",");
+async function applySeeds(env, metaGet, metaSet) {
+  if (!env.ASSETS || (await metaGet(env, "photo_seed")) === SEED_V) return;
+  for (const id of SEED) {
+    const r = await env.ASSETS.fetch(new Request("https://assets.local/media/seed/" + id + ".jpg"));
+    if (!r.ok) throw new Error("seed " + id + " " + r.status);
+    const ex = await env.DB.prepare("SELECT credit FROM card_photos WHERE id=?").bind(id).first();
+    if (ex && ex.credit === "Фото надав адміністратор") continue;
+    await env.DB.prepare("INSERT OR REPLACE INTO card_photos (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(id, b64(await r.arrayBuffer()), "image/jpeg", new Date().toISOString(), "Фото надав адміністратор").run();
+  }
+  await metaSet(env, "photo_seed", SEED_V);
+}
+
 const S0 = () => ({v: LIST_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
 export async function fillState(env, metaGet) {
   let s; try { s = JSON.parse(await metaGet(env, "photo_fill") || "null"); } catch (e) { s = null; }
@@ -134,6 +152,7 @@ let lastTick = 0;
 export async function fillTick(env, metaGet, metaSet, force) {
   if (!force && Date.now() - lastTick < TICK_MS) return null;
   lastTick = Date.now();
+  try { await applySeeds(env, metaGet, metaSet); } catch (e) { /* наступного разу */ }
   const s = await fillState(env, metaGet);
   if (s.done) return s;
   if (!force && s.lock > Date.now() - LOCK_MS) return s;   // інший дата-центр саме працює, або пауза після збою

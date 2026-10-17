@@ -46,7 +46,7 @@
       const keys = q.split(/\s+/).filter((w) => /\d/.test(w)).map(nz).filter((w) => w.length >= 3);
       const words = q.split(/\s+/).filter((w) => !/\d/.test(w)).map(nz).filter((w) => w.length >= 4 && !/^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military)$/.test(w));
       const need = keys.length ? keys.concat(words.slice(0, 1)) : (words.length ? words : q.split(/\s+/).map(nz).filter((w) => w.length >= 3));
-      const OFF = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal/i;
+      const OFF = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b/i;
       pages = pages.filter((p) => !OFF.test(p.title));
       take(pages.filter((p) => { const t = nz(p.title); return need.every((k) => t.includes(k)) && !/decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|emblem|logo|\bmap\b/i.test(p.title); }));
       // справжніх фото немає (концепт, рідкісний зразок) — беремо модель, макет з виставки чи візуалізацію
@@ -99,7 +99,7 @@
         <input type="search" id="ca-q" placeholder="Пошук картки: Т-72, Бук, РЕБ…" value="${esc(this.q || "")}" autocomplete="off" style="margin-top:10px">
         <div class="tabs" id="ca-f"><button type="button" data-f="all" class="${this.f !== "no" && this.f !== "yes" ? "on" : ""}">Усі</button><button type="button" data-f="no" class="${this.f === "no" ? "on" : ""}">Без фото ${deck.length - n}</button><button type="button" data-f="yes" class="${this.f === "yes" ? "on" : ""}">З фото ${n}</button></div>
         <ul class="ca-list">${deck.filter((c) => this.f === "no" ? !this.photos.has(c.id) : this.f === "yes" ? this.photos.has(c.id) : true)
-          .filter((c) => !this.q || Cards.norm(c.name + " " + c.id + " " + c.aliases.join(" ")).includes(Cards.norm(this.q))).map((c) => `<li>
+          .filter((c) => { const k = Cards.norm(c.name + " " + c.id + " " + c.aliases.join(" ")); return String(this.q || "").split(/[\s,;\/]+/).map(Cards.norm).filter(Boolean).every((w) => k.includes(w)); }).map((c) => `<li>
           ${this.photos.has(c.id) ? `<img class="th" loading="lazy" alt="" data-th="${c.id}">` : `<span class="dot"></span>`}<span class="nm">${esc(Logic.dispName(c.name))}<small>${esc(this.credits.get(c.id) || c.id)}</small></span>
           <label class="ca-hard" title="Хардкор"><input type="checkbox" data-hard="${c.id}" ${c.hard ? "checked" : ""}><span>хардкор</span></label>
           <button type="button" data-wiki="${c.id}" title="Інше фото з Вікісховища">🔎</button>
