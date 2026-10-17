@@ -13,7 +13,7 @@ const FREE = (lic) => { const l = String(lic || "").toLowerCase(); return !/nc|n
 const BAD_STRICT = /decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|drawing|blueprint|emblem|logo|\bmap\b|poster|stamp/i;
 const BAD_LOOSE = /toy|lego|emblem|logo|\bmap\b|interior|operators|stamp|poster|flag|coat of arms/i;
 /* Явно не військова техніка (позначення «2S42» буває номером потяга тощо) — ніколи не беремо. */
-export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b/i;
+export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b|tank car|tankcar|tank wagon|railcar|rail car|freight|wagon|вагон|цистерна \d|залізнич|железнодорож|\bржд\b|\bуз\b/i;
 const STOP = /^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military|mod|obr)$/;
 /* Ключі, які мають бути в назві файлу: позначення з цифрами + шифр (якщо є), або лише слова. */
 function needOf(q) {
@@ -216,7 +216,7 @@ export async function fillTick(env, metaGet, metaSet, force) {
   s.lock = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s));
   if (!s.cleaned) {   // прибрати фото, підібрані раніше, у назві файлу яких явно не техніка (потяги тощо)
     const {results: cr} = await env.DB.prepare("SELECT id, credit FROM card_photos WHERE credit LIKE '%Wikimedia%'").all();
-    const {results: rr} = await env.DB.prepare("SELECT id, credit FROM ref_images WHERE id LIKE 'cp\\_%' ESCAPE '\\' AND credit LIKE '%Wikimedia%'").all();
+    const {results: rr} = await env.DB.prepare("SELECT id, credit FROM ref_images WHERE id LIKE 'cp\\_%' ESCAPE '\\' AND (credit LIKE '%Wikimedia%' OR credit LIKE '%flickr%' OR credit LIKE '%Openverse%')").all();
     for (const r of rr) {   // фото карток у довіднику: id cp_<картка>-…
       const card = r.id.slice(CP.length).split("-")[0];
       const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
@@ -260,4 +260,4 @@ export async function fillTick(env, metaGet, metaSet, force) {
 }
 export const fillInfo = (s) => ({pos: s.pos, total: ORDER.length, ok: s.ok, miss: s.miss.map((id) => NAMES[id] || id), done: s.pos >= ORDER.length, at: s.at, paused: s.lock > Date.now(),
   next: s.doneAt ? s.doneAt + WEEK : 0});
-export {candidates};   // для локальних перевірок
+export {candidates, fileOk};   // для локальних перевірок
