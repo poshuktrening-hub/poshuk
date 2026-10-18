@@ -8,6 +8,8 @@
   const norm = (s) => (window.Cards ? Cards.norm(s) : String(s || "").toLowerCase().replace(/[^a-zа-яіїєґ0-9]/g, ""));
   const plain = (h) => String(h || "").replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&");
   // у текстах із таблиці дозволено лише <b>; решта вже екранована при імпорті
+  // «Ознаки: …» на початку опису зайве (розділ і так «Ознаки та опис») — прибираємо, першу літеру робимо великою
+  const noLead = (h) => String(h || "").replace(/^(\s*(?:<[^>]+>\s*)*)Ознаки\s*:\s*(?:<\/b>\s*)?(\S)/i, (m, pre, ch) => pre + ch.toUpperCase());
   const safe = (h) => String(h || "").replace(/<(?!\/?b>)/g, "&lt;");
 
   /* розділи — у порядку появи в таблиці, всередині розділу — за порядковим номером */
@@ -216,7 +218,7 @@
           ${e.imgs.length ? `<div class="r-gal">${e.imgs.map((x) => `<button type="button" class="r-ph" data-zoom="${esc(x)}"><img alt="" data-img="${esc(x)}" data-v="${esc(e.v)}"></button>`).join("")}</div>
           ${e.imgs.length > 1 ? `<p class="muted small r-hint">Гортайте фото вбік · торкніться, щоб збільшити</p>` : `<p class="muted small r-hint">Торкніться фото, щоб збільшити</p>`}` : ""}
           ${e.ttx ? `<section class="r-sec"><h3>ТТХ</h3><div class="r-txt">${safe(e.ttx)}</div></section>` : ""}
-          ${e.desc ? `<section class="r-sec"><h3>Ознаки та опис</h3><div class="r-txt">${e.fromCard ? esc(e.desc) : safe(e.desc)}</div></section>` : ""}
+          ${e.desc ? `<section class="r-sec"><h3>Ознаки та опис</h3><div class="r-txt">${noLead(e.fromCard ? esc(e.desc) : safe(e.desc))}</div></section>` : ""}
           ${this.weakHtml(e)}
         </div>`;
       box.hidden = false; box.scrollTop = 0;
