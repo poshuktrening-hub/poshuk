@@ -54,6 +54,8 @@
       }
       this.renderCats(); this.renderList();
       $("r-help").onclick = () => Help.show("ref");
+      $("r-suggest").hidden = !!(window.Offline && Offline.on);   // пропозиції — лише з інтернетом
+      $("r-suggest").onclick = () => this.suggest(null);
       $("r-print").onclick = () => { const list = this.filtered(); window.Print && Print.entries(list, this.q.trim() ? `Пошук: ${this.q.trim()}` : this.cat || "Усі розділи", Game.password); };
       if (window.Help) Help.maybe("ref");
     },
@@ -210,7 +212,7 @@
       const prev = list[i - 1], next = list[i + 1];
       const box = $("r-detail");
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
-          <button type="button" id="rd-print" title="Друк / PDF цього запису" aria-label="Друк">🖨</button><button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
+          ${window.Offline && Offline.on ? "" : `<button type="button" id="rd-sugg" title="Запропонувати фото до цього запису" aria-label="Запропонувати фото">📷</button>`}<button type="button" id="rd-print" title="Друк / PDF цього запису" aria-label="Друк">🖨</button><button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
           ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
           ${e.card && window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card) ? `<div class="r-gal r-gal-card"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(e.card)}"></button></div>${e.imgs.length ? `<p class="muted small r-hint">Фото з картки цілей</p>` : ""}` : ""}
@@ -224,6 +226,7 @@
         </div>`;
       box.hidden = false; box.scrollTop = 0;
       $("rd-back").onclick = () => this.closeDetail();
+      if ($("rd-sugg")) $("rd-sugg").onclick = () => this.suggest(e);
       $("rd-print").onclick = () => window.Print && Print.entries([e], Logic.dispName(e.name), Game.password);
       if (prev) $("rd-prev").onclick = () => this.show(prev.id);
       if (next) $("rd-next").onclick = () => this.show(next.id);
@@ -239,6 +242,47 @@
         };
         addEventListener("keydown", this._keys);
       }
+    },
+    /* Пропозиція курсанта: e — запис, до якого додаються фото; null — новий запис. Публікує адміністратор. */
+    suggest(e) {
+      let box = $("rs"); if (!box) { box = document.createElement("div"); box.id = "rs"; box.className = "modal"; document.body.appendChild(box); }
+      const photos = [], cats = [...new Set((this.entries || []).map((x) => x.cat))];
+      box.hidden = false;
+      box.innerHTML = `<div class="m-card ra-card"><div class="m-head"><h2>${e ? "Фото до запису" : "Новий запис"}</h2><button type="button" class="link" id="rs-x">Закрити</button></div>
+        <p class="muted small">${e ? `«${esc(Logic.dispName(e.name))}»: ` : ""}з'явиться в довіднику після перевірки адміністратором. Лише власні фото або з відкритих джерел.</p>
+        <div class="ra-form">
+          ${e ? "" : `<label>Назва техніки<input id="rs-name" maxlength="200" placeholder="напр. БМП-2М «Бережок»"></label>
+          <label>Розділ<select id="rs-cat">${cats.map((c) => `<option>${esc(c)}</option>`).join("")}</select></label>
+          <label>ТТХ (необов'язково)<textarea id="rs-ttx" rows="4"></textarea></label>
+          <label>Ознаки та опис<textarea id="rs-desc" rows="5"></textarea></label>`}
+          <label>Коментар для адміністратора (необов'язково)<input id="rs-note" maxlength="500" placeholder="звідки фото, що на ньому"></label>
+          <div class="re-photos" id="rs-photos"></div>
+          <div class="row"><button type="button" id="rs-add">＋ Додати фото…</button></div>
+          <input type="file" id="rs-files" accept="image/*" multiple hidden>
+          <div class="row"><button type="button" class="primary" id="rs-send">Надіслати на перевірку</button></div>
+          <p class="status" id="rs-st"></p>
+        </div></div>`;
+      const say = (t, c = "") => { $("rs-st").textContent = t; $("rs-st").className = "status " + c; };
+      const draw = () => {
+        $("rs-photos").innerHTML = photos.map((u, i) => `<div class="re-ph"><img alt="" src="${u}"><div class="re-ph-b"><button type="button" data-rm="${i}">✕</button></div></div>`).join("") || `<p class="muted small">До 6 фото.</p>`;
+        $("rs-photos").querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => { photos.splice(+b.dataset.rm, 1); draw(); }));
+      };
+      $("rs-x").onclick = () => (box.hidden = true);
+      $("rs-add").onclick = () => $("rs-files").click();
+      $("rs-files").onchange = async (ev) => { for (const f of [...ev.target.files]) { if (photos.length >= 6) break; try { photos.push(await toJpeg(f)); } catch (er) { say(er.message, "no"); } } ev.target.value = ""; draw(); };
+      $("rs-send").onclick = async () => {
+        const data = e ? {note: $("rs-note").value.trim()} : {name: $("rs-name").value.trim(), cat: $("rs-cat").value, ttx: toHtml($("rs-ttx").value), desc: toHtml($("rs-desc").value), note: $("rs-note").value.trim()};
+        if (!e && data.name.length < 2) return say("Вкажіть назву техніки.", "no");
+        if (e && !photos.length) return say("Додайте хоча б одне фото.", "no");
+        if (!e && window.Cards) { const c = Cards.deck().find((x) => Cards.check(x, data.name).ok); if (c) data.card = c.id; }
+        $("rs-send").disabled = true; say("Надсилаю…");
+        try {
+          await API.call("ref_suggest", {kind: e ? "photos" : "new", target: e ? e.id : "", data, images: photos.map((u) => ({data: u.split(",")[1]})), dev: Game.deviceId(), callsign: $("callsign").value.trim()}, Game.password);
+          box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Дякуємо!</h2><button type="button" class="link" id="rs-x">Закрити</button></div><p>Пропозицію надіслано. Після перевірки адміністратором вона з'явиться в довіднику.</p></div>`;
+          $("rs-x").onclick = () => (box.hidden = true);
+        } catch (er) { say(er.message, "no"); $("rs-send").disabled = false; }
+      };
+      draw();
     },
     closeDetail() { $("r-detail").hidden = true; $("r-zoom").hidden = true; this.cur = null; },
     zoom(src) {
@@ -280,6 +324,7 @@
       this.renderList();
     },
     async load() {
+      API.call("ref_suggestions", {}, this.pw).then((j) => { const n = (j.list || []).length; if (n !== this.nSugg) { this.nSugg = n; if ($("ra-sugg") && !this.busy && document.querySelector("#ra .ra-list")) this.renderList(); } }).catch(() => {});
       try { this.entries = sortRef((await API.call("ref_list", {}, this.pw)).entries || []); } catch (e) { this.entries = []; this.err = e.message; }
       // записи-оболонки карток (c_…): розділ і назва — з картки; порожні тексти — теж з картки
       const deck = window.Cards ? Cards.deck() : [], byId = new Map(deck.map((c) => [c.id, c]));
@@ -303,6 +348,8 @@
       $("ra").innerHTML = `<div class="m-card ra-card"><div class="m-head"><h2>Довідник техніки</h2><button type="button" class="link" id="ra-x">Закрити</button></div>
         <p class="muted small">Записів: <b>${this.entries.length}</b>, без фото: <b>${noPh}</b>. Курсанти відкривають довідник з головного меню. Щоб додати фото — торкніться порожньої рамки в рядку.</p>
         <div class="row"><button type="button" class="primary" id="ra-new">＋ Новий запис</button><button type="button" id="ra-file">Завантажити файл довідника…</button></div>
+        <div class="row"><button type="button" id="ra-sugg">📨 Пропозиції курсантів${this.nSugg ? ` <b class="ra-badge">${this.nSugg}</b>` : ""}</button><button type="button" id="ra-bulk" title="Кілька фото одразу: файл з назвою картки (bmp2.jpg, «Т-72Б3.jpg») стає 2-м фото її запису">🖼 Фото з файлів…</button></div>
+        <input type="file" id="ra-bulk-in" accept="image/*" multiple hidden>
         <input type="file" id="ra-in" accept=".json,application/json" hidden>
         <p class="status" id="ra-st">${this.err ? esc(this.err) : ""}</p>
         <div class="row ra-filt"><input id="ra-q" type="search" placeholder="Пошук за назвою" value="${esc(this.f)}"><select id="ra-c"><option value="">Усі розділи</option>${this.cats().map((c) => `<option${c === this.fcat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
@@ -313,6 +360,9 @@
           <button type="button" data-edit="${esc(e.id)}" title="Змінити">✎</button>${e.virt ? "<span></span>" : `<button type="button" data-del="${esc(e.id)}" title="Видалити">✕</button>`}</li>`).join("") || `<li class="muted small">Нічого не знайдено</li>`}</ul></div>`;
       $("ra-x").onclick = () => { if (!this.busy) $("ra").hidden = true; };
       $("ra-new").onclick = () => this.edit(null);
+      $("ra-sugg").onclick = () => this.suggestions();
+      $("ra-bulk").onclick = () => $("ra-bulk-in").click();
+      $("ra-bulk-in").onchange = (ev) => { const f = [...ev.target.files]; ev.target.value = ""; this.bulk(f); };
       $("ra-file").onclick = () => $("ra-in").click();
       $("ra-in").onchange = async (e) => {
         const f = e.target.files[0]; if (!f) return;
@@ -441,6 +491,68 @@
         await API.call("ref_put", {entry: Object.assign({}, entry, {imgs: kept.concat(chunks.slice(0, i + 1).flat().map((x) => x.id))}), images: chunks[i], renames: i ? [] : renames}, this.pw);
       }
       await API.call("ref_put", {entry, images: chunks.length ? chunks[chunks.length - 1] : [], renames: chunks.length > 1 ? [] : renames}, this.pw);
+    },
+    /* Пропозиції курсантів: переглянути, схвалити (запис/фото з'являються в довіднику) або відхилити. */
+    async suggestions() {
+      const box = $("ra");
+      box.innerHTML = `<div class="m-card ra-card"><p class="status">Завантажую пропозиції…</p></div>`;
+      let list = [];
+      try { list = (await API.call("ref_suggestions", {}, this.pw)).list || []; } catch (e) { box.innerHTML = `<div class="m-card"><p class="status no">${esc(e.message)}</p></div>`; return; }
+      this.nSugg = list.length;
+      const byId = new Map(this.entries.map((e) => [e.id, e]));
+      box.innerHTML = `<div class="m-card ra-card"><div class="m-head"><h2>Пропозиції курсантів</h2><button type="button" class="link" id="sg-back">← До списку</button></div>
+        <p class="muted small">Схвалене одразу з'являється в довіднику (і в грі, якщо запис прив'язано до картки). Після схвалення запис можна відредагувати як звичайний.</p>
+        <p class="status" id="ra-st"></p>
+        ${list.length ? list.map((s) => { const t = byId.get(s.target);
+          return `<div class="sg-item" data-sg="${esc(s.id)}">
+            <p><b>${s.kind === "photos" ? `📷 Фото до «${esc(t ? Logic.dispName(t.name) : s.target)}»` : `＋ Новий запис: ${esc(s.name)}`}</b><br><small class="muted">${esc(s.callsign || "курсант")} · ${esc(new Date(s.ts).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"}))}${s.kind !== "photos" ? ` · розділ «${esc(s.cat)}»${s.card ? " · картка: " + esc(((window.Cards ? Cards.deck() : []).find((c) => c.id === s.card) || {}).name || s.card) : ""}` : ""}</small></p>
+            ${s.note ? `<p class="small">💬 ${esc(s.note)}</p>` : ""}
+            ${s.kind !== "photos" && (s.ttx || s.desc) ? `<details class="small"><summary>Текст</summary><div class="r-txt">${s.ttx ? `<b>ТТХ:</b> ${safe(s.ttx)}<br>` : ""}${safe(s.desc || "")}</div></details>` : ""}
+            <div class="re-photos">${s.imgs.map((x) => `<div class="re-ph"><img alt="" data-img="${esc(x)}" data-v="${esc(s.ts)}"></div>`).join("")}</div>
+            <div class="row"><button type="button" class="primary" data-ok="${esc(s.id)}">✓ Схвалити</button><button type="button" data-no="${esc(s.id)}">✕ Відхилити</button></div></div>`; }).join("")
+          : `<p class="muted">Нових пропозицій немає.</p>`}</div>`;
+      $("sg-back").onclick = () => this.renderList();
+      Ref.loadImgs.call({}, box, this.pw);
+      const decide = async (id, approve) => {
+        if (!approve && !confirm("Відхилити пропозицію? Її фото буде видалено.")) return;
+        try { await API.call("ref_suggest_decide", {id, approve: approve ? 1 : 0}, this.pw); await this.load(); this.suggestions(); this.say(approve ? "Схвалено ✓" : "Відхилено", approve ? "ok" : ""); }
+        catch (e) { this.say(e.message, "no"); }
+      };
+      box.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => decide(b.dataset.ok, true)));
+      box.querySelectorAll("[data-no]").forEach((b) => (b.onclick = () => decide(b.dataset.no, false)));
+    },
+    /* Кілька фото одразу: назва файлу — id чи назва картки («bmp2.jpg», «Т-72Б3 (2).jpg»); фото стає 2-м (3-м…) у записі,
+       позначене «лише довідник» (схеми, зони ураження в гру не йдуть). Немає запису — створюється запис картки. */
+    async bulk(files) {
+      if (!files.length || !window.Cards) return;
+      const deck = Cards.deck(), byCard = new Map();
+      const miss = [], plan = new Map();
+      for (const f of files) {
+        const base = f.name.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").replace(/\s*\(\d+\)$/, "").trim();
+        const c = deck.find((x) => x.id === base.toLowerCase()) || deck.find((x) => Cards.check(x, base).ok);
+        if (!c) { miss.push(f.name); continue; }
+        if (!plan.has(c.id)) plan.set(c.id, []); plan.get(c.id).push(f);
+      }
+      if (!plan.size) return this.say(`Не впізнано жодного файлу: ${miss.join(", ")}`, "no");
+      if (!confirm(`Додати фото до ${plan.size} записів (другим фото, «лише довідник»)?${miss.length ? `\nНе впізнано: ${miss.join(", ")}` : ""}`)) return;
+      this.busy = true; let n = 0;
+      try {
+        for (const [cid, fs] of plan) {
+          const c = deck.find((x) => x.id === cid);
+          let e = this.entries.find((x) => x.card === cid && !x.virt) || this.entries.find((x) => x.card === cid);
+          this.say(`${++n}/${plan.size}: ${c.name}…`);
+          const images = [];
+          for (const f of fs) images.push({id: uid((e ? e.id : "c_" + cid) + "-") + "--ref", data: (await toJpeg(f)).split(",")[1], mime: "image/jpeg"});
+          const cur = e ? e.imgs.slice() : [];
+          const imgs = cur.slice(0, 1).concat(images.map((x) => x.id), cur.slice(1)).slice(0, 20);
+          const entry = e ? {id: e.id, ord: e.ord, cat: e.cat, name: e.name, ttx: e.ttx, desc: e.desc, imgs, card: cid}
+            : {id: "c_" + cid, ord: 100000, cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), name: c.name, ttx: toHtml(c.p1), desc: toHtml(c.p2), imgs, card: cid};
+          await this.putEntry(entry, images, cur);
+        }
+        await this.load(); this.renderList();
+        this.say(`Додано фото до записів: ${plan.size} ✓${miss.length ? ` Не впізнано: ${miss.join(", ")}` : ""}`, miss.length ? "" : "ok");
+      } catch (err) { this.say(err.message, "no"); }
+      finally { this.busy = false; }
     },
     say(t, cls = "") { const el = $("ra-st"); if (el) { el.textContent = t; el.className = "status " + cls; } },
     /* Патч текстів: поле міняється, лише якщо в базі ще той самий текст, що й «from» (ручні правки не перезаписуються). */
