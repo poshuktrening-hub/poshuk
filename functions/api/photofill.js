@@ -235,6 +235,26 @@ async function applySeeds(env, metaGet, metaSet) {
   await metaSet(env, "photo_seed", SEED_V);
 }
 
+/* Ознаки на фото, розмічені для надісланих адміністратором фото (media/seed/marks.json: id фото без cp_ → [{x,y,w,h,t}]).
+   Вносяться лише на фото, де ознак ще немає: ручну розмітку з адмінки не перезаписують. Повтор — коли змінився файл. */
+async function applyMarkSeeds(env, metaGet, metaSet) {
+  if (!env.ASSETS) return;
+  const r = await env.ASSETS.fetch(new Request("https://assets.local/media/seed/marks.json"));
+  if (!r.ok) return;
+  const text = await r.text(), v = "m:" + text.length + ":" + [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+  if ((await metaGet(env, "marks_seed")) === v) return;
+  const all = JSON.parse(text), up = new Date().toISOString(), st = [];
+  let miss = 0;
+  for (const [id, marks] of Object.entries(all)) {
+    const img = CP + id;
+    if (!Array.isArray(marks) || !marks.length) continue;
+    if (!(await env.DB.prepare("SELECT id FROM ref_images WHERE id=?").bind(img).first())) { miss++; continue; }   // фото ще не внесене — наступного разу
+    st.push(env.DB.prepare("INSERT INTO ref_marks (img,marks,updated) VALUES (?,?,?) ON CONFLICT(img) DO NOTHING").bind(img, JSON.stringify(marks), up));
+  }
+  if (st.length) await env.DB.batch(st);
+  if (!miss) await metaSet(env, "marks_seed", v);
+}
+
 const FILL_V = LIST_V + "+ov3";   // +ov2 — суворіше правило для карток без індексу: перевірка й прибирання ще раз   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
 const WEEK = 7 * 24 * 3600e3;   // фоновий прохід — раз на тиждень (між проходами сервер Вікісховище не чіпає)
 const S0 = () => ({v: FILL_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
@@ -274,6 +294,7 @@ export async function fillTick(env, metaGet, metaSet, force) {
   if (!force && Date.now() - lastTick < TICK_MS) return null;
   lastTick = Date.now();
   try { await applySeeds(env, metaGet, metaSet); } catch (e) { /* наступного разу */ }
+  try { await applyMarkSeeds(env, metaGet, metaSet); } catch (e) { /* наступного разу */ }
   const s = await fillState(env, metaGet);
   if (s.done) { if (!s.doneAt) { s.doneAt = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s)); } return s; }
   if (!force && s.lock > Date.now() - LOCK_MS) return s;   // інший дата-центр саме працює, або пауза після збою
