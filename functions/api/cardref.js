@@ -45,7 +45,7 @@ export async function entryFor(env, card) {
 }
 
 /* Додати фото картці. front — першим (обкладинка); replace — замість першого фото «з картки» (cp_). */
-export async function putCardImg(env, card, {data, mime = "image/jpeg", credit = "", imgId, front = true, replace = false}) {
+export async function putCardImg(env, card, {data, mime = "image/jpeg", credit = "", imgId, front = true, replace = false, pos = null}) {
   const e = await entryFor(env, card), up = now(), st = [];
   const iid = imgId || (CP + card + "-" + Date.now().toString(36));   // id картки не містить «-»
   let imgs = e.imgs.filter((x) => x !== iid);
@@ -53,7 +53,8 @@ export async function putCardImg(env, card, {data, mime = "image/jpeg", credit =
     const old = imgs.find((x) => x.startsWith(CP) && isGameImg(x));
     if (old) { imgs = imgs.filter((x) => x !== old); st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(old)); }
   }
-  imgs = front ? [iid, ...imgs] : [...imgs, iid];
+  if (pos != null) imgs.splice(Math.min(pos, imgs.length), 0, iid);   // на задану позицію (1 — друге фото)
+  else imgs = front ? [iid, ...imgs] : [...imgs, iid];
   for (const x of imgs.slice(MAX_IMGS)) if (x.startsWith(CP)) st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(x));
   imgs = imgs.slice(0, MAX_IMGS);
   st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_images (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(iid, data, mime, up, String(credit || "").slice(0, 400)));
