@@ -534,7 +534,9 @@
         if (!plan.has(c.id)) plan.set(c.id, []); plan.get(c.id).push(f);
       }
       if (!plan.size) return this.say(`Не впізнано жодного файлу: ${miss.join(", ")}`, "no");
-      if (!confirm(`Додати фото до ${plan.size} записів (другим фото, «лише довідник»)?${miss.length ? `\nНе впізнано: ${miss.join(", ")}` : ""}`)) return;
+      if (!confirm(`Додати фото до ${plan.size} записів другим фото?${miss.length ? `\nНе впізнано: ${miss.join(", ")}` : ""}`)) return;
+      // схеми, зони ураження, фото з підписами — «лише довідник» (у гру не йдуть); звичайні фото — і в гру
+      const refOnly = confirm("Позначити ці фото «лише довідник»?\n\nOK — схеми, зони ураження, фото з підписами (у гру не підуть).\nСкасувати — звичайні фото (підуть і в гру).");
       this.busy = true; let n = 0;
       try {
         for (const [cid, fs] of plan) {
@@ -542,7 +544,7 @@
           let e = this.entries.find((x) => x.card === cid && !x.virt) || this.entries.find((x) => x.card === cid);
           this.say(`${++n}/${plan.size}: ${c.name}…`);
           const images = [];
-          for (const f of fs) images.push({id: uid((e ? e.id : "c_" + cid) + "-") + "--ref", data: (await toJpeg(f)).split(",")[1], mime: "image/jpeg"});
+          for (const f of fs) images.push({id: uid((e ? e.id : "c_" + cid) + "-") + (refOnly ? "--ref" : ""), data: (await toJpeg(f)).split(",")[1], mime: "image/jpeg"});
           const cur = e ? e.imgs.slice() : [];
           const imgs = cur.slice(0, 1).concat(images.map((x) => x.id), cur.slice(1)).slice(0, 20);
           const entry = e ? {id: e.id, ord: e.ord, cat: e.cat, name: e.name, ttx: e.ttx, desc: e.desc, imgs, card: cid}
@@ -550,7 +552,7 @@
           await this.putEntry(entry, images, cur);
         }
         await this.load(); this.renderList();
-        this.say(`Додано фото до записів: ${plan.size} ✓${miss.length ? ` Не впізнано: ${miss.join(", ")}` : ""}`, miss.length ? "" : "ok");
+        this.say(`Додано фото до записів: ${plan.size}${refOnly ? " (лише довідник)" : ""} ✓${miss.length ? ` Не впізнано: ${miss.join(", ")}` : ""}`, miss.length ? "" : "ok");
       } catch (err) { this.say(err.message, "no"); }
       finally { this.busy = false; }
     },
