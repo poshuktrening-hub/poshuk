@@ -202,7 +202,14 @@ async function fetchThumb(url) {
    <картка>.jpg — головне фото картки; <картка>--altN — ще одне фото для гри й довідника;
    <картка>--refN — лише для довідника (з підписами, вид згори тощо). */
 export const SEED = ["tirada", "tirada--ref1", "murmansk", "murmansk--alt1", "murmansk--ref1",
-  "r330bmv", "r330bmv--alt1", "marker", "marker--alt1"];
+  "r330bmv", "r330bmv--alt1", "marker", "marker--alt1",
+  // літаки й гелікоптер — звичайні фото (і в гру), другими в записі
+  "a50--alt1", "a50--alt2", "tu95ms--alt1", "mi8mtpr--alt1",
+  // моделі з зонами ураження (Бестіарій) — лише довідник, другими в записі
+  "bmp2--ref1", "bmp2--ref2", "bmpt--ref1", "bmp3--ref1", "brm3k--ref1", "mtlb--ref1", "btr80--ref1", "btr82a--ref1", "brdm3--ref1",
+  "t64bv--ref1", "t80u--ref1", "t90a--ref1", "t72b3--ref1", "t14--ref1", "2s23--ref1", "2s1--ref1", "2s34--ref1", "2s31--ref1"];
+/* джерело для підпису; решта — «Фото надав адміністратор» */
+const SEED_CREDIT = (id) => (/--ref1$|--ref2$/.test(id) && !/^(tirada|murmansk)/.test(id) ? "Модель із зонами ураження: Бестіарій (besty.vrnet.io)" : "Фото надав адміністратор");
 const SEED_V = "ref:" + SEED.join(",");
 async function applySeeds(env, metaGet, metaSet) {
   if (!env.ASSETS || (await metaGet(env, "photo_seed")) === SEED_V) return;
@@ -211,7 +218,9 @@ async function applySeeds(env, metaGet, metaSet) {
     if (!r.ok) throw new Error("seed " + id + " " + r.status);
     const iid = CP + id;   // фото — у довідник, у запис картки (див. cardref.js)
     if (await env.DB.prepare("SELECT id FROM ref_images WHERE id=?").bind(iid).first()) continue;
-    await putCardImg(env, id.split("--")[0], {data: b64(await r.arrayBuffer()), credit: "Фото надав адміністратор", imgId: iid, front: !id.includes("--")});
+    // головне фото — першим; --altN / --refN — на позицію N (друге, третє…), щоб не підміняти обкладинку
+    const n = id.includes("--") ? Number((id.match(/(\d+)$/) || [0, 1])[1]) : null;
+    await putCardImg(env, id.split("--")[0], {data: b64(await r.arrayBuffer()), credit: SEED_CREDIT(id), imgId: iid, front: !id.includes("--"), pos: n});
   }
   await metaSet(env, "photo_seed", SEED_V);
 }
