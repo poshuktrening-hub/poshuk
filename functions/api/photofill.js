@@ -3,7 +3,7 @@
    лише вільні ліцензії (CC0, PD, CC BY, CC BY-SA), ширина ≥ 700; якщо справжнього фото немає — креслення, модель або макет.
    Фото зберігається як у ручному підборі (card_photos: мініатюра 1280 px + підпис автора/ліцензії).
    Стан — у meta «photo_fill»: позиція у переліку, скільки знайдено, яких не знайдено. Перелік — photo-queries.js. */
-import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS, DESIG, CODES} from "./photo-queries.js";
+import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS, DESIG, CODES, TYPEW, STRONG} from "./photo-queries.js";
 import {cardPics, putCardImg, dropImg, CP} from "./cardref.js";
 
 const UA = "poshuk-trener/1.0 (https://poshuk.pages.dev; contact: mrqwerty841@gmail.com)";
@@ -13,7 +13,7 @@ const FREE = (lic) => { const l = String(lic || "").toLowerCase(); return !/nc|n
 const BAD_STRICT = /decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|drawing|blueprint|emblem|logo|\bmap\b|poster|stamp/i;
 const BAD_LOOSE = /toy|lego|emblem|logo|\bmap\b|interior|operators|stamp|poster|flag|coat of arms/i;
 /* Явно не військова техніка (позначення «2S42» буває номером потяга тощо) — ніколи не беремо. */
-export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b|portrait|person|people|\bman\b|woman|singer|poet|writer|actor|actress|musician|politician|footballer|wedding|selfie|okudzhava|окуджава|портрет|tank car|tankcar|tank wagon|railcar|rail car|freight|wagon|вагон|цистерна \d|залізнич|железнодорож|\bржд\b|\bуз\b/i;
+export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b|kremlin|кремль|crater|воронка|ruins|руїни|руины|damaged building|aftermath|users|operators map|locator|location map|world map|countries|portrait|person|people|\bman\b|woman|singer|poet|writer|actor|actress|musician|politician|footballer|wedding|selfie|okudzhava|окуджава|портрет|tank car|tankcar|tank wagon|railcar|rail car|freight|wagon|вагон|цистерна \d|залізнич|железнодорож|\bржд\b|\bуз\b/i;
 /* Загальні слова запиту — не ключі (правило А): тип техніки, країна, рід військ, місце. */
 const STOP = /^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military|mod|obr|russia|soviet|ukraine|ukrainian|army|navy|force|forces|federation|ground|armed|parade|exhibition|museum|forum|complex|combat|artillery|rocket|infantry|fighting|armoured|armored|carrier|personnel|command|post|station|mobile|electronic|warfare|jamming|drone|uav|helicopter|aircraft|bomber|fighter|attack|jet|corvette|frigate|submarine|landing|craft|minesweeper|patrol|cruise|ballistic|anti|defense|defence|surface|mlrs|atgm|apc|ifv|mbt|tel|telar|transporter|loader|tractor|engineering|bridge|pontoon|layer|mine|clearing|recovery|repair|ambulance|fuel|tanker|cargo|utility|light|heavy|medium|tactical|strategic|coastal|naval|air|sam|spg|sph|gun|cannon|mortar|antitank|antiaircraft|battery|regiment|brigade|division|photo|image|picture|view|front|side|rear|left|right|top)$/;
 /* ---------- Правила відбору фото (ті самі для Вікісховища, Openverse, АрміяInform і для перевірки вже підібраних):
@@ -55,12 +55,11 @@ function queryOk(q, text, id) {
   const n = needOf(q); if (!n.length) return false;
   const m = nzMap(text);
   if (!n.every((k) => hasKey(m, k))) return false;
-  // картка без індексу (лише шифр: «Булат», «Маркер»): самого шифру мало — це ще й ім'я, слово, назва міста;
-  // потрібне ще слово з запиту (тип: detector, robot, radar…)
-  // (лише коли шифр — одне звичайне слово в лапках; «Мурманськ-БН», «Панцир-СМ», МТ-ЛБ — самі по собі позначення)
-  if (id && !(DESIG[id] || []).length && n.every((k) => (CODES[id] || []).includes(k))) {
-    const q = [...String(NAMES[id] || "").matchAll(/«([^»]+)»/g)].map((m) => m[1]);
-    if (q.length && q.every((c) => !/[-\d\s]/.test(c))) return false;
+  // збіг лише за шифром («Булат», «Москва-1», «Калібр» — це ще й ім'я, місто, слово): у файлі має бути
+  // ще й індекс картки або слово типу (detector, missile, radar, drone…) — інакше відкидаємо
+  if (id && n.every((k) => (CODES[id] || []).includes(k) && !(DESIG[id] || []).includes(k) && !(STRONG[id] || []).includes(k))) {
+    const conf = [...(DESIG[id] || []), ...(TYPEW[id] || [])];
+    if (!conf.some((k) => hasKey(m, k))) return false;
   }
   const weak = n.every((k) => /^\d/.test(k) && k.length <= 5);
   if (weak && id && (CODES[id] || []).length && !CODES[id].some((k) => hasKey(m, k))) return false;
@@ -159,10 +158,14 @@ async function openverse(env, id, queries) {
   return out;
 }
 
+/* Фото до статей АрміяInform — для наземної техніки (знищена/захоплена машина). Для ракет, бомб, кораблів, авіації,
+   дронів на фото статті зазвичай наслідки удару (вирва, зруйнований будинок) — не беремо. */
+const AI_OK = (id) => !/^(Ракета|Бомба|Корабель|Крейсер|Підводний|Катер|Літак|БпЛА|Гелікоптер|РЕР|РЕБ|РЛС|Лазерний)/.test(String(NAMES[id] || ""));
 /* АрміяInform: WordPress-сайт Міноборони; матеріали — CC BY 4.0 з обов'язковим посиланням.
    Беремо головне фото статті, у заголовку якої є шифр або позначення зразка. */
 async function armyInform(env, id) {
   if (env.ARMYINFORM === "0") return [];
+  if (!AI_OK(id)) return [];
   const name = NAMES[id] || "", code = (name.match(/«([^»]+)»/) || [])[1] || "";
   const desig = name.replace(/^[^\s]+\s+/, "").replace(/\s*«[^»]*»/g, "").replace(/[()]/g, "").trim();
   const base = env.ARMYINFORM_API || "https://armyinform.com.ua/wp-json/wp/v2";
@@ -232,7 +235,7 @@ async function applySeeds(env, metaGet, metaSet) {
   await metaSet(env, "photo_seed", SEED_V);
 }
 
-const FILL_V = LIST_V + "+ov2";   // +ov2 — суворіше правило для карток без індексу: перевірка й прибирання ще раз   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
+const FILL_V = LIST_V + "+ov3";   // +ov2 — суворіше правило для карток без індексу: перевірка й прибирання ще раз   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
 const WEEK = 7 * 24 * 3600e3;   // фоновий прохід — раз на тиждень (між проходами сервер Вікісховище не чіпає)
 const S0 = () => ({v: FILL_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
 export async function fillState(env, metaGet) {
@@ -277,9 +280,10 @@ export async function fillTick(env, metaGet, metaSet, force) {
   s.lock = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s));
   if (!s.cleaned) {   // прибрати фото, підібрані раніше, у назві файлу яких явно не техніка (потяги тощо)
     const {results: cr} = await env.DB.prepare("SELECT id, credit FROM card_photos WHERE credit LIKE '%Wikimedia%'").all();
-    const {results: rr} = await env.DB.prepare("SELECT id, credit FROM ref_images WHERE id LIKE 'cp\\_%' ESCAPE '\\' AND (credit LIKE '%Wikimedia%' OR credit LIKE '%flickr%' OR credit LIKE '%Openverse%')").all();
+    const {results: rr} = await env.DB.prepare("SELECT id, credit FROM ref_images WHERE id LIKE 'cp\\_%' ESCAPE '\\' AND (credit LIKE '%Wikimedia%' OR credit LIKE '%flickr%' OR credit LIKE '%Openverse%' OR credit LIKE '%АрміяInform%')").all();
     for (const r of rr) {   // фото карток у довіднику: id cp_<картка>-…
       const card = r.id.slice(CP.length).split("-")[0];
+      if (/АрміяInform/.test(String(r.credit || ""))) { if (!AI_OK(card)) await dropImg(env, r.id); continue; }
       const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
       const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || [])[1] || "";
       if (OFF_TOPIC.test(cred) || (file && QUERIES[card] && !fileOk(card, file))) await dropImg(env, r.id);
