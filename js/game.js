@@ -67,10 +67,26 @@
       });
       if (window.Offline && Offline.ready && !Offline.on && !navigator.onLine) Offline.goOffline();   // немає мережі — сам вмикаю офлайн
       if (!this.password) return this.showLogin();
-      try { await this.loadConfig(); this.showStart(); } catch (e) {
-        if (window.Offline && Offline.ready && !Offline.on && /зв'язку/.test(e.message)) { Offline.goOffline(); return location.reload(); }
-        this.showLogin(e.auth && !/змінено/i.test(e.message) ? "" : e.message);   // «пароль змінено» — показати, щоб було зрозуміло, чому просить вхід
+      // збережений пароль: перший запит після відкриття іноді не доходить (сервер «прокидається», мережа ще не піднялась) —
+      // кілька тихих повторів, і лише потім показуємо вхід; помилку зв'язку не показуємо, якщо далі все вдалося
+      for (let k = 0; ; k++) {
+        try { await this.loadConfig(); return this.showStart(); } catch (e) {
+          const net = /зв'язку/.test(e.message || "");
+          if (net && window.Offline && Offline.ready && !Offline.on) { Offline.goOffline(); return location.reload(); }
+          if (net && k < 3) { await new Promise((r) => setTimeout(r, 800 * (k + 1))); continue; }
+          if (net) { this.showLogin(""); return this.retryBoot(); }   // далі — тихо пробуємо у фоні
+          return this.showLogin(e.auth && !/змінено/i.test(e.message) ? "" : e.message);   // «пароль змінено» — показати, щоб було зрозуміло, чому просить вхід
+        }
       }
+    },
+    /* Сервер не відповів одразу — без червоного повідомлення, тихо повторюємо, поки курсант на екрані входу. */
+    retryBoot() {
+      clearTimeout(this._rb);
+      this._rb = setTimeout(async () => {
+        if ($("s-login").hidden || !LS.get("poshuk_pw", null)) return;
+        try { this.password = LS.get("poshuk_pw", null); await this.loadConfig(); this.showStart(); }
+        catch (e) { if (/зв'язку/.test(e.message || "")) this.retryBoot(); }
+      }, navigator.onLine ? 4000 : 8000);
     },
 
     showLogin(err = "") {
@@ -81,11 +97,13 @@
     },
 
     async login(pw) {
+      clearTimeout(this._rb);
       $("login-btn").disabled = true;
       $("login-err").textContent = "";
       try {
         this.password = pw;
-        await this.loadConfig();
+        // один тихий повтор, якщо перший запит не дійшов (сервер «прокидається»)
+        try { await this.loadConfig(); } catch (e1) { if (!/зв'язку/.test(e1.message || "")) throw e1; await new Promise((r) => setTimeout(r, 1200)); await this.loadConfig(); }
         LS.set("poshuk_pw", pw);
         this.showStart();
       } catch (e) {
