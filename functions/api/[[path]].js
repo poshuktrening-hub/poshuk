@@ -730,6 +730,12 @@ async function action(env, ctx, req, origin) {
       }
       // фото, які адміністратор прибрав із запису, — видалити з бази
       const old = await env.DB.prepare("SELECT imgs, card FROM ref_entries WHERE id=?").bind(id).first();
+      // перейменування фото (прапорець «лише довідник» = суфікс --ref): спершу в базі, щоб старий id не вважався прибраним
+      const ren = (req.renames || []).slice(0, 40).filter((r) => Array.isArray(r) && /^[a-z0-9_-]+$/i.test(String(r[0])) && /^[a-z0-9_-]+$/i.test(String(r[1])) && String(r[1]).replace(/--ref$/, "") === String(r[0]).replace(/--ref$/, ""));
+      if (ren.length) {
+        await env.DB.batch(ren.map(([a, b]) => env.DB.prepare("UPDATE ref_images SET id=? WHERE id=?").bind(String(b), String(a))));
+        if (old) { const m = new Map(ren.map(([a, b]) => [String(a), String(b)])); old.imgs = JSON.stringify(JSON.parse(old.imgs || "[]").map((x) => m.get(x) || x)); }
+      }
       let imgs = (e.imgs || []).map(String);
       // імпорт файлу довідника: фото, додані через картки (cp_…), і прив'язка до картки зберігаються
       if (req.keepCp && old) JSON.parse(old.imgs || "[]").filter((x) => x.startsWith("cp_") && !imgs.includes(x)).forEach((x) => imgs.push(x));

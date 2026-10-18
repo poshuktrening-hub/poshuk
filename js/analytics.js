@@ -73,7 +73,7 @@
       const sel = (id, opts, val) => `<select id="${id}">${opts.map(([v, t]) => `<option value="${esc(v)}"${v === val ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
       const bar = (p) => `<i class="an-bar ${tone(p)}"><b style="width:${Math.max(2, p)}%"></b></i>`;
       $("an").innerHTML = `<div class="m-card an-card">
-        <div class="m-head"><h2>Аналітика${who ? ` · ${esc(who)}` : ""}</h2><button type="button" class="link" id="an-x">Закрити</button></div>
+        <div class="m-head"><h2>Аналітика${who ? ` · ${esc(who)}` : ""}</h2><span class="row"><button type="button" class="link" id="an-print" title="Роздрукувати або зберегти як PDF">🖨 Друк</button><button type="button" class="link" id="an-x">Закрити</button></span></div>
         <div class="row an-filters">
           ${sel("an-period", [["today", "Сьогодні"], ["7", "7 днів"], ["30", "30 днів"], ["90", "90 днів"], ["", "Увесь час"]], this.period)}
           ${sel("an-kind", [["", "Усі тести"], ["search", "Пошук"], ["cards", "Картки"]], this.kind)}
@@ -103,6 +103,7 @@
         <p class="muted small">Категорії рахуються з ${d.since ? esc(d.since.slice(0, 10).split("-").reverse().join(".")) : "наступного тесту"}: відтоді зберігається кожна відповідь (картка або ціль на знімку). Середній результат — за всіма тестами періоду.</p>
       </div>`;
       $("an-x").onclick = () => ($("an").hidden = true);
+      $("an-print").onclick = () => window.Print && Print.analytics($("an").querySelector(".m-card"), who ? `курсант ${who}` : "група");
       $("an-period").onchange = (e) => { this.period = e.target.value; this.load(); };
       $("an-kind").onchange = (e) => { this.kind = e.target.value; this.render(); };
       $("an-who").onchange = (e) => { this.who = e.target.value; this.render(); };

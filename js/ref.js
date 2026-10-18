@@ -54,6 +54,7 @@
       }
       this.renderCats(); this.renderList();
       $("r-help").onclick = () => Help.show("ref");
+      $("r-print").onclick = () => { const list = this.filtered(); window.Print && Print.entries(list, this.q.trim() ? `Пошук: ${this.q.trim()}` : this.cat || "Усі розділи", Game.password); };
       if (window.Help) Help.maybe("ref");
     },
     close() { this.closeDetail(); Game.showStart(); },
@@ -209,7 +210,7 @@
       const prev = list[i - 1], next = list[i + 1];
       const box = $("r-detail");
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
-          <button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
+          <button type="button" id="rd-print" title="Друк / PDF цього запису" aria-label="Друк">🖨</button><button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
           ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
           ${e.card && window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card) ? `<div class="r-gal r-gal-card"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(e.card)}"></button></div>${e.imgs.length ? `<p class="muted small r-hint">Фото з картки цілей</p>` : ""}` : ""}
@@ -223,6 +224,7 @@
         </div>`;
       box.hidden = false; box.scrollTop = 0;
       $("rd-back").onclick = () => this.closeDetail();
+      $("rd-print").onclick = () => window.Print && Print.entries([e], Logic.dispName(e.name), Game.password);
       if (prev) $("rd-prev").onclick = () => this.show(prev.id);
       if (next) $("rd-next").onclick = () => this.show(next.id);
       box.querySelectorAll("[data-zoom]").forEach((b) => (b.onclick = () => this.zoom(b.querySelector("img").src)));
@@ -356,7 +358,7 @@
     edit(id) {
       const e = id ? this.entries.find((x) => x.id === id) : null;
       const cats = this.cats();
-      this.photos = e ? e.imgs.map((x) => ({id: x, v: e.v})) : [];
+      this.photos = e ? e.imgs.map((x) => ({id: x, v: e.v, refOnly: String(x).includes("--ref")})) : [];
       $("ra").innerHTML = `<div class="m-card ra-card"><div class="m-head"><h2>${e ? "Змінити запис" : "Новий запис"}</h2><button type="button" class="link" id="re-back">← До списку</button></div>
         <div class="ra-form">
           <label>Назва<input id="re-name" maxlength="200" value="${esc(e ? e.name : "")}" placeholder="напр. Т-72Б3М"></label>
@@ -366,7 +368,8 @@
           <label>ТТХ<textarea id="re-ttx" rows="6" placeholder="Озброєння: …&#10;Калібр: …">${esc(unesc(e ? e.ttx : ""))}</textarea></label>
           <label>Ознаки та опис<textarea id="re-desc" rows="8">${esc(unesc(e ? e.desc : ""))}</textarea></label>
           <p class="muted small">Жирний текст: оберніть слова в **зірочки**. Кожен рядок — з нового рядка.</p>
-          <div class="re-ph-h"><b>Фото</b> <span class="muted small">перше — обкладинка в списку; до 20 шт.</span></div>
+          <div class="re-ph-h"><b>Фото</b> <span class="muted small">перше — обкладинка в списку; до 20 шт. ★ — зробити першим, ↑ — на одну позицію вище.
+            «Лише довідник» — фото з підписами, схеми, зони ураження: показується тут, у гру не йде.</span></div>
           <div class="re-photos" id="re-photos"></div>
           <div class="row"><button type="button" id="re-add">＋ Додати фото…</button></div>
           <input type="file" id="re-files" accept="image/*" multiple hidden>
@@ -390,11 +393,14 @@
     },
     renderPhotos() {
       const box = $("re-photos");
-      box.innerHTML = this.photos.map((p, i) => `<div class="re-ph"><img alt="" ${p.url ? `src="${p.url}"` : `data-img="${esc(p.id)}" data-v="${esc(p.v)}"`}>
-        <div class="re-ph-b">${i ? `<button type="button" data-first="${i}" title="Зробити обкладинкою">★</button>` : `<span class="re-main">обкладинка</span>`}<button type="button" data-rm="${i}" title="Прибрати">✕</button></div></div>`).join("")
+      box.innerHTML = this.photos.map((p, i) => `<div class="re-ph${p.refOnly ? " re-refonly" : ""}"><img alt="" ${p.url ? `src="${p.url}"` : `data-img="${esc(p.id)}" data-v="${esc(p.v)}"`}>
+        <div class="re-ph-b">${i ? `<button type="button" data-first="${i}" title="Зробити обкладинкою">★</button><button type="button" data-up="${i}" title="На одну позицію вище">↑</button>` : `<span class="re-main">обкладинка</span>`}<button type="button" data-rm="${i}" title="Прибрати">✕</button></div>
+        <label class="re-ref"><input type="checkbox" data-ref="${i}" ${p.refOnly ? "checked" : ""}> лише довідник</label></div>`).join("")
         || `<p class="muted small">Ще немає фото.</p>`;
       box.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => { this.photos.splice(+b.dataset.rm, 1); this.renderPhotos(); }));
       box.querySelectorAll("[data-first]").forEach((b) => (b.onclick = () => { const [p] = this.photos.splice(+b.dataset.first, 1); this.photos.unshift(p); this.renderPhotos(); }));
+      box.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => { const i = +b.dataset.up; [this.photos[i - 1], this.photos[i]] = [this.photos[i], this.photos[i - 1]]; this.renderPhotos(); }));
+      box.querySelectorAll("[data-ref]").forEach((cb) => (cb.onchange = () => { this.photos[+cb.dataset.ref].refOnly = cb.checked; cb.closest(".re-ph").classList.toggle("re-refonly", cb.checked); }));
       Ref.loadImgs.call({}, box, this.pw);
     },
     async save(e) {
@@ -404,10 +410,12 @@
       if (!cat) { this.say("Вкажіть розділ.", "no"); return; }
       if (this.entries.some((x) => x !== e && norm(x.name) === norm(name))) { this.say("Запис з такою назвою вже є.", "no"); return; }
       const id = e ? e.id : uid("u");
-      const images = [], imgs = [];
+      const images = [], imgs = [], renames = [];
+      // «лише довідник» — у id фото суфікс --ref (гра такі фото пропускає); зміна прапорця — перейменування на сервері
+      const withRef = (iid, on) => (on ? iid.replace(/--ref$/, "") + "--ref" : iid.replace(/--ref$/, ""));
       for (const p of this.photos) {
-        if (p.id) { imgs.push(p.id); continue; }
-        const iid = uid(id + "-"); imgs.push(iid); images.push({id: iid, data: p.url.split(",")[1], mime: "image/jpeg"});
+        if (p.id) { const nid = withRef(p.id, p.refOnly); if (nid !== p.id) renames.push([p.id, nid]); imgs.push(nid); continue; }
+        const iid = withRef(uid(id + "-"), p.refOnly); imgs.push(iid); images.push({id: iid, data: p.url.split(",")[1], mime: "image/jpeg"});
       }
       // місце: для нового — в кінці свого розділу
       let ord = e ? e.ord : 0;
@@ -418,21 +426,21 @@
       const entry = {id, ord, cat, name, ttx: toHtml($("re-ttx").value), desc: toHtml($("re-desc").value), imgs, card: $("re-card").value};
       this.busy = true; $("re-save").disabled = true; this.say("Зберігаю…");
       try {
-        await this.putEntry(entry, images, this.photos.filter((p) => p.id).map((p) => p.id));
+        await this.putEntry(entry, images, this.photos.filter((p) => p.id).map((p) => withRef(p.id, p.refOnly)), renames);
         await this.load(); this.renderList(); this.say(`«${name}» збережено ✓`, "ok");
       } catch (err) { this.say(err.message, "no"); $("re-save").disabled = false; }
       finally { this.busy = false; }
     },
     /* Зберегти запис із новими фото: по кілька фото на запит, щоб не впертися в розмір запиту;
        kept — уже збережені фото, які лишаються (на проміжних кроках запис тримає їх + уже завантажені нові). */
-    async putEntry(entry, images, kept) {
+    async putEntry(entry, images, kept, renames = []) {
       const chunks = []; let cur = [], size = 0;
       for (const im of images) { if (cur.length && size + im.data.length > 4_000_000) { chunks.push(cur); cur = []; size = 0; } cur.push(im); size += im.data.length; }
       if (cur.length) chunks.push(cur);
       for (let i = 0; i < chunks.length - 1; i++) {
-        await API.call("ref_put", {entry: Object.assign({}, entry, {imgs: kept.concat(chunks.slice(0, i + 1).flat().map((x) => x.id))}), images: chunks[i]}, this.pw);
+        await API.call("ref_put", {entry: Object.assign({}, entry, {imgs: kept.concat(chunks.slice(0, i + 1).flat().map((x) => x.id))}), images: chunks[i], renames: i ? [] : renames}, this.pw);
       }
-      await API.call("ref_put", {entry, images: chunks.length ? chunks[chunks.length - 1] : []}, this.pw);
+      await API.call("ref_put", {entry, images: chunks.length ? chunks[chunks.length - 1] : [], renames: chunks.length > 1 ? [] : renames}, this.pw);
     },
     say(t, cls = "") { const el = $("ra-st"); if (el) { el.textContent = t; el.className = "status " + cls; } },
     /* Патч текстів: поле міняється, лише якщо в базі ще той самий текст, що й «from» (ручні правки не перезаписуються). */

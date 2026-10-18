@@ -1113,3 +1113,31 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .c-hints button[hidden] { display: none; }
 .c-row2 #c-quit { flex: 0 0 auto; align-self: center; }
 #c-hint { text-align: left; }
+
+/* ---------- друк / PDF: друкується лише #print-root */
+#print-root { display: none; }
+.re-ph.re-refonly img { outline: 2px solid var(--accent); }
+.re-ref { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 4px; font-size: .72rem; color: #fff; background: rgba(10,13,16,.8); padding: 2px 6px; border-radius: 6px; cursor: pointer; }
+.re-ph-b { gap: 3px; } .re-ph-b button { padding: .2rem .45rem; } .re-ph-b [data-rm] { margin-left: auto; }
+.re-ref input { width: 14px; height: 14px; margin: 0; }
+@media print {
+  @page { margin: 12mm; }
+  body > *:not(#print-root) { display: none !important; }
+  html, body { background: #fff !important; color: #000 !important; height: auto !important; overflow: visible !important; }
+  body::before, body::after { display: none !important; }
+  #print-root { display: block; color: #000; background: #fff; font: 11pt/1.35 Arial, "Helvetica Neue", sans-serif; }
+  .pr-head { display: flex; justify-content: space-between; border-bottom: 1.5px solid #000; padding-bottom: 4px; margin-bottom: 10px; font-size: 10pt; }
+  .pr-entry { break-inside: avoid; page-break-inside: avoid; border-bottom: 1px solid #bbb; padding: 8px 0 10px; }
+  .pr-entry h2 { font-size: 15pt; margin: 0 0 4px; }
+  .pr-cat { font-size: 8.5pt; color: #555; margin: 0; text-transform: uppercase; letter-spacing: .05em; }
+  .pr-pics { display: flex; gap: 8px; margin: 6px 0; }
+  .pr-pics img { max-height: 7cm; max-width: 48%; object-fit: contain; border: 1px solid #ccc; }
+  .pr-entry h3 { font-size: 10pt; margin: 8px 0 2px; text-transform: uppercase; color: #333; letter-spacing: .04em; }
+  .pr-txt { white-space: pre-line; }
+  .pr-entry ul { margin: 2px 0 0 18px; padding: 0; }
+  .pr-an h2, .pr-an h3 { color: #000; margin: 10px 0 4px; }
+  .pr-an table { border-collapse: collapse; width: 100%; } .pr-an td, .pr-an th { border: 1px solid #999; padding: 3px 6px; font-size: 10pt; color: #000; }
+  .pr-an .u-bar { border: 1px solid #999; height: 8px; background: #fff; } .pr-an .u-bar i { background: #666 !important; display: block; height: 100%; }
+  .pr-an .muted, .pr-an small { color: #444 !important; }
+  .pr-an .status, .pr-an .tabs, .pr-an .row { display: none !important; }
+}
