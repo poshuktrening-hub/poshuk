@@ -246,9 +246,13 @@ async function applyMarkSeeds(env, metaGet, metaSet) {
   const all = JSON.parse(text), up = new Date().toISOString(), st = [];
   let miss = 0;
   for (const [id, marks] of Object.entries(all)) {
-    const img = CP + id;
     if (!Array.isArray(marks) || !marks.length) continue;
-    if (!(await env.DB.prepare("SELECT id FROM ref_images WHERE id=?").bind(img).first())) { miss++; continue; }   // фото ще не внесене — наступного разу
+    // ключ — повний id фото (з експорту для розмітки) або id надісланого фото без cp_
+    let img = String(id);
+    if (!(await env.DB.prepare("SELECT id FROM ref_images WHERE id=?").bind(img).first())) {
+      img = CP + id;
+      if (!(await env.DB.prepare("SELECT id FROM ref_images WHERE id=?").bind(img).first())) { if (SEED.includes(id)) miss++; continue; }   // надіслане фото ще не внесене — наступного разу; видалене — пропускаємо
+    }   // фото ще не внесене — наступного разу
     st.push(env.DB.prepare("INSERT INTO ref_marks (img,marks,updated) VALUES (?,?,?) ON CONFLICT(img) DO NOTHING").bind(img, JSON.stringify(marks), up));
   }
   if (st.length) await env.DB.batch(st);
