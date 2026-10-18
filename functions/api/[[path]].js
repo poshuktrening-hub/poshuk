@@ -36,6 +36,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS card_photos (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
   `CREATE TABLE IF NOT EXISTS answers (ts TEXT, callsign TEXT, kind TEXT, mode TEXT, item TEXT, name TEXT, cat TEXT, ok INTEGER)`,
   `CREATE TABLE IF NOT EXISTS callsign_owner (cs TEXT PRIMARY KEY, dev TEXT, ts TEXT)`,
+  `CREATE TABLE IF NOT EXISTS ref_suggest (id TEXT PRIMARY KEY, ts TEXT, callsign TEXT, dev TEXT, kind TEXT, target TEXT, data TEXT, imgs TEXT)`,
   `CREATE INDEX IF NOT EXISTS answers_ts ON answers (ts)`,
   `CREATE TABLE IF NOT EXISTS ref_entries (id TEXT PRIMARY KEY, ord INTEGER, cat TEXT, name TEXT, ttx TEXT, descr TEXT, imgs TEXT, updated TEXT)`,
   `CREATE TABLE IF NOT EXISTS ref_images (id TEXT PRIMARY KEY, data TEXT, mime TEXT, updated TEXT)`,
@@ -107,7 +108,7 @@ const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj)
 });
 
 // ------------------------------------------------------------------ база
-const SCHEMA_V = "2026-10-17b";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
+const SCHEMA_V = "2026-10-18a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
 let schemaReady = false;
 async function db(env) {
   if (!env.DB) throw new HttpError("База D1 не підключена (Settings → Functions → D1 binding: DB)");
@@ -519,6 +520,30 @@ async function action(env, ctx, req, origin) {
       for (const r of last.values()) if (!r.ok) (r.kind === "search" ? out.stages : out.cards).push(r.item);
       return out;
     }
+    case "ref_suggest": {   // пропозиція курсанта: новий запис довідника або фото до наявного — публікується після схвалення адміном
+      await auth(env, req, "player");
+      const dev = String(req.dev || ""), cs = String(req.callsign || "").trim().slice(0, 40);
+      if (!/^[a-f0-9]{16,64}$/.test(dev)) throw new HttpError("Оновіть сторінку — потрібна нова версія застосунку");
+      const pend = await env.DB.prepare("SELECT COUNT(*) AS n FROM ref_suggest WHERE dev=?").bind(dev).first();
+      if (pend && pend.n >= 15) throw new HttpError("Забагато пропозицій очікують перевірки — дочекайтесь, поки адміністратор їх розгляне");
+      const kind = req.kind === "photos" ? "photos" : "new", d = req.data || {};
+      const target = kind === "photos" ? String(req.target || "").slice(0, 60) : "";
+      if (kind === "photos" && !target) throw new HttpError("Не вказано запис");
+      const name = String(d.name || "").trim().slice(0, 200);
+      if (kind === "new" && name.length < 2) throw new HttpError("Вкажіть назву техніки");
+      const ims = (req.images || []).slice(0, 6);
+      if (kind === "photos" && !ims.length) throw new HttpError("Додайте хоча б одне фото");
+      const id = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), up = new Date().toISOString(), st = [], ids = [];
+      for (let i = 0; i < ims.length; i++) {
+        if (!ims[i] || !ims[i].data || ims[i].data.length > 1_900_000) throw new HttpError("Фото завелике (до ~1,4 МБ)");
+        const iid = `sg_${id}-${i + 1}`; ids.push(iid);
+        st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_images (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(iid, String(ims[i].data), "image/jpeg", up, `Запропонував: ${cs || "курсант"}`));
+      }
+      const data = JSON.stringify({name, cat: String(d.cat || "").slice(0, 80), ttx: String(d.ttx || "").slice(0, 8000), desc: String(d.desc || "").slice(0, 20000), card: /^[a-z0-9_]+$/.test(String(d.card || "")) ? String(d.card) : "", note: String(d.note || "").slice(0, 500)});
+      st.push(env.DB.prepare("INSERT INTO ref_suggest (id,ts,callsign,dev,kind,target,data,imgs) VALUES (?,?,?,?,?,?,?,?)").bind(id, up, cs, dev, kind, target, data, JSON.stringify(ids)));
+      await env.DB.batch(st);
+      return {ok: true, id};
+    }
     case "duel_create": case "duel_join": case "duel_state": case "duel_loaded": case "duel_hint": case "duel_place_begin": case "duel_place_end": case "duel_shot": case "duel_leave":
       await auth(env, req, "player");
       return duel(env, req, a);
@@ -639,6 +664,34 @@ async function action(env, ctx, req, origin) {
       return {ok: true, clicks: results.map((r) => [r.x, r.y, !!r.hit]), players: pl ? pl.n : 0};
     }
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
+    case "ref_suggestions": {   // пропозиції курсантів, що чекають перевірки
+      const {results} = await env.DB.prepare("SELECT id, ts, callsign, kind, target, data, imgs FROM ref_suggest ORDER BY ts").all();
+      return {ok: true, list: results.map((r) => Object.assign({id: r.id, ts: r.ts, callsign: r.callsign, kind: r.kind, target: r.target, imgs: JSON.parse(r.imgs || "[]")}, JSON.parse(r.data || "{}")))};
+    }
+    case "ref_suggest_decide": {   // схвалити (запис/фото з'являються в довіднику) або відхилити (фото видаляються)
+      const s = await env.DB.prepare("SELECT * FROM ref_suggest WHERE id=?").bind(String(req.id || "")).first();
+      if (!s) throw new HttpError("Пропозицію вже розглянуто");
+      const imgs = JSON.parse(s.imgs || "[]"), d = Object.assign(JSON.parse(s.data || "{}"), req.edit || {}), st = [], up = new Date().toISOString();
+      let entry = null;
+      if (req.approve) {
+        if (s.kind === "photos") {
+          const e = await env.DB.prepare("SELECT id, imgs FROM ref_entries WHERE id=?").bind(s.target).first();
+          if (!e) throw new HttpError("Запис, до якого пропонували фото, уже видалено");
+          const all = JSON.parse(e.imgs || "[]").concat(imgs).slice(0, 20);
+          st.push(env.DB.prepare("UPDATE ref_entries SET imgs=?, updated=? WHERE id=?").bind(JSON.stringify(all), up, e.id));
+          entry = e.id;
+        } else {
+          const cat = String(d.cat || "Інше").slice(0, 80), card = /^[a-z0-9_]+$/.test(String(d.card || "")) ? String(d.card) : "";
+          const mx = await env.DB.prepare("SELECT MAX(ord) AS m FROM ref_entries WHERE cat=? AND id NOT LIKE 'c\\_%' ESCAPE '\\'").bind(cat).first();
+          entry = "u" + s.id;
+          st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_entries (id,ord,cat,name,ttx,descr,imgs,updated,card) VALUES (?,?,?,?,?,?,?,?,?)")
+            .bind(entry, ((mx && mx.m) || 0) + 1, cat, String(d.name || "").slice(0, 200), String(d.ttx || ""), String(d.desc || ""), JSON.stringify(imgs), up, card));
+        }
+      } else imgs.forEach((x) => st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(x)));
+      st.push(env.DB.prepare("DELETE FROM ref_suggest WHERE id=?").bind(s.id));
+      await env.DB.batch(st);
+      return {ok: true, entry};
+    }
     case "callsign_owners": {   // прив'язки прізвищ до пристроїв (для скидання)
       const {results} = await env.DB.prepare("SELECT cs, ts FROM callsign_owner ORDER BY cs").all();
       return {ok: true, owners: results};
@@ -765,6 +818,8 @@ async function action(env, ctx, req, origin) {
       const keepImg = new Set(), st = [];
       for (const r of results) { if (keep.has(r.id) || r.id.startsWith("c_")) JSON.parse(r.imgs || "[]").forEach((x) => keepImg.add(x)); else st.push(env.DB.prepare("DELETE FROM ref_entries WHERE id=?").bind(r.id)); }
       const {results: ims} = await env.DB.prepare("SELECT id FROM ref_images").all();
+      const {results: sg} = await env.DB.prepare("SELECT imgs FROM ref_suggest").all();
+      sg.forEach((r) => JSON.parse(r.imgs || "[]").forEach((x) => keepImg.add(x)));   // фото пропозицій, що чекають перевірки
       for (const r of ims) if (!keepImg.has(r.id)) st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(r.id));
       if (st.length) await env.DB.batch(st);
       return {ok: true, removed: st.length};

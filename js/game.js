@@ -891,6 +891,7 @@
 
   window.Game = Game;
   /* Випадковий id цього пристрою (браузера): «Мої результати» прізвища відкриваються лише на пристрої, що відкрив їх першим. */
+  Game.deviceId = () => deviceId();
   function deviceId() {
     let d = LS.get("poshuk_dev", null);
     if (!d || !/^[a-f0-9]{32}$/.test(d)) { const b = new Uint8Array(16); crypto.getRandomValues(b); d = [...b].map((x) => x.toString(16).padStart(2, "0")).join(""); LS.set("poshuk_dev", d); }
