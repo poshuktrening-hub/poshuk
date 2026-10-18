@@ -127,6 +127,7 @@
       this.cardCredits = new Map(j.cardCredits || []);
       this.cardPics = j.cardPics || {};   // фото карток із довідника: картка → [[id фото, версія, джерело]]
       this.cardHard = j.cardHard || {};
+      this.marks = j.marks || {};   // ознаки на фото довідника: id фото → [{x,y,w,h,t}]
       this.typePool = [...new Set([...this.stages.flatMap((s) => s.targets.map((t) => t.type)), ...Logic.TYPES].filter(Boolean))];
     },
 
@@ -501,6 +502,7 @@
       if (this.idx >= this.rounds.length) return this.summary();
       clearTimeout(this.outroT);
       const st = this.cur = this.rounds[this.idx];
+      if ($("g-fcard")) $("g-fcard").hidden = true;
       this.targets = st.targets.filter((t) => !t.decoy);
       this.decoys = st.targets.filter((t) => t.decoy);
       this.found = new Set(); this.foundOrder = []; this.misses = 0; this.marks = []; this.clicks = [];
@@ -704,10 +706,38 @@
         this.marks.unshift({x: t.x, y: t.y, r: t.r || 14, scorch: true});
         this.marks.push({x: t.x, y: t.y, r: t.r || 14, color: COLORS.hit});
         v.setMarks(this.marks);
+        if (this.mode.debrief && !this.mode.blind) this.findCard(t);   // картка цілі: що знайшли й чим вона вразлива (не в іспиті)
         if (this.found.size === this.targets.length) { setTimeout(() => SFX.win(), 1300); return this.endRound("Усі цілі знайдено!"); }
         this.msg(`Є! Лишилось: ${this.targets.length - this.found.size}.`, "ok");
       }
       this.stats();
+    },
+
+    /* Картка техніки для цілі: за моделлю етапу або назвою цілі — серед карток (назва, синоніми). */
+    cardFor(t) {
+      if (!window.Cards) return null;
+      const o = this.objects.find((x) => x.id === t.obj) || (window.Models && Models.LIST.find((m) => m.id === t.obj)) || this.objByName(t.type);
+      const hay = Cards.norm([t.type, o && o.name].join(" "));
+      let best = null, bl = 0;
+      const GENERIC = new Set([...Logic.TYPES, "техніка", "машина", "комплекс", "катапульта", "гармата", "гаубиця", "вантажівка", "муляж"].map((x) => Cards.norm(x)));
+      for (const c of Cards.deck()) for (const a of [c.name, ...c.aliases]) {
+        const v = Cards.norm(a);
+        if (v.length >= 4 && !GENERIC.has(v) && hay.includes(v) && v.length > bl) { best = c; bl = v.length; }
+      }
+      return best;
+    },
+    /* Після влучання: коротка картка (назва, одна ознака, один недолік) — не заважає шукати далі, зникає сама. */
+    findCard(t) {
+      const c = this.cardFor(t);
+      const name = c ? c.name : Logic.dispName(((this.objects.find((x) => x.id === t.obj) || {}).name || t.type || "ціль").replace(/\s*\(вбудована\)$/, ""));
+      const sign = c && Cards.signOf(c), weak = c && Cards.weakOf(c);
+      const cap = (s) => esc(s.charAt(0).toUpperCase() + s.slice(1));
+      const box = $("g-fcard") || (() => { const d = document.createElement("div"); d.id = "g-fcard"; d.className = "fcard"; d.setAttribute("role", "status"); $("g-view").parentElement.appendChild(d); return d; })();
+      box.innerHTML = `<b>🎯 ${UI.nameHtml(name)}</b>${sign ? `<p>🔎 ${cap(sign[0])}</p>` : t.signs && t.signs.length ? `<p>🔎 ${esc(t.signs.join(", "))}</p>` : ""}${weak ? `<p>⚠ ${cap(weak[0])}</p>` : ""}${c ? `<button type="button" class="link" data-ref="${esc(c.id)}">У довідник →</button>` : ""}`;
+      const b = box.querySelector("[data-ref]");
+      if (b) b.onclick = () => { if (confirm("Відкрити довідник? Етап буде перервано, результат не збережеться.")) { clearTimeout(this.tickT); this.over = true; box.hidden = true; Ref.openCard(b.dataset.ref); } };
+      box.hidden = false; box.classList.remove("in"); void box.offsetWidth; box.classList.add("in");
+      clearTimeout(this._fcT); this._fcT = setTimeout(() => { box.hidden = true; }, 6000);
     },
 
     rightClick(cx, cy) {

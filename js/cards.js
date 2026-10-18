@@ -114,9 +114,11 @@
       if (this._refP) return this._refP;
       this._refP = (async () => {
         let list = [];
-        try { list = (await API.call("ref_list", {}, Game.password)).entries || []; } catch (e) { this._refP = null; return null; }
+        let j = {};
+        try { j = await API.call("ref_list", {}, Game.password); list = j.entries || []; } catch (e) { this._refP = null; return null; }
         const byId = new Map(list.map((e) => [e.id, e])), map = new Map();
         this.refDesc = new Map(list.filter((e) => e.card && e.desc).map((e) => [e.card, e.desc]));   // для підказки «Ознака»
+        if (j.marks && window.Game) Game.marks = Object.assign(Game.marks || {}, j.marks);
         const add = (cid, e) => { if (!e || !e.imgs || !e.imgs.length) return; const a = map.get(cid) || []; e.imgs.forEach((im) => { if (!a.some((x) => x.id === im)) a.push({id: im, v: e.v || "1"}); }); map.set(cid, a); };
         const ref = window.CARD_REF || {};
         // 1) явні відповідності: картка → запис (id зображення «r024-2» → запис r024)
@@ -230,6 +232,7 @@
         $("c-choices").innerHTML = opts.map((o, i) => `<button type="button" data-ci="${i}"><i>${i + 1}</i><span>${UI.nameHtml(o.name)}</span></button>`).join("");
         $("c-choices").querySelectorAll("button").forEach((b) => (b.onclick = () => this.choose(opts[+b.dataset.ci])));
       }
+      if (window.Marks) Marks.clear($("c-pic"));
       const img = $("c-img"); img.removeAttribute("src"); $("c-loading").hidden = false;
       const url = await this.photoUrl(c.id, c.pic).catch(() => null);
       await new Promise((res) => { img.onload = img.onerror = res; img.src = url || ""; });
@@ -343,6 +346,7 @@
       if (over) this.rounds = this.rounds.slice(0, this.idx + 1);
       $("c-reveal").innerHTML = `${verdict}${over ? `<p class="c-v no">💀 Друга помилка — хардкор завершено</p>` : ""}${c.concept ? `<p class="c-concept-tag">КОНЦЕПТ</p>` : ""}<h3>${UI.nameHtml(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Недоліки:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
+      this.showMarks(c);
       const last = this.idx === this.rounds.length - 1;
       $("c-next").textContent = last ? "Підсумок →" : "Далі →";
       $("c-nextbox").hidden = false;
@@ -352,8 +356,28 @@
       this.rT = setInterval(() => { if (performance.now() - t0 >= REVEAL_SEC * 1000) this.next(); }, 250);
     },
 
+    /* Після відповіді — ознаки на фото: якщо в цього фото є розмітка, показуємо її; якщо немає, але є розмічене
+       інше фото цієї техніки — підміняємо фото на нього. Під описом — легенда «① … ② …». */
+    async showMarks(c) {
+      if (!window.Marks) return;
+      let pic = c.pic && c.pic.id && Marks.of(c.pic.id) ? c.pic : Marks.firstMarked(this.picPool(c.id).filter((p) => p.id));
+      if (!pic) return;
+      const img = $("c-img");
+      if (pic !== c.pic) {
+        const u = await this.photoUrl(c.id, pic).catch(() => null);
+        if (!u || this.cur !== c || !this.over) return;
+        await new Promise((res) => { img.onload = img.onerror = res; img.src = u; });
+        if (this.cur !== c) return;
+      }
+      const m = Marks.of(pic.id);
+      Marks.overlay($("c-pic"), img, m);
+      const lg = Marks.legend(m);
+      if (lg) { const p = document.createElement("p"); p.className = "mk-legend"; p.innerHTML = `<span>Ознаки на фото:</span> ${lg}`; const h = $("c-reveal").querySelector("h3"); h ? h.after(p) : $("c-reveal").prepend(p); }
+    },
+
     summary() {
       this.stop();
+      if (window.Marks) Marks.clear($("c-pic"));
       UI.show("s-summary");
       Game.lastGame = "cards"; Game.lastFix = !!this.fix;
       const res = this.results, max = 10 * (this.mode.lives != null && !this.fix ? (this.planned || res.length) : res.length), total = res.reduce((a, r) => a + r.score, 0);

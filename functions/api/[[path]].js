@@ -46,6 +46,8 @@ const SCHEMA = [
      p1 TEXT, p2 TEXT, s1 TEXT, s2 TEXT, u1 TEXT, u2 TEXT, c1 INTEGER DEFAULT 0, c2 INTEGER DEFAULT 0, r1 INTEGER DEFAULT 0, r2 INTEGER DEFAULT 0,
      seen1 INTEGER DEFAULT 0, seen2 INTEGER DEFAULT 0, l1 INTEGER DEFAULT 0, l2 INTEGER DEFAULT 0, turn INTEGER DEFAULT 0, until INTEGER DEFAULT 0, shots TEXT, winner INTEGER DEFAULT 0, reason TEXT)`,
   `CREATE TABLE IF NOT EXISTS stage_backups (id TEXT PRIMARY KEY, targets TEXT, size INTEGER, chunks INTEGER, created TEXT)`,
+  // ознаки на фото довідника: прямокутники з підписами (частки від розміру зображення) — показуються після відповіді в картках
+  `CREATE TABLE IF NOT EXISTS ref_marks (img TEXT PRIMARY KEY, marks TEXT, updated TEXT)`,
 ];
 
 /* Адреса клієнта (Cloudflare підставляє справжню) — для лімітів і блокування перебору пароля. */
@@ -108,7 +110,7 @@ const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj)
 });
 
 // ------------------------------------------------------------------ база
-const SCHEMA_V = "2026-10-18a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
+const SCHEMA_V = "2026-10-19a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
 let schemaReady = false;
 async function db(env) {
   if (!env.DB) throw new HttpError("База D1 не підключена (Settings → Functions → D1 binding: DB)");
@@ -143,6 +145,25 @@ async function db(env) {
 
 async function metaGet(env, k) { const r = await env.DB.prepare("SELECT v FROM meta WHERE k=?").bind(k).first(); return r ? r.v : null; }
 async function metaSet(env, k, v) { await env.DB.prepare("INSERT INTO meta (k,v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, String(v)).run(); }
+/* Ознаки на фото: {id фото: [{x,y,w,h,t}]} — у конфігурації та довіднику (офлайн-версія отримує їх разом із конфігурацією). */
+async function marksAll(env) {
+  const {results} = await env.DB.prepare("SELECT img, marks FROM ref_marks").all();
+  const out = {};
+  for (const r of results) { try { const m = JSON.parse(r.marks || "[]"); if (Array.isArray(m) && m.length) out[r.img] = m; } catch (e) { /* зіпсований запис — пропускаємо */ } }
+  return out;
+}
+/* Перевірка розмітки від адміністратора: до 8 прямокутників у частках 0..1, підпис до 80 символів. */
+function cleanMarks(list) {
+  const n = (v) => Math.max(0, Math.min(1, Math.round((Number(v) || 0) * 10000) / 10000));
+  const out = [];
+  for (const m of (Array.isArray(list) ? list : []).slice(0, 8)) {
+    if (!m || typeof m !== "object") continue;
+    const x = n(m.x), y = n(m.y), w = Math.min(n(m.w), 1 - x), h = Math.min(n(m.h), 1 - y);
+    if (w < 0.01 || h < 0.01) continue;
+    out.push({x, y, w, h, t: String(m.t || "").trim().slice(0, 80)});
+  }
+  return out;
+}
 
 async function settings(env) {
   // одноразово: у грі — до 10 етапів (раніше типово 5, і частина етапів у гру просто не потрапляла)
@@ -466,7 +487,7 @@ async function action(env, ctx, req, origin) {
       const {results: cp} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
       let cardHard = {}; try { cardHard = JSON.parse((await metaGet(env, "cards_hard")) || "{}"); } catch (e) { cardHard = {}; }
       return {ok: true, brandIcon: (await metaGet(env, "brand_icon")) || "", settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]), cardPics: await cardPics(env),
-        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), cardHard, token: role === "off" ? undefined : await makeToken(env, role)};
+        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), cardHard, marks: await marksAll(env), token: role === "off" ? undefined : await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
     case "offline_key": {   // ключ офлайн-пристрою (видається після входу паролем; ключем — продовжується)
@@ -476,7 +497,7 @@ async function action(env, ctx, req, origin) {
     case "ref_list": {
       await auth(env, req, req.off ? "offline" : "player");
       const {results} = await env.DB.prepare("SELECT id, ord, cat, name, ttx, descr, imgs, updated, card FROM ref_entries ORDER BY ord").all();
-      return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated, card: r.card || ""}))};
+      return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated, card: r.card || ""})), marks: await marksAll(env)};
     }
     case "top": {
       await auth(env, req, "player");
@@ -772,6 +793,14 @@ async function action(env, ctx, req, origin) {
       }
       return {ok: true, archived: n, sheet};
     }
+    case "ref_marks_put": {   // ознаки на фото довідника (порожній список — прибрати розмітку)
+      const img = String(req.img || "").slice(0, 60);
+      if (!/^[a-z0-9_-]+$/i.test(img)) throw new HttpError("Невірний id фото");
+      const marks = cleanMarks(req.marks);
+      if (!marks.length) await env.DB.prepare("DELETE FROM ref_marks WHERE img=?").bind(img).run();
+      else await env.DB.prepare("INSERT INTO ref_marks (img,marks,updated) VALUES (?,?,?) ON CONFLICT(img) DO UPDATE SET marks=excluded.marks, updated=excluded.updated").bind(img, JSON.stringify(marks), new Date().toISOString()).run();
+      return {ok: true, marks};
+    }
     case "ref_put": {   // одна позиція довідника разом із її зображеннями
       const e = req.entry || {}, id = String(e.id || "").slice(0, 40);
       if (!/^[a-z0-9_-]+$/i.test(id)) throw new HttpError("Невірний id позиції");
@@ -786,7 +815,7 @@ async function action(env, ctx, req, origin) {
       // перейменування фото (прапорець «лише довідник» = суфікс --ref): спершу в базі, щоб старий id не вважався прибраним
       const ren = (req.renames || []).slice(0, 40).filter((r) => Array.isArray(r) && /^[a-z0-9_-]+$/i.test(String(r[0])) && /^[a-z0-9_-]+$/i.test(String(r[1])) && String(r[1]).replace(/--ref$/, "") === String(r[0]).replace(/--ref$/, ""));
       if (ren.length) {
-        await env.DB.batch(ren.map(([a, b]) => env.DB.prepare("UPDATE ref_images SET id=? WHERE id=?").bind(String(b), String(a))));
+        await env.DB.batch(ren.flatMap(([a, b]) => [env.DB.prepare("UPDATE ref_images SET id=? WHERE id=?").bind(String(b), String(a)), env.DB.prepare("UPDATE OR REPLACE ref_marks SET img=? WHERE img=?").bind(String(b), String(a))]));
         if (old) { const m = new Map(ren.map(([a, b]) => [String(a), String(b)])); old.imgs = JSON.stringify(JSON.parse(old.imgs || "[]").map((x) => m.get(x) || x)); }
       }
       let imgs = (e.imgs || []).map(String);
@@ -794,7 +823,7 @@ async function action(env, ctx, req, origin) {
       if (req.keepCp && old) JSON.parse(old.imgs || "[]").filter((x) => x.startsWith("cp_") && !imgs.includes(x)).forEach((x) => imgs.push(x));
       imgs = imgs.slice(0, 20);
       const now = new Set(imgs);
-      if (old) JSON.parse(old.imgs || "[]").filter((x) => !now.has(x)).forEach((x) => st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(x)));
+      if (old) JSON.parse(old.imgs || "[]").filter((x) => !now.has(x)).forEach((x) => st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(x), env.DB.prepare("DELETE FROM ref_marks WHERE img=?").bind(x)));
       // картка: міняється лише якщо її передано («» — відв'язати)
       const card = e.card === undefined || e.card === null ? (old && old.card) || "" : String(e.card);
       if (card && !/^[a-z0-9_]+$/.test(card)) throw new HttpError("Невірний id картки");
@@ -809,7 +838,7 @@ async function action(env, ctx, req, origin) {
       const old = await env.DB.prepare("SELECT imgs FROM ref_entries WHERE id=?").bind(id).first();
       if (!old) throw new HttpError("Запис не знайдено");
       await env.DB.batch([env.DB.prepare("DELETE FROM ref_entries WHERE id=?").bind(id),
-        ...JSON.parse(old.imgs || "[]").map((x) => env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(String(x)))]);
+        ...JSON.parse(old.imgs || "[]").flatMap((x) => [env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(String(x)), env.DB.prepare("DELETE FROM ref_marks WHERE img=?").bind(String(x))])]);
       return {ok: true};
     }
     case "ref_prune": {   // після імпорту: прибрати позиції й зображення, яких немає в новій версії довідника
@@ -821,6 +850,7 @@ async function action(env, ctx, req, origin) {
       const {results: sg} = await env.DB.prepare("SELECT imgs FROM ref_suggest").all();
       sg.forEach((r) => JSON.parse(r.imgs || "[]").forEach((x) => keepImg.add(x)));   // фото пропозицій, що чекають перевірки
       for (const r of ims) if (!keepImg.has(r.id)) st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(r.id));
+      st.push(env.DB.prepare("DELETE FROM ref_marks WHERE img NOT IN (SELECT id FROM ref_images)"));
       if (st.length) await env.DB.batch(st);
       return {ok: true, removed: st.length};
     }
