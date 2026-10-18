@@ -55,7 +55,7 @@
       this.closeDetail();
       if (!this.entries) {
         $("r-list").innerHTML = `<p class="muted r-empty">Завантажую довідник…</p>`;
-        try { this.entries = this.withCards(sortRef((await API.call("ref_list", {}, Game.password)).entries || [])); }
+        try { const j = await API.call("ref_list", {}, Game.password); if (j.marks) Game.marks = Object.assign(Game.marks || {}, j.marks); this.entries = this.withCards(sortRef(j.entries || [])); }
         catch (e) { $("r-list").innerHTML = `<p class="err r-empty">${esc(e.message)}</p>`; return; }
       }
       this.renderCats(); this.renderList();
@@ -66,6 +66,13 @@
       if (window.Help) Help.maybe("ref");
     },
     close() { this.closeDetail(); Game.showStart(); },
+    /* Відкрити запис техніки за id картки (з гри: «У довідник →»). */
+    async openCard(card) {
+      this.cat = ""; this.q = "";
+      await this.open();
+      const e = (this.entries || []).find((x) => x.card === card);
+      if (e) this.show(e.id);
+    },
 
     /* Довідник = записи навчальної таблиці + картки, яких у таблиці немає (ТТХ, ознаки, фото картки).
        До кожного запису, що відповідає картці, додаються «Недоліки». */
@@ -238,6 +245,16 @@
       if (next) $("rd-next").onclick = () => this.show(next.id);
       box.querySelectorAll("[data-zoom]").forEach((b) => (b.onclick = () => this.zoom(b.querySelector("img").src)));
       this.loadImgs(box);
+      // ознаки на фото: номери на фото, підписи — під галереєю
+      if (window.Marks) {
+        const lg = [];
+        box.querySelectorAll(".r-ph img[data-img]").forEach((im, k, all) => {
+          const m = Marks.of(im.dataset.img); if (!m) return;
+          Marks.overlay(im.parentElement, im, m);
+          const t = Marks.legend(m); if (t) lg.push(`${all.length > 1 ? `<span>Фото ${k + 1}:</span> ` : ""}${t}`);
+        });
+        if (lg.length) { const g = [...box.querySelectorAll(".r-gal")].pop(); const p = document.createElement("div"); p.className = "mk-legend"; p.innerHTML = `<b>Ознаки на фото</b><br>${lg.join("<br>")}`; (g.nextElementSibling && g.nextElementSibling.classList.contains("r-hint") ? g.nextElementSibling : g).after(p); }
+      }
       if (!this._keys) {
         this._keys = (ev) => {
           if ($("s-ref").hidden) return;
@@ -415,6 +432,7 @@
       const e = id ? this.entries.find((x) => x.id === id) : null;
       const cats = this.cats();
       this.photos = e ? e.imgs.map((x) => ({id: x, v: e.v, refOnly: String(x).includes("--ref")})) : [];
+      this.editing = e;
       $("ra").innerHTML = `<div class="m-card ra-card"><div class="m-head"><h2>${e ? "Змінити запис" : "Новий запис"}</h2><button type="button" class="link" id="re-back">← До списку</button></div>
         <div class="ra-form">
           <label>Назва<input id="re-name" maxlength="200" value="${esc(e ? e.name : "")}" placeholder="напр. Т-72Б3М"></label>
@@ -450,14 +468,30 @@
     renderPhotos() {
       const box = $("re-photos");
       box.innerHTML = this.photos.map((p, i) => `<div class="re-ph${p.refOnly ? " re-refonly" : ""}"><img alt="" ${p.url ? `src="${p.url}"` : `data-img="${esc(p.id)}" data-v="${esc(p.v)}"`}>
+        ${p.id ? `<button type="button" class="re-mk${window.Marks && Marks.of(p.id) ? " on" : ""}" data-mk="${i}" title="Ознаки на фото: обвести й підписати">◎${window.Marks && Marks.of(p.id) ? " " + Marks.of(p.id).length : ""}</button>` : ""}
         <div class="re-ph-b">${i ? `<button type="button" data-first="${i}" title="Зробити обкладинкою">★</button><button type="button" data-up="${i}" title="На одну позицію вище">↑</button>` : `<span class="re-main">обкладинка</span>`}<button type="button" data-rm="${i}" title="Прибрати">✕</button></div>
         <label class="re-ref"><input type="checkbox" data-ref="${i}" ${p.refOnly ? "checked" : ""}> лише довідник</label></div>`).join("")
         || `<p class="muted small">Ще немає фото.</p>`;
       box.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => { this.photos.splice(+b.dataset.rm, 1); this.renderPhotos(); }));
       box.querySelectorAll("[data-first]").forEach((b) => (b.onclick = () => { const [p] = this.photos.splice(+b.dataset.first, 1); this.photos.unshift(p); this.renderPhotos(); }));
       box.querySelectorAll("[data-up]").forEach((b) => (b.onclick = () => { const i = +b.dataset.up; [this.photos[i - 1], this.photos[i]] = [this.photos[i], this.photos[i - 1]]; this.renderPhotos(); }));
+      box.querySelectorAll("[data-mk]").forEach((b) => (b.onclick = () => this.marks(this.photos[+b.dataset.mk], b.closest(".re-ph").querySelector("img"))));
       box.querySelectorAll("[data-ref]").forEach((cb) => (cb.onchange = () => { this.photos[+cb.dataset.ref].refOnly = cb.checked; cb.closest(".re-ph").classList.toggle("re-refonly", cb.checked); }));
       Ref.loadImgs.call({}, box, this.pw);
+    },
+    /* Ознаки на фото: редактор поверх форми; зберігається одразу (окремо від кнопки «Зберегти» запису). */
+    async marks(p, im) {
+      if (!window.Marks || !p || !p.id) return;
+      const e = this.editing, c = e && e.card && window.Cards ? Cards.deck().find((x) => x.id === e.card) : null;
+      let sug = c ? Cards.signOf(c) || [] : [];
+      if (!sug.length && e) sug = plain(e.desc).split(/(?<=[.!?;])\s+/).map((x) => x.trim()).filter((x) => x.length >= 8 && x.length <= 120);
+      const url = (im && im.src && !im.src.startsWith("data:,")) ? im.src : await API.refUrl(p.id, p.v, this.pw);
+      Marks.edit({url, marks: Marks.of(p.id) || [], title: e ? Logic.dispName(e.name) : "", suggest: sug, onSave: async (m) => {
+        const j = await API.call("ref_marks_put", {img: p.id, marks: m}, this.pw);
+        Game.marks = Game.marks || {};
+        if (j.marks && j.marks.length) Game.marks[p.id] = j.marks; else delete Game.marks[p.id];
+        this.renderPhotos(); this.say(j.marks && j.marks.length ? `Ознаки збережено: ${j.marks.length} ✓` : "Ознаки прибрано", "ok");
+      }});
     },
     async save(e) {
       const name = $("re-name").value.trim();
