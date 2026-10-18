@@ -348,7 +348,7 @@
     },
     async load() {
       API.call("ref_suggestions", {}, this.pw).then((j) => { const n = (j.list || []).length; if (n !== this.nSugg) { this.nSugg = n; if ($("ra-sugg") && !this.busy && document.querySelector("#ra .ra-list")) this.renderList(); } }).catch(() => {});
-      try { this.entries = sortRef((await API.call("ref_list", {}, this.pw)).entries || []); } catch (e) { this.entries = []; this.err = e.message; }
+      try { const j = await API.call("ref_list", {}, this.pw); if (j.marks && window.Game) Game.marks = Object.assign(Game.marks || {}, j.marks); this.entries = sortRef(j.entries || []); } catch (e) { this.entries = []; this.err = e.message; }
       // записи-оболонки карток (c_…): розділ і назва — з картки; порожні тексти — теж з картки
       const deck = window.Cards ? Cards.deck() : [], byId = new Map(deck.map((c) => [c.id, c]));
       const catOf = (c) => (c.concept ? "Концепти й новітні розробки" : Logic.category(c.name));
@@ -372,6 +372,7 @@
         <p class="muted small">Записів: <b>${this.entries.length}</b>, без фото: <b>${noPh}</b>. Курсанти відкривають довідник з головного меню. Щоб додати фото — торкніться порожньої рамки в рядку.</p>
         <div class="row"><button type="button" class="primary" id="ra-new">＋ Новий запис</button><button type="button" id="ra-file">Завантажити файл довідника…</button></div>
         <div class="row"><button type="button" id="ra-sugg">📨 Пропозиції курсантів${this.nSugg ? ` <b class="ra-badge">${this.nSugg}</b>` : ""}</button><button type="button" id="ra-bulk" title="Кілька фото одразу: файл з назвою картки (bmp2.jpg, «Т-72Б3.jpg») стає 2-м фото її запису">🖼 Фото з файлів…</button></div>
+        <div class="row"><button type="button" id="ra-mkexp" title="Фото без ознак — у ZIP-архіви для розмітки (надіслати Claude)">◎ Експорт фото для розмітки</button></div>
         <input type="file" id="ra-bulk-in" accept="image/*" multiple hidden>
         <input type="file" id="ra-in" accept=".json,application/json" hidden>
         <p class="status" id="ra-st">${this.err ? esc(this.err) : ""}</p>
@@ -384,6 +385,7 @@
       $("ra-x").onclick = () => { if (!this.busy) $("ra").hidden = true; };
       $("ra-new").onclick = () => this.edit(null);
       $("ra-sugg").onclick = () => this.suggestions();
+      $("ra-mkexp").onclick = async () => { if (this.busy || !window.MarkExport) return; this.busy = true; try { await MarkExport.run(this.entries.filter((e) => !e.virt), this.pw, (t, c) => this.say(t, c)); } catch (er) { this.say(er.message, "no"); } finally { this.busy = false; } };
       $("ra-bulk").onclick = () => $("ra-bulk-in").click();
       $("ra-bulk-in").onchange = (ev) => { const f = [...ev.target.files]; ev.target.value = ""; this.bulk(f); };
       $("ra-file").onclick = () => $("ra-in").click();
