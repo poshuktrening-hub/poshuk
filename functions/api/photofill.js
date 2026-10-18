@@ -13,7 +13,7 @@ const FREE = (lic) => { const l = String(lic || "").toLowerCase(); return !/nc|n
 const BAD_STRICT = /decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|drawing|blueprint|emblem|logo|\bmap\b|poster|stamp/i;
 const BAD_LOOSE = /toy|lego|emblem|logo|\bmap\b|interior|operators|stamp|poster|flag|coat of arms/i;
 /* Явно не військова техніка (позначення «2S42» буває номером потяга тощо) — ніколи не беремо. */
-export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b|tank car|tankcar|tank wagon|railcar|rail car|freight|wagon|вагон|цистерна \d|залізнич|железнодорож|\bржд\b|\bуз\b/i;
+export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b|portrait|person|people|\bman\b|woman|singer|poet|writer|actor|actress|musician|politician|footballer|wedding|selfie|okudzhava|окуджава|портрет|tank car|tankcar|tank wagon|railcar|rail car|freight|wagon|вагон|цистерна \d|залізнич|железнодорож|\bржд\b|\bуз\b/i;
 /* Загальні слова запиту — не ключі (правило А): тип техніки, країна, рід військ, місце. */
 const STOP = /^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military|mod|obr|russia|soviet|ukraine|ukrainian|army|navy|force|forces|federation|ground|armed|parade|exhibition|museum|forum|complex|combat|artillery|rocket|infantry|fighting|armoured|armored|carrier|personnel|command|post|station|mobile|electronic|warfare|jamming|drone|uav|helicopter|aircraft|bomber|fighter|attack|jet|corvette|frigate|submarine|landing|craft|minesweeper|patrol|cruise|ballistic|anti|defense|defence|surface|mlrs|atgm|apc|ifv|mbt|tel|telar|transporter|loader|tractor|engineering|bridge|pontoon|layer|mine|clearing|recovery|repair|ambulance|fuel|tanker|cargo|utility|light|heavy|medium|tactical|strategic|coastal|naval|air|sam|spg|sph|gun|cannon|mortar|antitank|antiaircraft|battery|regiment|brigade|division|photo|image|picture|view|front|side|rear|left|right|top)$/;
 /* ---------- Правила відбору фото (ті самі для Вікісховища, Openverse, АрміяInform і для перевірки вже підібраних):
@@ -55,6 +55,13 @@ function queryOk(q, text, id) {
   const n = needOf(q); if (!n.length) return false;
   const m = nzMap(text);
   if (!n.every((k) => hasKey(m, k))) return false;
+  // картка без індексу (лише шифр: «Булат», «Маркер»): самого шифру мало — це ще й ім'я, слово, назва міста;
+  // потрібне ще слово з запиту (тип: detector, robot, radar…)
+  // (лише коли шифр — одне звичайне слово в лапках; «Мурманськ-БН», «Панцир-СМ», МТ-ЛБ — самі по собі позначення)
+  if (id && !(DESIG[id] || []).length && n.every((k) => (CODES[id] || []).includes(k))) {
+    const q = [...String(NAMES[id] || "").matchAll(/«([^»]+)»/g)].map((m) => m[1]);
+    if (q.length && q.every((c) => !/[-\d\s]/.test(c))) return false;
+  }
   const weak = n.every((k) => /^\d/.test(k) && k.length <= 5);
   if (weak && id && (CODES[id] || []).length && !CODES[id].some((k) => hasKey(m, k))) return false;
   return true;
@@ -202,7 +209,7 @@ async function fetchThumb(url) {
    <картка>.jpg — головне фото картки; <картка>--altN — ще одне фото для гри й довідника;
    <картка>--refN — лише для довідника (з підписами, вид згори тощо). */
 export const SEED = ["tirada", "tirada--ref1", "murmansk", "murmansk--alt1", "murmansk--ref1",
-  "r330bmv", "r330bmv--alt1", "marker", "marker--alt1",
+  "r330bmv", "r330bmv--alt1", "marker", "marker--alt1", "bulat",
   // літаки й гелікоптер — звичайні фото (і в гру), другими в записі
   "a50--alt1", "a50--alt2", "tu95ms--alt1", "mi8mtpr--alt1",
   // моделі з зонами ураження (Бестіарій) — лише довідник, другими в записі
@@ -225,7 +232,7 @@ async function applySeeds(env, metaGet, metaSet) {
   await metaSet(env, "photo_seed", SEED_V);
 }
 
-const FILL_V = LIST_V + "+ov1";   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
+const FILL_V = LIST_V + "+ov2";   // +ov2 — суворіше правило для карток без індексу: перевірка й прибирання ще раз   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
 const WEEK = 7 * 24 * 3600e3;   // фоновий прохід — раз на тиждень (між проходами сервер Вікісховище не чіпає)
 const S0 = () => ({v: FILL_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
 export async function fillState(env, metaGet) {
