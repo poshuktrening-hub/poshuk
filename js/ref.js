@@ -16,6 +16,24 @@
     return list.slice().sort((a, b) => (first.get(a.cat) - first.get(b.cat)) || String(a.cat).localeCompare(String(b.cat)) || (a.ord || 0) - (b.ord || 0));
   }
 
+  /* Один розділ на один вид техніки: розділи навчальної таблиці й карток часто дублюються («Танки» і «Танки, БМПТ»,
+     «Інженерна» і «Інженерна техніка»…) — зводимо до одного. Збірні розділи карток розкладаємо за назвою. */
+  function canonCat(cat, name) {
+    const c = String(cat || "").replace(/[’ʼ`]/g, "'").trim(), n = String(name || "").toLowerCase();
+    const MAP = {"Танки": "Танки, БМПТ", "Танки, БМПТ": "Танки, БМПТ", "Інженерна": "Інженерна техніка", "РЕБ": "Зв'язок, РЕБ", "Зв'язок і КШМ": "Зв'язок, РЕБ",
+      "Зв'язок, РЕБ": "Зв'язок, РЕБ", "Автомобілі": "МТО"};
+    if (MAP[c]) return MAP[c];
+    if (c === "БМП, БТР, броньовики") return /^(бмп|бмд|бмо)|\sбмп|\sбмд/.test(n) ? "БМП, БМД" : /бтр|мт-?лб|брдм|брм|ладога|бмм/.test(n) ? "БТР" : "Бронеавтомобілі";
+    if (c === "РСЗВ і ракети") return /рсзв|тос-|тзм|град|ураган|смерч|торнадо|прима|тайфун/.test(n) ? "Реактивна артилерія" : "Ракети й ОТРК";
+    if (c === "Артилерія") return /^сау|\s2с\d|^2с\d|самохід/.test(n) ? "Самохідна артилерія" : "Буксирована артилерія";
+    return c || "Інше";
+  }
+  /* розділи — за алфавітом («Інше» — останнім), усередині — порядок таблиці */
+  function sortCats(list) {
+    const k = (c) => (c === "Інше" ? "яяя" : c);
+    return list.slice().sort((a, b) => k(a.cat).localeCompare(k(b.cat), "uk") || (a.ord || 0) - (b.ord || 0));
+  }
+
   const Ref = {
     entries: null, cat: "", q: "",
 
@@ -76,7 +94,7 @@
       if (onlyLinks) return list;
       const extra = deck.filter((c) => !used.has(c.id)).map((c, i) => ({id: "card:" + c.id, ord: 100000 + i, cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name),
         name: c.name, ttx: c.p1, desc: c.p2, imgs: [], card: c.id, fromCard: true, concept: c.concept}));
-      return list.concat(sortRef(shells.concat(extra)));
+      return sortCats(list.concat(shells, extra).map((e) => Object.assign(e, {cat: canonCat(e.cat, e.name)})));
     },
     async shellCats(pw) {
       const list = (await API.call("ref_list", {}, pw)).entries || [], byId = new Map(Cards.deck().map((c) => [c.id, c]));
