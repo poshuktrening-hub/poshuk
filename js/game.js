@@ -505,7 +505,7 @@
       if ($("g-fcard")) $("g-fcard").hidden = true;
       this.targets = st.targets.filter((t) => !t.decoy);
       this.decoys = st.targets.filter((t) => t.decoy);
-      this.found = new Set(); this.foundOrder = []; this.misses = 0; this.marks = []; this.clicks = [];
+      this.found = new Set(); this.foundOrder = []; this.misses = 0; this.marks = []; this.clicks = []; this.taps = []; this.pen = 0;
       this.over = true;
       $("g-next").hidden = true; $("g-skip").hidden = !this.mode.skip; $("g-hint").hidden = !this.mode.hint; $("g-hint").disabled = false;
       this.hintUsed = false;
@@ -687,6 +687,8 @@
       if (!v.inside(x, y)) return;
       const hit = Logic.hitTest(this.targets, this.found, x, y);
       this.clicks.push([this.cur.id, Math.round(x), Math.round(y), hit !== null]);
+      // тицяння навмання: 3 тапи за 1,5 с — окремий штраф (як у hidden-object іграх)
+      const now = performance.now(); this.taps = (this.taps || []).filter((t) => now - t < 1500); this.taps.push(now);
       if (hit === null) {
         const dec = this.decoys.find((t) => Math.hypot(x - t.x, y - t.y) <= (t.r || 14));
         this.misses++;
@@ -695,11 +697,15 @@
         if (dec) { dec.hitByPlayer = true; this.marks.unshift({x: dec.x, y: dec.y, r: (dec.r || 14) * 0.6, scorch: true}); this.marks.push({x: dec.x, y: dec.y, r: dec.r || 14, color: COLORS.decoy, dashed: true, label: "муляж!"}); }
         else this.marks.push({x, y, square: true, color: COLORS.miss});
         v.setMarks(this.marks);
+        Game.buzz([60, 40, 60]);
+        // штраф часу за хибний тап, що наростає: −3, −5, −8 с…; тицяння навмання — ще −5 с
+        const spam = this.taps.length >= 3, pen = Math.round(3 * Math.pow(1.6, this.misses - 1)) + (spam ? 5 : 0);
+        this.penalty(pen, spam);
         const leftM = this.missLimit - this.misses;
         if (leftM < 0) return this.endRound(`${dec ? "Це муляж! " : ""}${this.missLimit ? "Ліміт промахів — етап завершено." : "Промах — етап завершено."}`);
-        this.msg(`${dec ? "Це муляж — промах!" : "Мимо!"} ${leftM === 0 ? "Ще промах — кінець етапу." : "Можна ще: " + leftM + "."}`, "no");
+        this.msg(`${dec ? "Це муляж — промах!" : "Мимо!"} −${pen} с.${spam ? " Не тицяйте навмання!" : ""} ${leftM === 0 ? "Ще промах — кінець етапу." : "Можна ще: " + leftM + "."}`, "no");
       } else {
-        this.found.add(hit); this.foundOrder.push(hit);
+        this.found.add(hit); this.foundOrder.push(hit); Game.buzz(25);
         const t = this.targets[hit];
         FX.explode(v, t.x, t.y, t.r || 14); SFX.boom();
         setTimeout(() => SFX.hit(), 650);
@@ -738,6 +744,17 @@
       if (b) b.onclick = () => { if (confirm("Відкрити довідник? Етап буде перервано, результат не збережеться.")) { clearTimeout(this.tickT); this.over = true; box.hidden = true; Ref.openCard(b.dataset.ref); } };
       box.hidden = false; box.classList.remove("in"); void box.offsetWidth; box.classList.add("in");
       clearTimeout(this._fcT); this._fcT = setTimeout(() => { box.hidden = true; }, 6000);
+    },
+
+    /* Мінус секунди: таймер «стрибає» вниз, поруч спливає «−5 с». */
+    penalty(sec, spam) {
+      if (!sec || this.over) return;
+      this.t0 -= sec * 1000; this.pen = (this.pen || 0) + sec;
+      const t = $("g-time"), r = t.getBoundingClientRect(), f = document.createElement("div");
+      f.className = "pen-float"; f.textContent = `−${sec} с${spam ? " · навмання" : ""}`;
+      f.style.left = Math.round(r.left + r.width / 2) + "px"; f.style.top = Math.round(r.bottom + 4) + "px";
+      document.body.appendChild(f); setTimeout(() => f.remove(), 1400);
+      t.classList.remove("pen"); void t.offsetWidth; t.classList.add("pen");
     },
 
     rightClick(cx, cy) {
@@ -855,7 +872,7 @@
         ...this.targets.map((t, i) => `<b class="${this.found.has(i) ? "t-ok" : "t-no"}">${this.found.has(i) ? "✓" : "✗"} ${esc(t.type || "ціль")} ${esc(this.sq(t))}</b>`),
         n ? `<b class="t-no">промахів ${n}</b>` : "",
         this.decoys.some((t) => t.hitByPlayer) ? `<b class="t-decoy">муляж!</b>` : "",
-        `${this.result.time} с · +${this.result.score}${this.hintUsed ? " 💡" : ""}`,
+        `${this.result.time} с${this.pen ? ` (штраф −${this.pen} с)` : ""} · +${this.result.score}${this.hintUsed ? " 💡" : ""}`,
       ].filter(Boolean).join(" · ");
       $("g-debrief").innerHTML = `<details><summary>${line}</summary>${h.join("")}</details>`;
       $("g-debrief").hidden = false;
@@ -922,6 +939,8 @@
   window.Game = Game;
   /* Випадковий id цього пристрою (браузера): «Мої результати» прізвища відкриваються лише на пристрої, що відкрив їх першим. */
   Game.deviceId = () => deviceId();
+  /* Вібрація телефона (якщо є й звук увімкнено): влучання — короткий імпульс, промах — подвійний. */
+  Game.buzz = (p) => { try { if (navigator.vibrate && localStorage.getItem("poshuk_sound") !== "off") navigator.vibrate(p); } catch (e) { /* немає */ } };
   function deviceId() {
     let d = LS.get("poshuk_dev", null);
     if (!d || !/^[a-f0-9]{32}$/.test(d)) { const b = new Uint8Array(16); crypto.getRandomValues(b); d = [...b].map((x) => x.toString(16).padStart(2, "0")).join(""); LS.set("poshuk_dev", d); }

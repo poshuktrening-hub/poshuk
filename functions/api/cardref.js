@@ -12,6 +12,24 @@ const MAX_IMGS = 20;
 const now = () => new Date().toISOString();
 const J = (s) => { try { return JSON.parse(s || "[]"); } catch (e) { return []; } };
 
+/* Запам'ятати джерела автопідібраних фото, які прибирають (адміністратор чи перевірка): автопошук їх більше не бере.
+   Джерело — сторінка фото в кінці підпису («… — https://…»). До 800 останніх. */
+export async function rememberReject(env, ids) {
+  const list = (ids || []).map(String).filter((x) => x.startsWith(CP));
+  if (!list.length) return;
+  const pages = [];
+  for (const id of list) {
+    const r = await env.DB.prepare("SELECT credit FROM ref_images WHERE id=?").bind(id).first();
+    const c = String((r && r.credit) || "");
+    if (!/Wikimedia|Openverse|flickr|АрміяInform/i.test(c)) continue;   // надіслані адміністратором / завантажені вручну — не джерела автопошуку
+    const m = c.match(/—\s*(https?:\/\/\S+)\s*(\(.*\))?$/); if (m) pages.push(m[1]);
+  }
+  if (!pages.length) return;
+  let old = []; try { old = JSON.parse((await env.DB.prepare("SELECT v FROM meta WHERE k='photo_reject'").first() || {}).v || "[]"); } catch (e) { old = []; }
+  const all = [...new Set(old.concat(pages))].slice(-800);
+  await env.DB.prepare("INSERT INTO meta (k,v) VALUES ('photo_reject',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(JSON.stringify(all)).run();
+}
+
 /* картка → записи довідника з її фото */
 export async function linked(env) {
   const {results} = await env.DB.prepare("SELECT id, card, imgs, updated FROM ref_entries WHERE card IS NOT NULL AND card <> '' ORDER BY ord").all();
@@ -69,6 +87,7 @@ export async function delCardImg(env, card) {
   for (const e of m.get(card) || []) {
     const old = e.imgs.find((x) => x.startsWith(CP) && isGameImg(x));
     if (!old) continue;
+    await rememberReject(env, [old]);
     await env.DB.batch([env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(old),
       env.DB.prepare("UPDATE ref_entries SET imgs=?, updated=? WHERE id=?").bind(JSON.stringify(e.imgs.filter((x) => x !== old)), now(), e.id)]);
     return true;
@@ -78,6 +97,7 @@ export async function delCardImg(env, card) {
 
 /* Видалити окреме фото довідника разом із посиланням із запису (для очищення невдалих автопідборів). */
 export async function dropImg(env, imgId) {
+  await rememberReject(env, [imgId]);
   const {results} = await env.DB.prepare("SELECT id, imgs FROM ref_entries WHERE imgs LIKE ?").bind(`%"${imgId}"%`).all();
   const st = [env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(imgId)];
   for (const r of results) st.push(env.DB.prepare("UPDATE ref_entries SET imgs=?, updated=? WHERE id=?").bind(JSON.stringify(J(r.imgs).filter((x) => x !== imgId)), now(), r.id));

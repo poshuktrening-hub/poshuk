@@ -13,7 +13,7 @@ const FREE = (lic) => { const l = String(lic || "").toLowerCase(); return !/nc|n
 const BAD_STRICT = /decoy|inflatable|maket|макет|model|toy|replica|lego|interior|operators|cutaway|diagram|scheme|drawing|blueprint|emblem|logo|\bmap\b|poster|stamp/i;
 const BAD_LOOSE = /toy|lego|emblem|logo|\bmap\b|interior|operators|stamp|poster|flag|coat of arms/i;
 /* Явно не військова техніка (позначення «2S42» буває номером потяга тощо) — ніколи не беремо. */
-export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b|kremlin|кремль|crater|воронка|ruins|руїни|руины|damaged building|aftermath|users|operators map|locator|location map|world map|countries|portrait|person|people|\bman\b|woman|singer|poet|writer|actor|actress|musician|politician|footballer|wedding|selfie|okudzhava|окуджава|портрет|tank car|tankcar|tank wagon|railcar|rail car|freight|wagon|вагон|цистерна \d|залізнич|железнодорож|\bржд\b|\bуз\b/i;
+export const OFF_TOPIC = /train|railway|railroad|rail\b|station|locomotive|\btram|\bbus\b|metro|subway|platform|class \d|class_\d|airport|stadium|church|street|football|concert|car show|bmw|audi|mercedes|porsche|tractor|harvester|coin|banknote|medal|insect|mosquito|spray|cosmetic|perfume|skin|bottle|beetle|tick\b|kremlin|кремль|crater|воронка|ruins|руїни|руины|damaged building|aftermath|users|operators map|locator|location map|world map|countries|portrait|person|people|\bman\b|woman|singer|poet|writer|actor|actress|musician|politician|footballer|wedding|selfie|okudzhava|окуджава|портрет|tank car|tankcar|tank wagon|railcar|rail car|freight|wagon|вагон|цистерна \d|залізнич|железнодорож|\bржд\b|\bуз\b|bird|pheasant|parrot|eagle|owl\b|animal|wildlife|\bzoo\b|\bdog\b|\bcat\b|horse|sesame|muppet|puppet|cartoon|mascot|costume|cosplay|plush|figurine|supermarket|птах|птиц|фазан|тварин|животн|мульт|іграшк|игрушк/i;
 /* Загальні слова запиту — не ключі (правило А): тип техніки, країна, рід військ, місце. */
 const STOP = /^(tank|self|propelled|howitzer|system|launcher|vehicle|radar|truck|missile|class|project|ship|boat|russian|military|mod|obr|russia|soviet|ukraine|ukrainian|army|navy|force|forces|federation|ground|armed|parade|exhibition|museum|forum|complex|combat|artillery|rocket|infantry|fighting|armoured|armored|carrier|personnel|command|post|station|mobile|electronic|warfare|jamming|drone|uav|helicopter|aircraft|bomber|fighter|attack|jet|corvette|frigate|submarine|landing|craft|minesweeper|patrol|cruise|ballistic|anti|defense|defence|surface|mlrs|atgm|apc|ifv|mbt|tel|telar|transporter|loader|tractor|engineering|bridge|pontoon|layer|mine|clearing|recovery|repair|ambulance|fuel|tanker|cargo|utility|light|heavy|medium|tactical|strategic|coastal|naval|air|sam|spg|sph|gun|cannon|mortar|antitank|antiaircraft|battery|regiment|brigade|division|photo|image|picture|view|front|side|rear|left|right|top)$/;
 /* ---------- Правила відбору фото (ті самі для Вікісховища, Openverse, АрміяInform і для перевірки вже підібраних):
@@ -260,7 +260,12 @@ async function applyMarkSeeds(env, metaGet, metaSet) {
   if (!miss) await metaSet(env, "marks_seed", v);
 }
 
-const FILL_V = LIST_V + "+ov3";   // +ov2 — суворіше правило для карток без індексу: перевірка й прибирання ще раз   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
+/* Автопідібрані фото, які виявилися не тією технікою (перевірено під час розмітки ознак): прибрати й більше не брати. */
+const BAD_IMGS = ["cp_prp4a-mvdyfszq", "cp_r91n6e-mvceob1i", "cp_r149-mvedavy9", "cp_katapult-mvedtnni"];
+/* Відхилені джерела (сторінки фото), які адміністратор або перевірка прибрали: автопошук їх більше не бере. */
+async function rejected(env) { try { return new Set(JSON.parse((await env.DB.prepare("SELECT v FROM meta WHERE k='photo_reject'").first() || {}).v || "[]")); } catch (e) { return new Set(); } }
+const fresh = (list, rej) => list.filter((c) => !rej.has(c.page) && !rej.has(c.url));
+const FILL_V = LIST_V + "+ov4";   // +ov4 — птахи/персонажі в OFF_TOPIC, назва фото Openverse у підписі, відхилені джерела   // +ov2 — суворіше правило для карток без індексу: перевірка й прибирання ще раз   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
 const WEEK = 7 * 24 * 3600e3;   // фоновий прохід — раз на тиждень (між проходами сервер Вікісховище не чіпає)
 const S0 = () => ({v: FILL_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
 export async function fillState(env, metaGet) {
@@ -273,14 +278,14 @@ export async function fillReset(env, metaSet, onlyMiss) {
   await metaSet(env, "photo_fill", JSON.stringify(S0()));
 }
 
-const creditOf = (c) => (c.src === "armyinform" ? `АрміяInform, ${c.license} — ${c.page}` : c.src === "openverse" ? `${c.author}, ${c.license}, ${c.provider} — ${c.page}`
+const creditOf = (c) => (c.src === "armyinform" ? `АрміяInform, ${c.license} — ${c.page}` : c.src === "openverse" ? `«${String(c.title || "").replace(/[«»]/g, "").slice(0, 120)}» ${c.author}, ${c.license}, ${c.provider} — ${c.page}`
   : `${c.author || "автор невідомий"}, ${c.license}, Wikimedia Commons — ${c.page}${c.loose ? " (креслення/модель)" : ""}`).slice(0, 400);
 
 /* Пошук для однієї картки (кнопка 🔎 в адмінці): skip — скільки кандидатів пропустити, щоб щоразу було інше фото.
    Знайдене замінює попереднє фото «з картки»; фото з навчальної таблиці не чіпаються. */
 export async function fillOne(env, id, skip = 0) {
   if (!QUERIES[id] && !NAMES[id]) return {ok: false, error: "Невідома картка"};
-  const list = await candidates(env, id);
+  const list = fresh(await candidates(env, id), await rejected(env));
   if (!list.length) return {ok: false, found: 0};
   for (let k = 0; k < list.length; k++) {
     const c = list[(skip + k) % list.length];
@@ -311,8 +316,8 @@ export async function fillTick(env, metaGet, metaSet, force) {
       const card = r.id.slice(CP.length).split("-")[0];
       if (/АрміяInform/.test(String(r.credit || ""))) { if (!AI_OK(card)) await dropImg(env, r.id); continue; }
       const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
-      const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || [])[1] || "";
-      if (OFF_TOPIC.test(cred) || (file && QUERIES[card] && !fileOk(card, file))) await dropImg(env, r.id);
+      const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || cred.match(/^«([^»]+)»/) || [])[1] || "";   // Вікісховище — назва файлу, Openverse — назва фото
+      if (BAD_IMGS.includes(r.id) || OFF_TOPIC.test(cred) || (file && QUERIES[card] && !fileOk(card, file))) await dropImg(env, r.id);
     }
     for (const r of cr) {
       const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
@@ -324,11 +329,12 @@ export async function fillTick(env, metaGet, metaSet, force) {
   const {results} = await env.DB.prepare("SELECT id FROM card_photos").all();
   const have = new Set(results.map((r) => r.id).concat(Object.keys(await cardPics(env))));
   let n = 0;
+  const rej = await rejected(env);
   try {
     while (n < PER_TICK && s.pos < ORDER.length) {
       const id = ORDER[s.pos];
       if (have.has(id)) { s.pos++; continue; }
-      const list = await candidates(env, id);
+      const list = fresh(await candidates(env, id), rej);
       if (!list.length) { s.miss.push(id); s.pos++; n++; continue; }
       let stored = false;
       for (const c of list.slice(0, 3)) {
