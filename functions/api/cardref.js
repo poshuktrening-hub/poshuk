@@ -12,6 +12,16 @@ const MAX_IMGS = 20;
 const now = () => new Date().toISOString();
 const J = (s) => { try { return JSON.parse(s || "[]"); } catch (e) { return []; } };
 
+/* Фото, які вставив адміністратор (завантажив сам або вибрав 🔎 в адмінці): автопошук і перевірки їх НІКОЛИ не видаляють. */
+export async function adminImgs(env) {
+  try { return new Set(JSON.parse((await env.DB.prepare("SELECT v FROM meta WHERE k='photo_admin'").first() || {}).v || "[]")); } catch (e) { return new Set(); }
+}
+export async function markAdmin(env, id) {
+  if (!id) return;
+  const s = await adminImgs(env); s.add(String(id));
+  await env.DB.prepare("INSERT INTO meta (k,v) VALUES ('photo_admin',?) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(JSON.stringify([...s].slice(-5000))).run();
+}
+
 /* Запам'ятати джерела автопідібраних фото, які прибирають (адміністратор чи перевірка): автопошук їх більше не бере.
    Джерело — сторінка фото в кінці підпису («… — https://…»). До 800 останніх. */
 export async function rememberReject(env, ids) {
@@ -73,8 +83,11 @@ export async function putCardImg(env, card, {data, mime = "image/jpeg", credit =
   }
   if (pos != null) imgs.splice(Math.min(pos, imgs.length), 0, iid);   // на задану позицію (1 — друге фото)
   else imgs = front ? [iid, ...imgs] : [...imgs, iid];
-  for (const x of imgs.slice(MAX_IMGS)) if (x.startsWith(CP)) st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(x));
-  imgs = imgs.slice(0, MAX_IMGS);
+  if (imgs.length > MAX_IMGS) {
+    const keep = await adminImgs(env), extra = imgs.slice(MAX_IMGS).filter((x) => x.startsWith(CP) && !keep.has(x) && x !== iid);
+    for (const x of extra) st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(x));
+    imgs = imgs.filter((x) => !extra.includes(x));
+  }
   st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_images (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(iid, data, mime, up, String(credit || "").slice(0, 400)));
   st.push(env.DB.prepare("UPDATE ref_entries SET imgs=?, updated=? WHERE id=?").bind(JSON.stringify(imgs), up, e.id));
   await env.DB.batch(st);
@@ -97,6 +110,7 @@ export async function delCardImg(env, card) {
 
 /* Видалити окреме фото довідника разом із посиланням із запису (для очищення невдалих автопідборів). */
 export async function dropImg(env, imgId) {
+  if ((await adminImgs(env)).has(String(imgId))) return false;   // вставлене адміністратором — не чіпаємо
   await rememberReject(env, [imgId]);
   const {results} = await env.DB.prepare("SELECT id, imgs FROM ref_entries WHERE imgs LIKE ?").bind(`%"${imgId}"%`).all();
   const st = [env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(imgId)];

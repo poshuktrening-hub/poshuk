@@ -4,7 +4,7 @@
    Фото зберігається як у ручному підборі (card_photos: мініатюра 1280 px + підпис автора/ліцензії).
    Стан — у meta «photo_fill»: позиція у переліку, скільки знайдено, яких не знайдено. Перелік — photo-queries.js. */
 import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS, DESIG, CODES, TYPEW, STRONG, STRICT} from "./photo-queries.js";
-import {cardPics, putCardImg, dropImg, CP} from "./cardref.js";
+import {cardPics, putCardImg, dropImg, adminImgs, CP} from "./cardref.js";
 
 const UA = "poshuk-trener/1.0 (https://poshuk.pages.dev; contact: mrqwerty841@gmail.com)";
 const PER_TICK = 1, TICK_MS = 20e3,   // до ~20 підзапитів на картку — в межах ліміту 50 на запит
@@ -295,7 +295,7 @@ export async function fillOne(env, id, skip = 0) {
     try {
       const t = await fetchThumb(c.url).catch((e) => { if (c.alt) return fetchThumb(c.alt); throw e; });
       const r = await putCardImg(env, id, {data: t.data, mime: t.mime, credit: creditOf(c), replace: true});
-      return {ok: true, found: list.length, credit: creditOf(c), updated: r.updated};
+      return {ok: true, found: list.length, credit: creditOf(c), updated: r.updated, img: r.img};
     } catch (e) { /* наступний кандидат */ }
   }
   return {ok: false, found: list.length};
@@ -312,20 +312,19 @@ export async function fillTick(env, metaGet, metaSet, force) {
   if (s.done) { if (!s.doneAt) { s.doneAt = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s)); } return s; }
   if (!force && s.lock > Date.now() - LOCK_MS) return s;   // інший дата-центр саме працює, або пауза після збою
   s.lock = Date.now(); await metaSet(env, "photo_fill", JSON.stringify(s));
-  if (!s.cleaned) {   // прибрати фото, підібрані раніше, у назві файлу яких явно не техніка (потяги тощо)
-    const {results: cr} = await env.DB.prepare("SELECT id, credit FROM card_photos WHERE credit LIKE '%Wikimedia%'").all();
-    const {results: rr} = await env.DB.prepare("SELECT id, credit FROM ref_images WHERE id LIKE 'cp\\_%' ESCAPE '\\' AND (credit LIKE '%Wikimedia%' OR credit LIKE '%flickr%' OR credit LIKE '%Openverse%' OR credit LIKE '%АрміяInform%')").all();
-    for (const r of rr) {   // фото карток у довіднику: id cp_<картка>-…
+  if (!s.cleaned) {
+    /* Прибирання вже вставлених фото — ЛИШЕ явно перевірених як хибні (BAD_IMGS) і ПП-91 без слова «понтон/міст».
+       Загальне переперевіряння за новими правилами більше не запускається: суворіші правила діють лише на нові фото,
+       інакше кожна зміна правил видаляла б десятки фото, які вже стоять (так 19.10 зникло ~44 фото).
+       Фото, вставлені адміністратором, не видаляються ніколи. */
+    const keep = await adminImgs(env);
+    const {results: rr} = await env.DB.prepare("SELECT id, credit FROM ref_images WHERE id LIKE 'cp\\_%' ESCAPE '\\'").all();
+    for (const r of rr) {
+      if (keep.has(r.id)) continue;
       const card = r.id.slice(CP.length).split("-")[0];
-      if (/АрміяInform/.test(String(r.credit || ""))) { if (!AI_OK(card)) await dropImg(env, r.id); continue; }
       const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
-      const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || cred.match(/^«([^»]+)»/) || [])[1] || "";   // Вікісховище — назва файлу, Openverse — назва фото
-      if (BAD_IMGS.includes(r.id) || OFF_TOPIC.test(cred) || (STRICT.includes(card) && !cardOk(card, cred)) || (file && QUERIES[card] && !fileOk(card, file))) await dropImg(env, r.id);
-    }
-    for (const r of cr) {
-      const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
-      const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || [])[1] || "";
-      if (OFF_TOPIC.test(cred) || (STRICT.includes(r.id) && !cardOk(r.id, cred)) || (file && QUERIES[r.id] && !fileOk(r.id, file))) await env.DB.prepare("DELETE FROM card_photos WHERE id=?").bind(r.id).run();
+      const auto = /Wikimedia|Openverse|flickr|АрміяInform/i.test(cred);
+      if (BAD_IMGS.includes(r.id) || (auto && STRICT.includes(card) && !cardOk(card, cred))) await dropImg(env, r.id);
     }
     s.cleaned = 1;
   }
