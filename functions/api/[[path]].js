@@ -991,16 +991,16 @@ async function duelTop(env, sinceMs) {
 
 async function top3(env, since = "0000") {   // since — початок доби за часом курсанта («YYYY-MM-DD 00:00»)
   const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results WHERE COALESCE(archived,0)=0 AND ts >= ? ORDER BY ts DESC LIMIT 5000").bind(since).all();
-  const out = {search: new Map(), cards: new Map()};
+  const out = {search: new Map(), cards: new Map(), ff: new Map()};
   for (const r of results) {
     const name = String(r.callsign || "").trim(); if (!name || isTestName(name)) continue;
-    const kind = /^cards/.test(r.mode || "") || /^Картки/.test(r.conclusion || "") ? "cards" : "search";
+    const kind = /^Картки \(свій\/чужий\)/.test(r.conclusion || "") ? "ff" : /^cards/.test(r.mode || "") || /^Картки/.test(r.conclusion || "") ? "cards" : "search";
     const key = name.toLowerCase(), m = out[kind], cur = m.get(key);
     if (!cur) m.set(key, {name, best: r.pct, ts: r.ts, n: 1});
     else { cur.n++; if (r.pct > cur.best || (r.pct === cur.best && r.ts < cur.ts)) { cur.best = r.pct; cur.ts = r.ts; } }
   }
   const pick = (m) => [...m.values()].sort((a, b) => b.best - a.best || b.n - a.n || String(a.ts).localeCompare(String(b.ts))).slice(0, 3).map((x) => ({name: x.name, pct: x.best, n: x.n}));
-  return {search: pick(out.search), cards: pick(out.cards)};
+  return {search: pick(out.search), cards: pick(out.cards), ff: pick(out.ff)};
 }
 
 async function submit(env, ctx, req) {

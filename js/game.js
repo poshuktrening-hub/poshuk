@@ -299,11 +299,11 @@
           : `<li class="top-none">Ще ніхто — будьте першим</li>`);
         el.hidden = false;
       };
-      if (this.top && this.topDay === today()) { draw("top-search", this.top.search); draw("top-cards", this.top.cards); drawDuel(this.top.duel); }
+      if (this.top && this.topDay === today()) { draw("top-search", this.top.search); draw("top-cards", this.top.cards); draw("top-ff", this.top.ff); drawDuel(this.top.duel); }
       try {
         const d = today(), mid = new Date(); mid.setHours(0, 0, 0, 0);
         const j = await API.call("top", {since: d + " 00:00", sinceMs: mid.getTime()}, this.password);
-        this.top = j.top; this.topDay = d; draw("top-search", j.top.search); draw("top-cards", j.top.cards); drawDuel(j.top.duel);
+        this.top = j.top; this.topDay = d; draw("top-search", j.top.search); draw("top-cards", j.top.cards); draw("top-ff", j.top.ff); drawDuel(j.top.duel);
       } catch (e) { /* без топу — не страшно */ }
     },
     /* Робота над помилками: що курсант востаннє пройшов з помилкою (етапи — лише ті, що зараз у грі; картки — з фото). */
