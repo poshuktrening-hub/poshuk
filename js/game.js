@@ -280,13 +280,12 @@
     /* Топ дня в головному меню: найкращий результат кожного курсанта за поточну добу + звання за цим результатом. */
     async loadTop() {
       if (window.Offline && Offline.on) return;
-      const games = (n) => ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "гри" : "ігор");
       const draw = (id, list) => {
         const el = $(id); if (!el) return;
         list = list || [];
         if (!list.length) { el.innerHTML = ""; el.hidden = true; return; }   // ніхто ще не грав — топ не показуємо
         el.innerHTML = `<li class="top-h">Топ дня</li>` + (list.length ? list.map((x, i) => { const rk = Logic.rank(x.pct);
-          return `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b><small title="${esc(rk.name)}">${Logic.rankBadge(rk.level)}${esc(rk.name)}</small></span><em title="Найкращий результат за день${x.n > 1 ? ` із ${x.n} ${games(x.n)}` : ""}">${x.pct}%${x.n > 1 ? `<small class="top-n">${x.n} ${games(x.n)}</small>` : ""}</em></li>`; }).join("")
+          return `<li><i>${["🥇", "🥈", "🥉"][i]}</i><span class="tn"><b>${esc(x.name)}</b><small title="${esc(rk.name)}">${Logic.rankBadge(rk.level)}${esc(rk.name)}</small></span><em>${x.pct}%</em></li>`; }).join("")
           : `<li class="top-none">Ще ніхто — будьте першим</li>`);
         el.hidden = false;
       };
