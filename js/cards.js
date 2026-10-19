@@ -8,6 +8,7 @@
   const MODES = {
     game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника.", hint: true, choice: true, sign: true},
     exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
+    pairs: {id: "pairs", name: "Пари", desc: "Техніка, яку ви найчастіше плутаєте, — парами підряд: спершу одна, одразу за нею друга. Після відповіді — чим вони відрізняються.", hint: true, choice: true, sign: true, pairs: true},
     hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
 
@@ -83,16 +84,51 @@
     ["БпЛА", "Катапульта"], ["Гелікоптер", "Літак"], ["ПТРК"]];
   const typeOf = (c) => c.name.split(" ")[0];
   const quoted = (c) => (c.name.match(/«([^»]+)»/) || [])[1] || "";
-  function options(card, deck) {
+  function options(card, deck, must) {
     const t = typeOf(card), g = GROUPS.find((x) => x.includes(t)) || [t], q = quoted(card);
     const pool = deck.filter((c) => c.id !== card.id && !(q && quoted(c) === q));
     const pick = [], add = (list) => { for (const c of Logic.shuffle(list)) { if (pick.length >= 3) break; if (!pick.includes(c)) pick.push(c); } };
+    // те, з чим цю техніку плутають (пара або власні помилки), — серед варіантів обов'язково
+    for (const id of must || []) { const c = pool.find((x) => x.id === id); if (c && pick.length < 2 && !pick.includes(c)) pick.push(c); }
     add(pool.filter((c) => typeOf(c) === t)); add(pool.filter((c) => g.includes(typeOf(c)))); add(pool);
     return Logic.shuffle([card, ...pick]);
   }
 
+  /* Плутанина на цьому пристрої: «правильна|обрана» → скільки разів і коли востаннє. */
+  const CONF = "poshuk_confuse";
+  const confAll = () => LS.get(CONF, {}) || {};
+  function confAdd(right, wrong) {
+    if (!right || !wrong || right === wrong) return;
+    const m = confAll(), k = right + "|" + wrong, e = m[k] || {n: 0, t: 0};
+    e.n++; e.t = Date.now(); m[k] = e;
+    const keys = Object.keys(m); if (keys.length > 300) keys.sort((a, b) => m[a].t - m[b].t).slice(0, keys.length - 300).forEach((x) => delete m[x]);
+    LS.set(CONF, m);
+  }
+  /* з чим плутають картку (за спаданням) */
+  const confWith = (id) => Object.entries(confAll()).filter(([k]) => k.startsWith(id + "|")).sort((a, b) => b[1].n - a[1].n).map(([k]) => k.split("|")[1]);
+  /* «родина» позначення: Т-72Б3 → т72, БМП-2 → бмп, 2С19 → 2с, Су-34 → су */
+  const stem = (c) => {
+    const q = (c.name.match(/«([^»]+)»/) || [])[1];   // «Бук-М2» → бук, «Мста-С» → мста
+    if (q) { const w = q.toLowerCase().split(/[-\s]/)[0].replace(/[^a-zа-яіїєґ]/g, ""); if (w.length >= 3) return "q:" + w; }
+    const d = (c.name.replace(/«[^»]*»/g, " ").split(/\s+/).slice(1).find((w) => /\d/.test(w)) || "").toLowerCase().replace(/[^a-zа-яіїєґ0-9-]/g, "");
+    let m = d.match(/^([a-zа-яіїєґ]+)-?(\d+)/);
+    if (m) return ["т", "су", "мі", "ту", "іл", "ан", "ка", "як", "міг"].includes(m[1]) ? m[1] + m[2] : m[1];
+    m = d.match(/^(\d+[a-zа-яіїєґ]+)/);   // 2С19 → 2с, 9К317 → 9к
+    return m ? m[1] : "";
+  };
+
   const Cards = {
-    MODES, check, norm,
+    MODES, check, norm, confWith,
+    /* Пари для режиму «Пари»: спершу власні помилки (найчастіші й свіжі), далі — схожа техніка однієї родини з фото. */
+    pairs(max = 5) {
+      const ok = new Set(this.withPhoto().map((c) => c.id)), out = [], used = new Set();
+      const add = (a, b, own) => { const k = [a, b].sort().join("|"); if (a === b || used.has(k) || !ok.has(a) || !ok.has(b) || out.length >= max) return; used.add(k); out.push([a, b, own]); };
+      Object.entries(confAll()).sort((x, y) => y[1].n - x[1].n || y[1].t - x[1].t).forEach(([k]) => { const [a, b] = k.split("|"); add(a, b, true); });
+      const own = out.length;
+      const fam = new Map(); for (const c of this.withPhoto(false)) { const s = stem(c) && typeOf(c) + "|" + stem(c); if (s) { if (!fam.has(s)) fam.set(s, []); fam.get(s).push(c.id); } }
+      for (const ids of Logic.shuffle([...fam.values()].filter((x) => x.length > 1))) { const [a, b] = Logic.shuffle(ids.slice()); add(a, b, false); }
+      return {list: out, own};
+    },
     /* hard — «складний рівень»: прапорець у даних, який адмін може перекрити галочкою (Game.cardHard). */
     /* РЛС, РЕБ/РЕР, зв'язок, командні пункти — завжди хардкор (якщо адмін не зняв галочку) */
     HARD_TYPES: ["РЛС", "РЕБ", "РЕР", "АРК", "КШМ", "КП", "ПЗУ", "Машина"],
@@ -170,6 +206,13 @@
         `<button type="button" role="radio" aria-checked="${m.id === mode}" class="mode${m.id === mode ? " on" : ""}" data-cm="${m.id}"><b>${m.name}</b><span>${esc(m.desc)}</span></button>`).join("");
       $("pick-cmode").querySelectorAll("[data-cm]").forEach((b) => (b.onclick = () => { LS.set("poshuk_cmode", b.dataset.cm); SFX.click(); this.renderMenu(); }));
       const hard = !!this.mode.hard, n = this.withPhoto(hard).length, all = this.deck().filter((c) => c.hard === hard).length;
+      if (this.mode.pairs) {
+        const p = this.pairs();
+        $("c-info").innerHTML = p.list.length ? `Пар у грі: ${p.list.length} (${p.own ? `з ваших помилок — ${p.own}` : "ваших помилок ще немає — схожа техніка однієї родини"}).` : "Поки немає пар із фото.";
+        $("c-start").disabled = !p.list.length;
+        $("c-start").textContent = "Почати: пари"; $("c-start").onclick = () => this.start();
+        return;
+      }
       $("c-info").innerHTML = n ? `Карток у грі: ${Math.min(ROUNDS, n)} (з ${n} з фото${hard ? ` · у хардкорі всього ${all}` : ""}).` : `Фото карток ще не додано (${all} карток без фото). Адміністратору: <a href="#admin">адмінка → «Картки»</a>.`;
       $("c-start").disabled = !n;
       $("c-start").textContent = `Почати: ${this.mode.name.toLowerCase()}`;
@@ -184,13 +227,17 @@
       this.fix = opt && opt.fix && opt.fix.length ? opt.fix : null;
       if (this.fix) this.mode = MODES.game;
       else { const mm = LS.get("poshuk_cmode", "game"); this.mode = MODES[mm] || MODES.game; }
-      const pool = Logic.shuffle(this.fix ? this.fix.slice() : this.withPhoto(!!this.mode.hard));
+      let pool = Logic.shuffle(this.fix ? this.fix.slice() : this.withPhoto(!!this.mode.hard));
+      if (this.mode.pairs && !this.fix) {   // пари: обидві картки поспіль, у випадковому порядку; кожна знає свою пару
+        const byId = new Map(this.deck().map((c) => [c.id, c]));
+        pool = this.pairs().list.flatMap(([a, b]) => Logic.shuffle([[a, b], [b, a]]).map(([x, y]) => Object.assign({}, byId.get(x), {partner: y})));
+      }
       this.rounds = pool.slice(0, ROUNDS).map((c) => Object.assign({}, c, {pic: this.pickPic(c.id)})); this.idx = -1; this.results = []; this.planned = this.rounds.length;
       UI.show("s-cards");
       document.body.dataset.mode = "cards";
       $("c-form").onsubmit = (e) => { e.preventDefault(); this.submit(); };
       $("c-form").classList.toggle("choice", !!this.mode.choice);
-      this._deck = this.fix ? this.deck() : this.deck().filter((c) => c.hard === !!this.mode.hard);   // хибні варіанти — з того ж рівня
+      this._deck = this.fix || this.mode.pairs ? this.deck() : this.deck().filter((c) => c.hard === !!this.mode.hard);   // хибні варіанти — з того ж рівня
       if (!this._keys) { this._keys = (e) => { if (!this.mode.choice || this.over || document.body.dataset.mode !== "cards" || $("s-cards").hidden) return; const b = $("c-choices").querySelectorAll("button")[Number(e.key) - 1]; if (b && !b.disabled) b.click(); }; addEventListener("keydown", this._keys); }
       $("c-hint-btn").onclick = () => this.hint();
       $("c-sign-btn").onclick = () => this.sign();
@@ -215,9 +262,9 @@
       this.idx++;
       if (this.idx >= this.rounds.length) return this.summary();
       const c = this.cur = this.rounds[this.idx];
-      this.hintUsed = false; this.signUsed = false; this.weakUsed = false; this.over = false;
+      this.hintUsed = false; this.signUsed = false; this.weakUsed = false; this.over = false; this.chosen = null;
       const errs = this.results.filter((r) => !r.ok).length;
-      $("c-stage").textContent = `${this.mode.id === "exam" ? "Іспит · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
+      $("c-stage").textContent = `${this.mode.pairs ? `Пари · ${Math.floor(this.idx / 2) + 1}/${Math.ceil(this.rounds.length / 2)} · ` : this.mode.id === "exam" ? "Іспит · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
       if ($("c-concept")) $("c-concept").hidden = !c.concept;
       $("c-score").textContent = this.results.reduce((a, r) => a + r.score, 0);
       $("c-reveal").hidden = true; $("c-nextbox").hidden = true; $("c-form").hidden = false;
@@ -228,7 +275,7 @@
       $("c-weak-btn").hidden = !this.mode.sign; $("c-weak-btn").disabled = !this.weakOf(c);
       $("c-answer").value = ""; $("c-answer").disabled = false; $("c-check").disabled = false;
       if (this.mode.choice) {
-        const opts = this.opts = options(c, this._deck);
+        const opts = this.opts = options(c, this._deck, [c.partner, ...confWith(c.id)].filter(Boolean));
         $("c-choices").innerHTML = opts.map((o, i) => `<button type="button" data-ci="${i}"><i>${i + 1}</i><span>${UI.nameHtml(o.name)}</span></button>`).join("");
         $("c-choices").querySelectorAll("button").forEach((b) => (b.onclick = () => this.choose(opts[+b.dataset.ci])));
       }
@@ -272,7 +319,7 @@
 
     /* «Ознака»: одна характерна ознака з довідника (опис запису техніки або ознаки картки), без назви й позначень. */
     signOf(c) {
-      if (c._signs) return c._signs;
+      if (c._signs) return c._signs.length ? c._signs : null;
       const ref = (this.refDesc && this.refDesc.get(c.id)) || "";
       const strip = (t) => String(t || "").replace(/<[^>]+>/g, " ").replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
       const bad = this.badWords(c);
@@ -318,10 +365,11 @@
 
     choose(o) {
       if (this.over) return;
-      this.finish(o.name, false, o.id === this.cur.id);
+      this.chosen = o; this.finish(o.name, false, o.id === this.cur.id);
     },
 
     submit() {
+      this.chosen = null;
       const v = $("c-answer").value.trim();
       if (!v) { $("c-answer").focus(); return; }
       this.finish(v, false);
@@ -341,10 +389,22 @@
       $("c-choices").innerHTML = "";
       const cr = c.pic && !c.pic.own ? (c.pic.credit ? (() => { try { return decodeURIComponent(c.pic.credit); } catch (e) { return c.pic.credit; } })() : "навчальний довідник ВОС276") : (Game.cardCredits && Game.cardCredits.get(c.id)) || "";
       const weak = (window.CARD_WEAK || {})[c.id];
+      // плутанина: що обрали замість правильної (варіант або вписана назва іншої техніки) — запам'ятати й показати різницю
+      let other = null;
+      if (!r.ok && !timeout) {
+        other = this.chosen && this.chosen.id !== c.id ? this.chosen : (() => { const id = check.idx && check.idx.get(norm(answer)); return id && id !== c.id ? this.deck().find((x) => x.id === id) : null; })();
+        if (other) confAdd(c.id, other.id);
+      }
+      if (!other && c.partner) other = this.deck().find((x) => x.id === c.partner);   // режим «Пари»: різниця — і при правильній відповіді
+      const cap = (s) => esc(s.charAt(0).toUpperCase() + s.slice(1));
+      // відмінна ознака: така, якої немає в описі іншої техніки пари (однакові ознаки нічого не пояснюють)
+      const diff = (x, y) => { const l = (x && this.signOf(x)) || [], o = new Set(((y && this.signOf(y)) || []).map(norm)); return l.find((t) => !o.has(norm(t))) || ""; };
+      const oSign = diff(other, c), cSign = diff(c, other);
+      const contrast = other ? `<p class="c-contrast">⚖ ${r.ok ? "Не плутати з" : "Ви обрали"} <b>${UI.nameHtml(other.name)}</b>${oSign ? `: ${cap(oSign)}` : ""}${cSign ? `<br>А тут — <b>${UI.nameHtml(c.name)}</b>: ${cap(cSign)}` : ""}</p>` : "";
       // хардкор: одна можлива помилка, друга — кінець гри
       const over = this.mode.lives != null && this.results.filter((x) => !x.ok).length > this.mode.lives;
       if (over) this.rounds = this.rounds.slice(0, this.idx + 1);
-      $("c-reveal").innerHTML = `${verdict}${over ? `<p class="c-v no">💀 Друга помилка — хардкор завершено</p>` : ""}${c.concept ? `<p class="c-concept-tag">КОНЦЕПТ</p>` : ""}<h3>${UI.nameHtml(c.name)}</h3><p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Недоліки:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
+      $("c-reveal").innerHTML = `${verdict}${over ? `<p class="c-v no">💀 Друга помилка — хардкор завершено</p>` : ""}${c.concept ? `<p class="c-concept-tag">КОНЦЕПТ</p>` : ""}<h3>${UI.nameHtml(c.name)}</h3>${contrast}<p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Недоліки:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
       this.showMarks(c);
       const last = this.idx === this.rounds.length - 1;
@@ -383,7 +443,7 @@
       const res = this.results, max = 10 * (this.mode.lives != null && !this.fix ? (this.planned || res.length) : res.length), total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.round(100 * total / max) : 0, m = this.mode;
       const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);
-      $("sum-title").textContent = `${this.fix ? "Робота над помилками · картки" : `Картки${m.id === "exam" ? " · Іспит" : m.hard ? " · Хардкор" : ""}`} · ${Game.callsign}`;
+      $("sum-title").textContent = `${this.fix ? "Робота над помилками · картки" : `Картки${m.id === "exam" ? " · Іспит" : m.hard ? " · Хардкор" : m.pairs ? " · Пари" : ""}`} · ${Game.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
       $("sum-total").style.color = m.pass ? (pct >= m.pass ? "var(--hit)" : "var(--miss)") : pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
       const rk = Logic.rank(pct);
@@ -392,7 +452,7 @@
         res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${UI.nameHtml(r.name)}</td><td class="${r.ok ? "t-ok" : "t-no"}">${esc(r.answer || "—")}${r.hint ? " 💡" : ""}</td><td class="num">${r.score}</td></tr>`).join("");
       const now = new Date(), p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: Game.callsign, scores: res.map((r) => r.score), max, mode: m.id === "exam" ? "cards_exam" : m.hard ? "cards_hard" : "cards",
-        conclusion: this.fix ? `Картки (робота над помилками): ${concl}` : `Картки${m.id === "exam" ? " (іспит)" : m.hard ? " (хардкор)" : ""}: ${concl}`,
+        conclusion: this.fix ? `Картки (робота над помилками): ${concl}` : `Картки${m.id === "exam" ? " (іспит)" : m.hard ? " (хардкор)" : m.pairs ? " (пари)" : ""}: ${concl}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`, clicks: [],
         items: res.map((r) => ["cards", r.id, r.name, r.cat, r.ok ? 1 : 0])};
       const q = LS.get("poshuk_pending", []); q.push(item); LS.set("poshuk_pending", q);
