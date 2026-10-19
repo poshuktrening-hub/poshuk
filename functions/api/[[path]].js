@@ -9,7 +9,7 @@
  * налаштування й паролі з Google-таблиці.
  */
 import {fillTick, fillState, fillReset, fillInfo, fillOne} from "./photofill.js";
-import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg, rememberReject} from "./cardref.js";
+import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg, rememberReject, markAdmin} from "./cardref.js";
 const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
 const LOCK_FAILS = 20, LOCK_SECONDS = 15 * 60;       // невдалі входи з однієї адреси за 15 хв → ця адреса чекає 15 хв (клас за одним Wi-Fi — одна адреса, тому не менше)
@@ -885,6 +885,7 @@ async function action(env, ctx, req, origin) {
       const id = String(req.id || "");
       if (!/^[a-z0-9_]+$/.test(id)) throw new HttpError("Невірний id картки");
       const r = await fillOne(env, id, Math.max(0, Number(req.skip) || 0));
+      if (r.ok && r.img) await markAdmin(env, r.img);   // вибране адміністратором 🔎 — під захистом
       return {ok: true, put: !!r.ok, found: r.found || 0, credit: r.credit || "", updated: r.updated || ""};
     }
     case "card_photo_upload": {
@@ -893,6 +894,7 @@ async function action(env, ctx, req, origin) {
       if (!req.data || req.data.length > 1_900_000) throw new HttpError("Фото завелике (до ~1,4 МБ)");
       // фото картки — у довідник (перше в записі картки; попереднє фото «з картки» замінюється)
       const r = await putCardImg(env, id, {data: String(req.data), mime: String(req.mime || "image/jpeg"), credit: String(req.credit || ""), replace: true});
+      await markAdmin(env, r.img);   // завантажене адміністратором — під захистом від автопошуку
       await env.DB.prepare("DELETE FROM card_photos WHERE id=?").bind(id).run();
       return {ok: true, updated: r.updated};
     }
