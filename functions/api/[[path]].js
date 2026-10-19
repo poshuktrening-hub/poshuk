@@ -83,11 +83,14 @@ async function loginLocked(env, ip) {
   if (r.until > now) return "Забагато невдалих спроб з вашої адреси. Спробуйте за 15 хвилин.";
   return null;
 }
-async function loginFail(env, ip) {
+async function loginFail(env, ip, p) {
   const now = Date.now(), win = LOCK_SECONDS * 1000;
   const k = "fails_" + ipKey(ip), r = jp(await metaGet(env, k), {});
+  // той самий невірний пароль повторно (старий пароль на телефоні, повтор тієї ж одруківки) — рахуємо один раз
+  const h = (await hmac(env, "fp." + String(p || ""))).slice(0, 12), seen = r.t0 && now - r.t0 < win ? (r.h || []) : [];
+  if (seen.includes(h)) { await sleep(400 + Math.random() * 400); return; }
   const n = (r.t0 && now - r.t0 < win ? r.n : 0) + 1;
-  await metaSet(env, k, JSON.stringify({t0: r.t0 && now - r.t0 < win ? r.t0 : now, n, until: n >= LOCK_FAILS ? now + win : 0}));
+  await metaSet(env, k, JSON.stringify({t0: r.t0 && now - r.t0 < win ? r.t0 : now, n, until: n >= LOCK_FAILS ? now + win : 0, h: seen.concat(h).slice(-30)}));
   const g = jp(await metaGet(env, "fails_g"), {});
   const gn = (g.t0 && now - g.t0 < win ? g.n : 0) + 1;
   await metaSet(env, "fails_g", JSON.stringify({t0: g.t0 && now - g.t0 < win ? g.t0 : now, n: gn, until: gn >= GLOBAL_FAILS ? now + win : 0}));
@@ -336,11 +339,13 @@ async function auth(env, req, need) {
   if (req.t) { const r = await tokenState(env, req.t, need); if (r === "stale") stale = true; else if (r) return r; }
   const ip = req._ip || "local";
   rateLimit(ip, "login");
+  // блокування після невдалих спроб перевіряється ПІСЛЯ пароля: правильний пароль пускає завжди
+  // (клас за одним Wi-Fi — одна адреса; чужі одруківки не мають закривати вхід усім), невірний — чекає
   const locked = await loginLocked(env, ip);
-  if (locked) throw new HttpError(locked, 429);
   let s = await settings(env);
   const p = String(req.p || "").slice(0, 200);
   if (s._empty) {
+    if (locked) throw new HttpError(locked, 429);
     const err = await bootstrap(env, p);
     if (err) {
       if (/спроб/i.test(err)) throw new HttpError("Google-скрипт тимчасово заблокував вхід після невдалих спроб. Спробуйте за 15 хвилин.");
@@ -353,13 +358,14 @@ async function auth(env, req, need) {
   if (need === "admin" ? isAdmin : isPlayer) { await loginOk(env, ip); return isAdmin ? "admin" : "player"; }
   if (!p && req.t && need === "offline") throw new HttpError("Ключ офлайн-пристрою недійсний — завантажте офлайн-версію заново", 401);   // не рахуємо як перебір
   // пароль змінили в Google-таблиці — сайт підхоплює його звідти (не частіше разу на 20 с)
+  if (locked) { await sleep(1500 + Math.random() * 1000); throw new HttpError(locked, 429); }   // під час блокування невірний пароль не перевіряється далі й не синхронізується
   if (p && p.length >= 6 && Date.now() - lastSync > 20e3) {
     lastSync = Date.now();
     const role = await syncFromSheet(env, p);
     if (role && (need !== "admin" || role === "admin")) { await loginOk(env, ip); return role; }
   }
   if (stale) throw new HttpError("Пароль змінено — увійдіть із новим паролем", 401);   // пристрій зі старим паролем: не рахуємо як перебір
-  await loginFail(env, ip);
+  await loginFail(env, ip, p);
   throw new HttpError("Невірний пароль");
 }
 
