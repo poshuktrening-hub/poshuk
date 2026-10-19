@@ -73,8 +73,9 @@ for (const [id, name, al] of window.CARDS) {
     "бтр": "apc btr бтр", "корабель": "ship vessel corvette frigate корабль корабель", "крейсер": "cruiser крейсер", "катер": "boat катер", "підводний": "submarine подводная підводний",
     "літак": "aircraft plane bomber fighter самолет літак", "гелікоптер": "helicopter вертолет гелікоптер", "робот": "robot ugv робот", "гранатомет": "grenade launcher гранатомет",
     "зрк": "sam missile launcher зрк", "зргк": "sam зргк зрпк", "птрк": "atgm птрк", "бронеавтомобіль": "armoured armored vehicle бронеавтомобиль бронеавтомобіль", "лазерний": "laser лазер",
-    "мінний": "mine minelayer минный мінний", "рсзв": "mlrs rocket рсзо рсзв", "отрк": "missile launcher отрк"};
-  const extra = (queries[id][0] || "").split(/\s+/).map(nz).filter((w) => w.length >= 4 && !/\d/.test(w) && !cf.includes(w));
+    "мінний": "mine minelayer минный мінний", "рсзв": "mlrs rocket рсзо рсзв", "отрк": "missile launcher отрк",
+    "катер-дрон": "drone boat naval usv unmanned sea катер", "гаубиця": "howitzer artillery gun гаубица гаубиця"};
+  const extra = (queries[id][0] || "").split(/\s+/).map(nz).filter((w) => w.length >= 4 && !/\d/.test(w) && !cf.some((c) => c.startsWith(w) || w.startsWith(c)));   // слово-шифр («Magura») — не підтвердження типу
   typew[id] = [...new Set([...(TYPE[first] || "").split(" ").filter(Boolean).map(nz), ...extra])].slice(0, 16);
 }
 const v = "4-" + crypto.createHash("sha1").update(JSON.stringify([order, queries, variants, indexes, codes, typew, strong])).digest("hex").slice(0, 10);
