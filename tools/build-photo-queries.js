@@ -58,9 +58,10 @@ for (const [id, name, al] of window.CARDS) {
   const cs = [...name.matchAll(/«([^»]+)»/g)].map((m) => m[1]);
   for (const c of cs.slice()) {
     const head = c.split(/[-\s]?\d/)[0]; if (/\d/.test(c) && head && nz(head).length >= 4) cs.push(head);   // «Ланцет-3» → ланцет
-    const h2 = c.split(/[-\s]/)[0]; if (h2 !== c && nz(c).length >= 5 && nz(h2).length >= 3 && !/\d/.test(h2)) cs.push(h2);   // «Оса-АКМ» → оса, «Тигр-М СпН» → тигр
+    const h2 = c.split(/[-\s]/)[0]; if (h2 !== c && nz(c).length >= 5 && nz(h2).length >= 3 && !/\d/.test(h2) && !/^[A-Za-z]+\s[A-Za-z]/.test(c)) cs.push(h2);   // «Оса-АКМ» → оса, «Тигр-М СпН» → тигр; «Big Bird» — лише цілим
   }
-  const abbr = toks.slice(1).filter((t) => (/^[А-ЯІЇЄҐA-Z]{2,}(-[А-ЯІЇЄҐA-Z][А-ЯІЇЄҐA-Zа-яіїєґ]*)*$/.test(t) || /^[A-Za-z][A-Za-z-]{3,}$/.test(t)) && !/\d/.test(t));   // абревіатури та латинські назви (ZALA, Desertcross)
+  // абревіатури — лише поза «лапками»: «Big Bird», «Argus» — звичайні слова, не позначення
+  const abbr = outside.slice(1).filter((t) => (/^[А-ЯІЇЄҐA-Z]{2,}(-[А-ЯІЇЄҐA-Z][А-ЯІЇЄҐA-Zа-яіїєґ]*)*$/.test(t) || /^[A-Za-z][A-Za-z-]{3,}$/.test(t)) && !/\d/.test(t));   // абревіатури та латинські назви (ZALA, Desertcross)
   const cf = [...new Set([...cs.flatMap(forms).filter((x) => x.length >= 3), ...abbr.flatMap(forms).filter((x) => x.length >= 3)])];
   codes[id] = cf.slice(0, 24);
   // «сильні» шифри — самі по собі позначення: абревіатури (МТ-ЛБ) і шифри з літерним індексом через дефіс (Панцир-СМ, Мурманськ-БН, Тигр-М)

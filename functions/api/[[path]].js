@@ -9,7 +9,7 @@
  * налаштування й паролі з Google-таблиці.
  */
 import {fillTick, fillState, fillReset, fillInfo, fillOne} from "./photofill.js";
-import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg} from "./cardref.js";
+import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg, rememberReject} from "./cardref.js";
 const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
 const LOCK_FAILS = 20, LOCK_SECONDS = 15 * 60;       // невдалі входи з однієї адреси за 15 хв → ця адреса чекає 15 хв (клас за одним Wi-Fi — одна адреса, тому не менше)
@@ -823,6 +823,7 @@ async function action(env, ctx, req, origin) {
       if (req.keepCp && old) JSON.parse(old.imgs || "[]").filter((x) => x.startsWith("cp_") && !imgs.includes(x)).forEach((x) => imgs.push(x));
       imgs = imgs.slice(0, 20);
       const now = new Set(imgs);
+      if (old) await rememberReject(env, JSON.parse(old.imgs || "[]").filter((x) => !now.has(x)));   // прибране автопідібране фото — не підбирати знову
       if (old) JSON.parse(old.imgs || "[]").filter((x) => !now.has(x)).forEach((x) => st.push(env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(x), env.DB.prepare("DELETE FROM ref_marks WHERE img=?").bind(x)));
       // картка: міняється лише якщо її передано («» — відв'язати)
       const card = e.card === undefined || e.card === null ? (old && old.card) || "" : String(e.card);
