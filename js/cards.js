@@ -9,7 +9,7 @@
     game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника.", hint: true, choice: true, sign: true},
     exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
     ff: {id: "ff", name: "Свій/чужий", desc: "15 с на картку: своя це техніка чи ворожа. Вірно +10, помилка −2, не встиг відповісти −1.", ff: true, sec: 15},
-    reveal: {id: "reveal", name: "Проявлення", desc: "Фото спершу сильно розмите й поступово проступає — як погане відео чи знімок з висоти. Що раніше вірно назвав, то більше балів: від 10 до 2. Помилка — 0. 4 варіанти, без підказок, 20 с.", choice: true, reveal: true, sec: 20},
+    reveal: {id: "reveal", name: "Проявлення", desc: "Фото спершу грубо пікселізоване й поступово проступає — як погане відео чи знімок з висоти. Що раніше вірно назвав, то більше балів: від 10 до 2. Помилка — 0. 4 варіанти, без підказок, 20 с.", choice: true, reveal: true, sec: 20},
     hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
 
@@ -248,7 +248,7 @@
       this.fitViewport();
       this.next();
     },
-    stop() { clearInterval(this.tT); clearInterval(this.rT); },
+    stop() { clearInterval(this.tT); clearInterval(this.rT); this.unpixel(); const i = $("c-img"); if (i) i.style.visibility = ""; },
 
     /* Телефон: коли відкрито клавіатуру — екран займає лише видиму частину, фото стискається. */
     fitViewport() {
@@ -284,7 +284,7 @@
       }
       if (window.Marks) Marks.clear($("c-pic"));
       const img = $("c-img"); img.removeAttribute("src"); $("c-loading").hidden = false;
-      img.style.filter = this.mode.reveal ? `blur(${this.blurPx(0)}px)` : "";
+      this.unpixel(); if (this.mode.reveal) img.style.visibility = "hidden";   // «Проявлення»: фото — лише через пікселі
       const url = await this.photoUrl(c.id, c.pic).catch(() => null);
       await new Promise((res) => { img.onload = img.onerror = res; img.src = url || ""; });
       $("c-loading").hidden = true;
@@ -302,16 +302,30 @@
       $("c-time").textContent = `0:${String(Math.ceil(left)).padStart(2, "0")}`;
       $("c-time").classList.toggle("warn", left <= 10);
       $("c-timebar").style.transform = `scaleX(${left / T})`;
-      if (this.mode.reveal && !this.over) { const b = this.blurPx(1 - left / T); $("c-img").style.filter = b > 0.2 ? `blur(${b.toFixed(1)}px)` : ""; $("c-time").title = `Зараз за вірну відповідь: +${this.revealScore()}`; $("c-hint").innerHTML = `Зараз за вірну: <b>+${this.revealScore()}</b>`; $("c-hint").hidden = false; }
+      if (this.mode.reveal && !this.over) { this.pixel(1 - left / T); $("c-time").title = `Зараз за вірну відповідь: +${this.revealScore()}`; $("c-hint").innerHTML = `Зараз за вірну: <b>+${this.revealScore()}</b>`; $("c-hint").hidden = false; }
       document.querySelector("#s-cards .timebar").classList.toggle("warn", left <= 10);
       if (left <= 0) this.finish("", true);
     },
 
-    /* «Проявлення»: розмиття від ~6% ширини фото до нуля на 85% часу */
-    blurPx(p) {
-      const w = ($("c-pic") && $("c-pic").clientWidth) || 600, k = Math.max(0, 1 - p / 0.85);
-      return w * 0.06 * Math.pow(k, 1.3);
+    /* «Проявлення»: пікселізація — квадрати від ~7% ширини фото до повної чіткості на ~42% часу (≈8,5 с із 20) */
+    pixel(p) {
+      const img = $("c-img"), box = $("c-pic"); if (!img.naturalWidth || !box) return;
+      let cv = $("c-pix");
+      if (!cv) { cv = document.createElement("canvas"); cv.id = "c-pix"; cv.className = "c-pix"; box.appendChild(cv); }
+      const dpr = Math.min(2, devicePixelRatio || 1), W = box.clientWidth, H = box.clientHeight;
+      if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+      // той самий прямокутник, що й object-fit: contain
+      const r = Math.min(W / img.naturalWidth, H / img.naturalHeight), dw = img.naturalWidth * r, dh = img.naturalHeight * r, dx = (W - dw) / 2, dy = (H - dh) / 2;
+      const k = Math.max(0, 1 - p / 0.425), block = Math.max(1, W * 0.07 * Math.pow(k, 1.3));
+      if (block <= 1.2) { this.unpixel(); img.style.visibility = ""; return; }
+      const bs = Math.round(block * 2) / 2; if (cv._b === bs) return; cv._b = bs;   // перемальовувати лише коли змінився розмір квадрата
+      const sw = Math.max(2, Math.round(dw / block)), sh = Math.max(2, Math.round(dh / block));
+      const t = this._pt || (this._pt = document.createElement("canvas")); t.width = sw; t.height = sh;
+      const tc = t.getContext("2d"); tc.imageSmoothingEnabled = true; tc.drawImage(img, 0, 0, sw, sh);
+      const x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, W, H); x.imageSmoothingEnabled = false;
+      x.drawImage(t, 0, 0, sw, sh, dx, dy, dw, dh);
     },
+    unpixel() { const cv = $("c-pix"); if (cv) cv.remove(); },
     revealScore() {
       const T = this.mode.sec || ROUND_SEC, el = (performance.now() - (this.t0 || performance.now())) / 1000;
       return Math.max(2, Math.ceil(10 * (1 - el / T)));
@@ -424,7 +438,7 @@
       if (this.mode.ff) return this.ffAnswer("", true);
       if (this.over) return;
       this.over = true; this.stop();
-      $("c-img").style.filter = "";   // «Проявлення»: після відповіді — чітке фото
+      this.unpixel(); $("c-img").style.visibility = "";   // «Проявлення»: після відповіді — чітке фото
       const c = this.cur, r = timeout ? {ok: false} : picked !== undefined ? {ok: picked, exact: true} : check(c, answer), score = r.ok ? (this.mode.reveal ? this.revealScore() : 10) : 0;
       this.results.push({id: c.id, name: c.name, answer, ok: r.ok, score, hint: this.hintUsed, cat: Logic.category(c.name)});
       $("c-score").textContent = this.results.reduce((a, x) => a + x.score, 0);

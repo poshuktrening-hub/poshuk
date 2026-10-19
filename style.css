@@ -1223,3 +1223,5 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   .main-menu:not(:has(.mm-duel[hidden])) .mm-ref .mm-ic { width: 38px !important; height: 38px !important; border-radius: 11px !important; }
   .main-menu:not(:has(.mm-duel[hidden])) .mm-ref .mm-h b { width: auto !important; }
 }
+/* «Проявлення»: пікселізоване фото поверх прихованого оригіналу */
+.c-pic .c-pix { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
