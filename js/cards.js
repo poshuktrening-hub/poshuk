@@ -8,7 +8,7 @@
   const MODES = {
     game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника.", hint: true, choice: true, sign: true},
     exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
-    ff: {id: "ff", name: "Свій/чужий", desc: "15 с на картку: своя це техніка чи ворожа. Помилка −2, «не впевнений» −1 — краще чесно не знати, ніж ударити по своїх.", ff: true, sec: 15},
+    ff: {id: "ff", name: "Свій/чужий", desc: "15 с на картку: своя це техніка чи ворожа. Вірно +10, помилка −2, не встиг відповісти −1.", ff: true, sec: 15},
     pairs: {id: "pairs", name: "Пари", desc: "Техніка, яку ви найчастіше плутаєте, — парами підряд: спершу одна, одразу за нею друга. Після відповіді — чим вони відрізняються.", hint: true, choice: true, sign: true, pairs: true},
     hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
@@ -294,7 +294,7 @@
       $("c-weak-btn").hidden = !this.mode.sign; $("c-weak-btn").disabled = !this.weakOf(c);
       $("c-answer").value = ""; $("c-answer").disabled = false; $("c-check").disabled = false;
       if (this.mode.ff) {
-        $("c-choices").innerHTML = `<button type="button" class="ff-own" data-ff="own"><i>1</i><span>🟦 Свій</span></button><button type="button" class="ff-foe" data-ff="foe"><i>2</i><span>🟥 Чужий</span></button><button type="button" class="ff-unsure" data-ff="unsure"><i>3</i><span>❔ Не впевнений</span></button>`;
+        $("c-choices").innerHTML = `<button type="button" class="ff-own" data-ff="own"><i>1</i><span>🟦 Свій</span></button><button type="button" class="ff-foe" data-ff="foe"><i>2</i><span>🟥 Чужий</span></button>`;
         $("c-choices").querySelectorAll("[data-ff]").forEach((b) => (b.onclick = () => this.ffAnswer(b.dataset.ff)));
       } else if (this.mode.choice) {
         const opts = this.opts = options(c, this._deck, [c.partner, ...confWith(c.id)].filter(Boolean));
@@ -390,9 +390,9 @@
       if (this.over) return;
       this.over = true; this.stop();
       const c = this.cur, truth = c.own ? "own" : "foe";
-      if (timeout) a = "unsure";   // не встиг вирішити — як «не впевнений»
+      if (timeout) a = "unsure";   // не встиг вирішити — −1
       const ok = a === truth, score = ok ? 10 : a === "unsure" ? -1 : -2;
-      const label = {own: "свій", foe: "чужий", unsure: "не впевнений"}[a] || "—";
+      const label = {own: "свій", foe: "чужий", unsure: "—"}[a] || "—";
       this.results.push({id: c.id, name: c.name, answer: timeout ? "час вийшов" : label, ok, score, hint: false, cat: Logic.category(c.name)});
       $("c-score").textContent = this.results.reduce((s, r) => s + r.score, 0);
       if (ok) SFX.hit(); else SFX.miss();
@@ -400,7 +400,7 @@
       $("c-form").hidden = true; $("c-choices").innerHTML = "";
       const sign = this.signOf(c), cap = (s) => esc(s.charAt(0).toUpperCase() + s.slice(1));
       const v = ok ? `<p class="c-v ok">✓ Вірно: ${c.own ? "🟦 свій" : "🟥 чужий"} · +10</p>`
-        : a === "unsure" ? `<p class="c-v no">${timeout ? "⏱ Час вийшов" : "❔ Не впевнений"} · −1. Це ${c.own ? "🟦 свій" : "🟥 чужий"}.</p>`
+        : a === "unsure" ? `<p class="c-v no">⏱ Час вийшов · −1. Це ${c.own ? "🟦 свій" : "🟥 чужий"}.</p>`
         : truth === "own" ? `<p class="c-v no ff-frat">⚠ Удар по своїх! Це 🟦 своя техніка · −2</p>`
         : `<p class="c-v no">✗ Пропущено ворога: це 🟥 чужий · −2</p>`;
       $("c-reveal").innerHTML = `${v}<h3>${UI.nameHtml(c.name)}</h3>${sign ? `<p class="c-contrast">🔎 ${cap(sign[0])}</p>` : ""}<p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>
@@ -428,7 +428,7 @@
     },
 
     finish(answer, timeout, picked) {
-      if (this.mode.ff) return this.ffAnswer(timeout ? "" : "unsure", timeout);
+      if (this.mode.ff) return this.ffAnswer("", true);
       if (this.over) return;
       this.over = true; this.stop();
       const c = this.cur, r = timeout ? {ok: false} : picked !== undefined ? {ok: picked, exact: true} : check(c, answer), score = r.ok ? 10 : 0;
