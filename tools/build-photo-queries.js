@@ -4,7 +4,7 @@ const fs = require("fs"), path = require("path"), crypto = require("crypto");
 global.window = {};
 for (const f of ["cards-data", "cards-data3", "cards-commons", "cards-data2", "cards-own"]) require(path.join(__dirname, "..", "js", f + ".js"));
 const ref = window.CARD_REF || {}, com = window.CARD_COMMONS || {};
-const order = [], queries = {}, names = {}, variants = {}, indexes = {}, codes = {}, typew = {}, strong = {};
+const strict = [], order = [], queries = {}, names = {}, variants = {}, indexes = {}, codes = {}, typew = {}, strong = {};
 const nz = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9а-яіїєґ]/g, "");
 // російське написання (на Вікісховищі багато файлів з mil.ru): і/ї→и, є→е
 const ru = (x) => x.replace(/[іїІЇ]/g, (c) => (c === c.toLowerCase() ? "и" : "И")).replace(/є/g, "е").replace(/Є/g, "Е").replace(/ськ/g, "ск").replace(/СЬК/g, "СК");
@@ -74,11 +74,14 @@ for (const [id, name, al] of window.CARDS) {
     "літак": "aircraft plane bomber fighter самолет літак", "гелікоптер": "helicopter вертолет гелікоптер", "робот": "robot ugv робот", "гранатомет": "grenade launcher гранатомет",
     "зрк": "sam missile launcher зрк", "зргк": "sam зргк зрпк", "птрк": "atgm птрк", "бронеавтомобіль": "armoured armored vehicle бронеавтомобиль бронеавтомобіль", "лазерний": "laser лазер",
     "мінний": "mine minelayer минный мінний", "рсзв": "mlrs rocket рсзо рсзв", "отрк": "missile launcher отрк",
-    "катер-дрон": "drone boat naval usv unmanned sea катер", "гаубиця": "howitzer artillery gun гаубица гаубиця"};
+    "катер-дрон": "drone boat naval usv unmanned sea катер", "гаубиця": "howitzer artillery gun гаубица гаубиця",
+    "понтонний": "pontoon ponton bridge понтон понтонный понтонний переправа", "паром": "ferry pontoon amphibious паром понтон", "мостоукладач": "bridgelayer bridge layer avlb мостоукладчик мостоукладач"};
+  // суворі: позначення збігається з чужим (ПП-91 — ще й пістолет-кулемет «Кедр», номер ділянки на мапі) — у підписі фото має бути й слово типу
+  if (/^ПП-\d/.test(name.replace(/^[^\s]+\s+[^\s]+\s+/, "")) && first === "понтонний") strict.push(id);
   const extra = (queries[id][0] || "").split(/\s+/).map(nz).filter((w) => w.length >= 4 && !/\d/.test(w) && !cf.some((c) => c.startsWith(w) || w.startsWith(c)));   // слово-шифр («Magura») — не підтвердження типу
   typew[id] = [...new Set([...(TYPE[first] || "").split(" ").filter(Boolean).map(nz), ...extra])].slice(0, 16);
 }
-const v = "4-" + crypto.createHash("sha1").update(JSON.stringify([order, queries, variants, indexes, codes, typew, strong])).digest("hex").slice(0, 10);
+const v = "4-" + crypto.createHash("sha1").update(JSON.stringify([order, queries, variants, indexes, codes, typew, strong, strict])).digest("hex").slice(0, 10);
 const out = `/* Згенеровано tools/build-photo-queries.js — не редагувати вручну. Картки без фото з довідника та запити до Вікісховища. */
 export const LIST_V = ${JSON.stringify(v)};
 export const ORDER = ${JSON.stringify(order)};
@@ -89,6 +92,7 @@ export const DESIG = ${JSON.stringify(indexes)};
 export const CODES = ${JSON.stringify(codes)};
 export const TYPEW = ${JSON.stringify(typew)};
 export const STRONG = ${JSON.stringify(strong)};
+export const STRICT = ${JSON.stringify(strict)};
 `;
 fs.writeFileSync(path.join(__dirname, "..", "functions", "api", "photo-queries.js"), out);
 console.log("cards:", order.length, "version:", v, "without query from commons list:", order.filter((id) => !com[id]).length,

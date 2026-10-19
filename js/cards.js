@@ -82,25 +82,22 @@
     ["РСЗВ", "ОТРК", "БРК"], ["ЗРК", "ЗРГК", "ЗРС", "ЗСУ", "ЗУ", "ЗАК", "КП", "ПЗУ"], ["РЕБ", "РЛС", "АРК", "КШМ", "Машина"],
     ["Вантажівка", "Автомобіль", "Паливозаправник", "ТЗМ", "Сідельний", "Багі"],
     ["ІМР", "БАТ", "Мінний", "ПТС", "БРЕМ", "Мостоукладач", "Понтонний", "Паром", "ПЗМ", "МДК", "Робот", "Екскаватор", "БМР", "ТМК-2", "БТС", "РЕМ-КЛ", "МТП-А2", "МТО-УБ1"],
-    ["БпЛА", "Катапульта"], ["Гелікоптер", "Літак"], ["ПТРК"]];
+    ["БпЛА", "Катапульта", "БпЛА-мішень"], ["Гелікоптер", "Літак", "Літак-амфібія"], ["ПТРК"],
+    ["Фрегат", "Корабель", "Тральщик", "Катер", "Крейсер", "Буксир", "Підводний", "Катер-дрон", "Безекіпажний"]];   // флот — варіанти лише з кораблів
+  const NAVY = GROUPS[GROUPS.length - 1];
   const typeOf = (c) => c.name.split(" ")[0];
   const quoted = (c) => (c.name.match(/«([^»]+)»/) || [])[1] || "";
-  /* Флот: на картку з кораблем/катером хибні варіанти — лише кораблі й катери (ніяких ЗРК чи літаків). */
-  const SHIPS = ["Фрегат", "Корабель", "Крейсер", "Катер", "Катер-дрон", "Есмінець", "Корвет", "Ракетоносець", "Підводний", "Човен", "Підводний човен", "Десантний", "БДК", "МРК", "МПК", "Тральщик"];
-  const isShip = (c) => SHIPS.includes(typeOf(c));
-  function options(card, deck, must) {
+  function options(card, deck, must, all) {
     const t = typeOf(card), g = GROUPS.find((x) => x.includes(t)) || [t], q = quoted(card);
-    let pool = deck.filter((c) => c.id !== card.id && !(q && quoted(c) === q));
-    if (isShip(card)) {
-      // кораблі беремо з поточної колоди; якщо їх замало (<3) — докидаємо кораблі з усієї колоди, але не іншу техніку
-      let ships = pool.filter(isShip);
-      if (ships.length < 3) ships = ships.concat(Cards.deck().filter((c) => c.id !== card.id && isShip(c) && !ships.includes(c) && !(q && quoted(c) === q)));
-      pool = ships;
-    }
-    const pick = [], add = (list) => { for (const c of Logic.shuffle(list)) { if (pick.length >= 3) break; if (!pick.includes(c)) pick.push(c); } };
+    const fit = (c) => c.id !== card.id && !(q && quoted(c) === q);
+    const pool = deck.filter(fit), wide = (all || deck).filter((c) => fit(c) && !c.own);
+    const pick = [], add = (list) => { for (const c of Logic.shuffle(list)) { if (pick.length >= 3) break; if (!pick.some((x) => x.id === c.id)) pick.push(c); } };
     // те, з чим цю техніку плутають (пара або власні помилки), — серед варіантів обов'язково
-    for (const id of must || []) { const c = pool.find((x) => x.id === id); if (c && pick.length < 2 && !pick.includes(c)) pick.push(c); }
-    add(pool.filter((c) => typeOf(c) === t)); add(pool.filter((c) => g.includes(typeOf(c)))); add(pool);
+    const navy = NAVY.includes(t);
+    for (const id of must || []) { const c = pool.find((x) => x.id === id); if (c && pick.length < 2 && !pick.includes(c) && (!navy || NAVY.includes(typeOf(c)))) pick.push(c); }
+    add(pool.filter((c) => typeOf(c) === t)); add(pool.filter((c) => g.includes(typeOf(c))));
+    add(wide.filter((c) => g.includes(typeOf(c))));   // своєї групи замало на цьому рівні — беремо з усієї техніки тієї ж групи
+    if (!navy) add(pool);
     return Logic.shuffle([card, ...pick]);
   }
 
@@ -281,7 +278,7 @@
         $("c-choices").innerHTML = `<button type="button" class="ff-own" data-ff="own"><i>1</i><span>🟦 Свій</span></button><button type="button" class="ff-foe" data-ff="foe"><i>2</i><span>🟥 Чужий</span></button>`;
         $("c-choices").querySelectorAll("[data-ff]").forEach((b) => (b.onclick = () => this.ffAnswer(b.dataset.ff)));
       } else if (this.mode.choice) {
-        const opts = this.opts = options(c, this._deck, confWith(c.id));
+        const opts = this.opts = options(c, this._deck, confWith(c.id), this.deck());
         $("c-choices").innerHTML = opts.map((o, i) => `<button type="button" data-ci="${i}"><i>${i + 1}</i><span>${UI.nameHtml(o.name)}</span></button>`).join("");
         $("c-choices").querySelectorAll("button").forEach((b) => (b.onclick = () => this.choose(opts[+b.dataset.ci])));
       }
