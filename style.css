@@ -1186,4 +1186,3 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 @keyframes pen-shake { 0%, 100% { transform: none; } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 @media (prefers-reduced-motion: reduce) { .pen-float, #g-time.pen { animation: none; } }
 .c-contrast { margin: 2px 0 8px !important; padding: 6px 10px; border-left: 3px solid var(--accent); background: rgba(255,178,62,.08); border-radius: 0 8px 8px 0; }
-.top3 li em .top-n { display: block; font-size: .62rem; font-weight: 500; color: var(--muted); text-align: right; line-height: 1.1; }
