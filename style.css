@@ -1209,13 +1209,17 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   #start-form[data-view="menu"] .logo { min-height: 50px; margin-bottom: 18px; }
   #start-form[data-view="menu"] > .cs-wrap { position: absolute; left: 32px; top: 31px; width: min(230px, 25%); z-index: 2; }
   #start-form[data-view="menu"] > .cs-wrap input { padding-top: .6rem; padding-bottom: .6rem; }
-  .main-menu:has(.mm-ff:not(.mm-wide)) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  .main-menu:has(.mm-ff:not(.mm-wide)):has(.mm-duel[hidden]) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .main-menu .mm-ff:not(.mm-wide) .mm-h b { white-space: nowrap; }
+  .main-menu:has(.mm-ff) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .main-menu:has(.mm-ff):has(.mm-duel[hidden]) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .main-menu .mm-ff .mm-h b { white-space: nowrap; }
 }
 .r-side button.on, .r-side button.on small { color: var(--fg); }
-/* ПК: «Довідник» — крайня права плитка (після «Свій/чужий») */
-@media (min-width: 900px) and (min-height: 600px) {
-  .main-menu .mm-ref { order: 1; }
-  .main-menu .mm-wide { order: 2; }
+/* «Довідник» — після «Свій/чужий» (на ПК крайній праворуч); на телефоні — широкою плиткою під квадратами 2×2 */
+.main-menu .mm-ref { order: 1; }
+.main-menu .mm-wide { order: 2; }
+@media not ((min-width: 900px) and (min-height: 600px)) {
+  .main-menu:not(:has(.mm-duel[hidden])) .mm-ref { grid-column: 1 / -1; min-height: 0 !important; padding: 12px 14px !important; justify-content: center; }
+  .main-menu:not(:has(.mm-duel[hidden])) .mm-ref .mm-h { flex-direction: row !important; justify-content: center; gap: 12px; }
+  .main-menu:not(:has(.mm-duel[hidden])) .mm-ref .mm-ic { width: 38px !important; height: 38px !important; border-radius: 11px !important; }
+  .main-menu:not(:has(.mm-duel[hidden])) .mm-ref .mm-h b { width: auto !important; }
 }
