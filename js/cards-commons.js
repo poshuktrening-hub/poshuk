@@ -190,7 +190,7 @@ Object.assign(window.CARD_COMMONS, {
   "mdk3": ["MDK-3"],
   "zemledelie": ["Zemledelie"],
   "uran6": ["Uran-6", "Uran-6.jpg"],
-  "pp91": [],
+  "pp91": ["PP-91 pontoon bridge", "понтонный парк ПП-91"],
   "eov4421": ["EOV-4421"],
   "ural375": ["Ural-375D"],
   "kamaz4310": ["KamAZ-4310"],

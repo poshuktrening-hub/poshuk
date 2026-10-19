@@ -3,7 +3,7 @@
    лише вільні ліцензії (CC0, PD, CC BY, CC BY-SA), ширина ≥ 700; якщо справжнього фото немає — креслення, модель або макет.
    Фото зберігається як у ручному підборі (card_photos: мініатюра 1280 px + підпис автора/ліцензії).
    Стан — у meta «photo_fill»: позиція у переліку, скільки знайдено, яких не знайдено. Перелік — photo-queries.js. */
-import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS, DESIG, CODES, TYPEW, STRONG} from "./photo-queries.js";
+import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS, DESIG, CODES, TYPEW, STRONG, STRICT} from "./photo-queries.js";
 import {cardPics, putCardImg, dropImg, CP} from "./cardref.js";
 
 const UA = "poshuk-trener/1.0 (https://poshuk.pages.dev; contact: mrqwerty841@gmail.com)";
@@ -67,6 +67,7 @@ function queryOk(q, text, id) {
 }
 /* Правило В: індекс або шифр самої картки. */
 function cardOk(id, text) {
+  if (STRICT.includes(id) && !(TYPEW[id] || []).some((k) => hasKey(nzMap(text), k))) return false;   // ПП-91: і слово типу (понтон, міст) також
   const own = [...(DESIG[id] || []), ...(CODES[id] || [])];
   if (!own.length) return true;
   const m = nzMap(text);
@@ -267,7 +268,7 @@ const BAD_IMGS = ["cp_prp4a-mvdyfszq", "cp_r91n6e-mvceob1i", "cp_r149-mvedavy9",
 /* Відхилені джерела (сторінки фото), які адміністратор або перевірка прибрали: автопошук їх більше не бере. */
 async function rejected(env) { try { return new Set(JSON.parse((await env.DB.prepare("SELECT v FROM meta WHERE k='photo_reject'").first() || {}).v || "[]")); } catch (e) { return new Set(); } }
 const fresh = (list, rej) => list.filter((c) => !rej.has(c.page) && !rej.has(c.url));
-const FILL_V = LIST_V + "+ov5";   // +ov5 — стрілецька зброя (ПП-91 «Кедр» замість понтонного парку ПП-91)   // +ov4 — птахи/персонажі в OFF_TOPIC, назва фото Openverse у підписі, відхилені джерела   // +ov2 — суворіше правило для карток без індексу: перевірка й прибирання ще раз   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
+const FILL_V = LIST_V + "+ov6";   // +ov6 — ПП-91: у підписі обов'язково слово типу (мапа замість ПП-91)   // +ov5 — стрілецька зброя (ПП-91 «Кедр» замість понтонного парку ПП-91)   // +ov4 — птахи/персонажі в OFF_TOPIC, назва фото Openverse у підписі, відхилені джерела   // +ov2 — суворіше правило для карток без індексу: перевірка й прибирання ще раз   // +ov1 — додано Openverse: перелік проходиться ще раз (знайдені фото лишаються)
 const WEEK = 7 * 24 * 3600e3;   // фоновий прохід — раз на тиждень (між проходами сервер Вікісховище не чіпає)
 const S0 = () => ({v: FILL_V, pos: 0, ok: 0, miss: [], at: 0, lock: 0});
 export async function fillState(env, metaGet) {
@@ -319,12 +320,12 @@ export async function fillTick(env, metaGet, metaSet, force) {
       if (/АрміяInform/.test(String(r.credit || ""))) { if (!AI_OK(card)) await dropImg(env, r.id); continue; }
       const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
       const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || cred.match(/^«([^»]+)»/) || [])[1] || "";   // Вікісховище — назва файлу, Openverse — назва фото
-      if (BAD_IMGS.includes(r.id) || OFF_TOPIC.test(cred) || (file && QUERIES[card] && !fileOk(card, file))) await dropImg(env, r.id);
+      if (BAD_IMGS.includes(r.id) || OFF_TOPIC.test(cred) || (STRICT.includes(card) && !cardOk(card, cred)) || (file && QUERIES[card] && !fileOk(card, file))) await dropImg(env, r.id);
     }
     for (const r of cr) {
       const cred = (() => { try { return decodeURIComponent(String(r.credit || "")); } catch (e) { return String(r.credit || ""); } })().replace(/_/g, " ");
       const file = (cred.match(/File:([^\s].*?)(\s\(|$)/) || [])[1] || "";
-      if (OFF_TOPIC.test(cred) || (file && QUERIES[r.id] && !fileOk(r.id, file))) await env.DB.prepare("DELETE FROM card_photos WHERE id=?").bind(r.id).run();
+      if (OFF_TOPIC.test(cred) || (STRICT.includes(r.id) && !cardOk(r.id, cred)) || (file && QUERIES[r.id] && !fileOk(r.id, file))) await env.DB.prepare("DELETE FROM card_photos WHERE id=?").bind(r.id).run();
     }
     s.cleaned = 1;
   }
