@@ -123,7 +123,7 @@
 
   const Cards = {
     MODES, check, norm, confWith, RU_ONLY,
-    ffPools() { return {own: this.withPhoto("own"), foe: this.withPhoto().filter((c) => RU_ONLY.test(c.name))}; },
+    ffPools() { const clean = (c) => !!this.pickPic(c.id, true); return {own: this.withPhoto("own").filter(clean), foe: this.withPhoto().filter((c) => RU_ONLY.test(c.name) && clean(c))}; },
     /* Пари для режиму «Пари»: спершу власні помилки (найчастіші й свіжі), далі — схожа техніка однієї родини з фото. */
     pairs(max = 5) {
       const ok = new Set(this.withPhoto().map((c) => c.id)), out = [], used = new Set();
@@ -198,7 +198,11 @@
       else if (!pool.length && (window.CARD_REF || {})[id]) pool.push({id: window.CARD_REF[id], v: "1"});
       return pool;
     },
-    pickPic(id) { const p = this.picPool(id); return p.length ? p[Math.floor(Math.random() * p.length)] : null; },
+    pickPic(id, ff) {
+      // «Свій/чужий»: без фото, де сторону видно одразу (прапор, зірки, Z/V, написи) — див. js/ff-skip.js
+      const p = this.picPool(id).filter((x) => !ff || !(x.id && (window.FF_SKIP || new Set()).has(x.id)));
+      return p.length ? p[Math.floor(Math.random() * p.length)] : null;
+    },
     /* адреса фото картки: своє/Вікісховище або зображення з довідника */
     photoUrl(id, pic) {
       pic = pic || this.pickPic(id);
@@ -251,7 +255,7 @@
         const byId = new Map(this.deck().map((c) => [c.id, c]));
         pool = this.pairs().list.flatMap(([a, b]) => Logic.shuffle([[a, b], [b, a]]).map(([x, y]) => Object.assign({}, byId.get(x), {partner: y})));
       }
-      this.rounds = pool.slice(0, ROUNDS).map((c) => Object.assign({}, c, {pic: this.pickPic(c.id)})); this.idx = -1; this.results = []; this.planned = this.rounds.length;
+      this.rounds = pool.slice(0, ROUNDS).map((c) => Object.assign({}, c, {pic: this.pickPic(c.id, !!this.mode.ff && !this.fix)})); this.idx = -1; this.results = []; this.planned = this.rounds.length;
       UI.show("s-cards");
       document.body.dataset.mode = "cards";
       $("c-form").onsubmit = (e) => { e.preventDefault(); this.submit(); };
