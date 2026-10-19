@@ -85,9 +85,18 @@
     ["БпЛА", "Катапульта"], ["Гелікоптер", "Літак"], ["ПТРК"]];
   const typeOf = (c) => c.name.split(" ")[0];
   const quoted = (c) => (c.name.match(/«([^»]+)»/) || [])[1] || "";
+  /* Флот: на картку з кораблем/катером хибні варіанти — лише кораблі й катери (ніяких ЗРК чи літаків). */
+  const SHIPS = ["Фрегат", "Корабель", "Крейсер", "Катер", "Катер-дрон", "Есмінець", "Корвет", "Ракетоносець", "Підводний", "Човен", "Підводний човен", "Десантний", "БДК", "МРК", "МПК", "Тральщик"];
+  const isShip = (c) => SHIPS.includes(typeOf(c));
   function options(card, deck, must) {
     const t = typeOf(card), g = GROUPS.find((x) => x.includes(t)) || [t], q = quoted(card);
-    const pool = deck.filter((c) => c.id !== card.id && !(q && quoted(c) === q));
+    let pool = deck.filter((c) => c.id !== card.id && !(q && quoted(c) === q));
+    if (isShip(card)) {
+      // кораблі беремо з поточної колоди; якщо їх замало (<3) — докидаємо кораблі з усієї колоди, але не іншу техніку
+      let ships = pool.filter(isShip);
+      if (ships.length < 3) ships = ships.concat(Cards.deck().filter((c) => c.id !== card.id && isShip(c) && !ships.includes(c) && !(q && quoted(c) === q)));
+      pool = ships;
+    }
     const pick = [], add = (list) => { for (const c of Logic.shuffle(list)) { if (pick.length >= 3) break; if (!pick.includes(c)) pick.push(c); } };
     // те, з чим цю техніку плутають (пара або власні помилки), — серед варіантів обов'язково
     for (const id of must || []) { const c = pool.find((x) => x.id === id); if (c && pick.length < 2 && !pick.includes(c)) pick.push(c); }
