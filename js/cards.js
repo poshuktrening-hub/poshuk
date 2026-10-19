@@ -214,7 +214,9 @@
     renderMenu() {
       let mode = LS.get("poshuk_cmode", "game"); if (!MODES[mode]) mode = "game";
       this.mode = MODES[mode];
-      $("pick-cmode").innerHTML = Object.values(MODES).map((m) =>
+      if (mode === "ff") mode = "game";   // «Свій/чужий» — у головному меню
+      this.mode = MODES[mode];
+      $("pick-cmode").innerHTML = Object.values(MODES).filter((m) => !m.ff).map((m) =>
         `<button type="button" role="radio" aria-checked="${m.id === mode}" class="mode${m.id === mode ? " on" : ""}" data-cm="${m.id}"><b>${m.name}</b><span>${esc(m.desc)}</span></button>`).join("");
       $("pick-cmode").querySelectorAll("[data-cm]").forEach((b) => (b.onclick = () => { LS.set("poshuk_cmode", b.dataset.cm); SFX.click(); this.renderMenu(); }));
       const hard = !!this.mode.hard, n = this.withPhoto(hard).length, all = this.deck().filter((c) => c.hard === hard).length;
@@ -245,6 +247,7 @@
       if (window.Help && Help.maybe("cards", () => this.start(opt))) return;   // перший раз — інструкція
       this.fix = opt && opt.fix && opt.fix.length ? opt.fix : null;
       if (this.fix) this.mode = MODES.game;
+      else if (opt && opt.mode && MODES[opt.mode]) this.mode = MODES[opt.mode];
       else { const mm = LS.get("poshuk_cmode", "game"); this.mode = MODES[mm] || MODES.game; }
       let pool = Logic.shuffle(this.fix ? this.fix.slice() : this.withPhoto(!!this.mode.hard));
       if (this.mode.ff && !this.fix) {   // порівну своїх і чужих, перемішано
@@ -496,7 +499,7 @@
       this.stop();
       if (window.Marks) Marks.clear($("c-pic"));
       UI.show("s-summary");
-      Game.lastGame = "cards"; Game.lastFix = !!this.fix;
+      Game.lastGame = "cards"; Game.lastFix = !!this.fix; Game.lastCardsMode = this.mode.ff ? "ff" : null;
       const res = this.results, max = 10 * (this.mode.lives != null && !this.fix ? (this.planned || res.length) : res.length), total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.max(0, Math.round(100 * total / max)) : 0, m = this.mode;
       const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);

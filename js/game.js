@@ -45,7 +45,7 @@
       $("g-sound").onclick = () => { $("g-sound").textContent = SFX.toggle() ? "🔊" : "🔇"; };
       $("g-next").onclick = () => this.goNext();
       $("g-quit").onclick = () => { clearInterval(this.nextT); if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
-      $("sum-again").onclick = () => { SFX.click(); if (this.lastFix) return this.againFix(this.lastGame); if (this.lastGame === "cards" && window.Cards) Cards.start(); else this.start(); };   // та сама гра з тими ж налаштуваннями
+      $("sum-again").onclick = () => { SFX.click(); if (this.lastFix) return this.againFix(this.lastGame); if (this.lastGame === "cards" && window.Cards) Cards.start(this.lastCardsMode ? {mode: this.lastCardsMode} : undefined); else this.start(); };   // та сама гра з тими ж налаштуваннями
       $("sum-menu").onclick = () => { SFX.click(); this.lastView = "menu"; this.showStart(); };
       $("sum-exit").onclick = () => $("logout-btn").click();
       window.addEventListener("popstate", () => {
@@ -344,6 +344,13 @@
     view(v, fromPop) {
       if (v === "ref") { if (window.Ref) Ref.open(); return; }
       if (v === "duel") { if (window.Duel) Duel.open(); return; }
+      if (v === "ff") {   // «Свій/чужий» — окремою плиткою меню, одразу в гру
+        if (!window.Cards) return;
+        if (!Cards.refPics && API.isCF) { toast("Завантажую фото…"); Cards.loadRefPics().then(() => this.view("ff")).catch(() => {}); return; }
+        const f = Cards.ffPools();
+        if (f.own.length < 3 || f.foe.length < 3) { toast(`Мало фото своєї техніки (${f.own.length}): автопошук ще підбирає. Адміністратору: адмінка → «Картки» → «🤖 Автопошук фото».`); return; }
+        Cards.start({mode: "ff"}); return;
+      }
       if (v === "weak") { if (window.Ref) Ref.open(); return; }
       // системна кнопка «Назад» (Android, встановлений застосунок) повертає з підменю в меню
       if (!fromPop) { if (v !== "menu") trap(); else if (inTrap()) history.back(); }
