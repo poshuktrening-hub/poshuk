@@ -285,10 +285,19 @@
       if (window.Marks) Marks.clear($("c-pic"));
       const img = $("c-img"); img.removeAttribute("src"); $("c-loading").hidden = false;
       this.unpixel(); if (this.mode.reveal) img.style.visibility = "hidden";   // «Проявлення»: фото — лише через пікселі
-      const url = await this.photoUrl(c.id, c.pic).catch(() => null);
-      await new Promise((res) => { img.onload = img.onerror = res; img.src = url || ""; });
+      // фото не відкрилось (видалене чи недоступне) — інше фото цієї ж техніки; якщо жодне — картку пропускаємо
+      const tried = new Set();
+      for (;;) {
+        const url = await this.photoUrl(c.id, c.pic).catch(() => null);
+        if (url) await new Promise((res) => { img.onload = img.onerror = res; img.src = url; });
+        if (this.cur !== c) return;
+        if (url && img.naturalWidth) break;
+        tried.add(c.pic && (c.pic.id || c.pic.key || "own"));
+        const rest = this.picPool(c.id).filter((x) => !tried.has(x.id || x.key || "own") && !(this.mode.ff && x.id && (window.FF_SKIP || new Set()).has(x.id)));
+        if (!rest.length) { $("c-loading").hidden = true; this.rounds.splice(this.idx, 1); this.idx--; this.planned = Math.max(0, (this.planned || 1) - 1); return this.next(); }
+        c.pic = rest[Math.floor(Math.random() * rest.length)];
+      }
       $("c-loading").hidden = true;
-      if (this.cur !== c) return;
       // наступне фото — заздалегідь
       const nx = this.rounds[this.idx + 1];
       if (nx) this.photoUrl(nx.id, nx.pic).then((u) => { if (u) { const p = new Image(); p.src = u; } }).catch(() => {});
@@ -486,6 +495,9 @@
       if (pic !== c.pic) {
         const u = await this.photoUrl(c.id, pic).catch(() => null);
         if (!u || this.cur !== c || !this.over) return;
+        // спершу перевірити, що фото з розміткою відкривається — інакше лишаємо те, що вже на екрані
+        const pre = new Image(); await new Promise((res) => { pre.onload = pre.onerror = res; pre.src = u; });
+        if (!pre.naturalWidth || this.cur !== c) return;
         await new Promise((res) => { img.onload = img.onerror = res; img.src = u; });
         if (this.cur !== c) return;
       }
