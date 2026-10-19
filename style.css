@@ -1186,3 +1186,6 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 @keyframes pen-shake { 0%, 100% { transform: none; } 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
 @media (prefers-reduced-motion: reduce) { .pen-float, #g-time.pen { animation: none; } }
 .c-contrast { margin: 2px 0 8px !important; padding: 6px 10px; border-left: 3px solid var(--accent); background: rgba(255,178,62,.08); border-radius: 0 8px 8px 0; }
+/* «Свій/чужий» */
+.c-choices .ff-own { border-color: #3d7bff; } .c-choices .ff-foe { border-color: var(--miss); } .c-choices .ff-unsure { border-style: dashed; }
+.c-v.ff-frat { background: var(--miss); color: #fff; padding: 4px 10px; border-radius: 8px; display: inline-block; }

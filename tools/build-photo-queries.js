@@ -2,7 +2,7 @@
    перелік карток, яким сервер у фоні сам підбирає вільне фото. Запускати після зміни карток: node tools/build-photo-queries.js */
 const fs = require("fs"), path = require("path"), crypto = require("crypto");
 global.window = {};
-for (const f of ["cards-data", "cards-data3", "cards-commons", "cards-data2"]) require(path.join(__dirname, "..", "js", f + ".js"));
+for (const f of ["cards-data", "cards-data3", "cards-commons", "cards-data2", "cards-own"]) require(path.join(__dirname, "..", "js", f + ".js"));
 const ref = window.CARD_REF || {}, com = window.CARD_COMMONS || {};
 const order = [], queries = {}, names = {}, variants = {}, indexes = {}, codes = {}, typew = {}, strong = {};
 const nz = (x) => String(x || "").toLowerCase().replace(/[^a-z0-9а-яіїєґ]/g, "");

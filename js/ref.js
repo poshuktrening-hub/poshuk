@@ -86,7 +86,7 @@
         const c = byId.get(e.card); if (!c) return false;
         // тексти: якщо адміністратор заповнив їх у довіднику — вони, інакше з картки
         const own = plain(e.ttx).trim() || plain(e.desc).trim();
-        if (!onlyLinks) shells.push(Object.assign(e, {cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), name: c.name,
+        if (!onlyLinks) shells.push(Object.assign(e, {cat: c.own ? "Своя техніка" : c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), name: c.name,
           ttx: own ? e.ttx : c.p1, desc: own ? e.desc : c.p2, fromCard: !own, concept: c.concept}));
         return false;
       });
@@ -110,13 +110,13 @@
         for (const p of [norm(name), ...parts, ...words, ...sub]) if (idx.has(p)) { e.card = idx.get(p); used.add(e.card); break; }
       }
       if (onlyLinks) return list;
-      const extra = deck.filter((c) => !used.has(c.id)).map((c, i) => ({id: "card:" + c.id, ord: 100000 + i, cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name),
+      const extra = deck.filter((c) => !used.has(c.id)).map((c, i) => ({id: "card:" + c.id, ord: 100000 + i, cat: c.own ? "Своя техніка" : c.concept ? "Концепти й новітні розробки" : Logic.category(c.name),
         name: c.name, ttx: c.p1, desc: c.p2, imgs: [], card: c.id, fromCard: true, concept: c.concept}));
       return sortCats(list.concat(shells, extra).map((e) => Object.assign(e, {cat: canonCat(e.cat, e.name)})));
     },
     async shellCats(pw) {
       const list = (await API.call("ref_list", {}, pw)).entries || [], byId = new Map(Cards.deck().map((c) => [c.id, c]));
-      return list.filter((e) => String(e.id).startsWith("c_") && byId.has(e.card)).map((e) => { const c = byId.get(e.card); return [e.id, c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), c.name]; })
+      return list.filter((e) => String(e.id).startsWith("c_") && byId.has(e.card)).map((e) => { const c = byId.get(e.card); return [e.id, c.own ? "Своя техніка" : c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), c.name]; })
         .filter(([id, cat]) => list.find((x) => x.id === id).cat !== cat);
     },
     /* Адмінка: один раз зберегти в базі прив'язки «запис → картка», знайдені за назвами, і перенести старі фото карток
@@ -129,7 +129,7 @@
       // записи-оболонки карток: розділ і назва — в базу (щоб розділ «Концепти…» був і в старих версіях застосунку)
       const byId = new Map(Cards.deck().map((c) => [c.id, c]));
       const shells = list.filter((e) => String(e.id).startsWith("c_") && byId.has(e.card)).map((e) => { const c = byId.get(e.card);
-        return [e.id, c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), c.name]; }).filter(([id, cat, name]) => { const e = list.find((x) => x.id === id); return e.cat !== cat || e.name !== name; });
+        return [e.id, c.own ? "Своя техніка" : c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), c.name]; }).filter(([id, cat, name]) => { const e = list.find((x) => x.id === id); return e.cat !== cat || e.name !== name; });
       let j = await API.call("ref_link", {links, shells}, pw), n = 0;
       while (j.left > 0 && n++ < 100) j = await API.call("ref_link", {}, pw);
       const more = await this.shellCats(pw); if (more.length) await API.call("ref_link", {shells: more}, pw);   // оболонки, створені під час перенесення
@@ -351,7 +351,7 @@
       try { const j = await API.call("ref_list", {}, this.pw); if (j.marks && window.Game) Game.marks = Object.assign(Game.marks || {}, j.marks); this.entries = sortRef(j.entries || []); } catch (e) { this.entries = []; this.err = e.message; }
       // записи-оболонки карток (c_…): розділ і назва — з картки; порожні тексти — теж з картки
       const deck = window.Cards ? Cards.deck() : [], byId = new Map(deck.map((c) => [c.id, c]));
-      const catOf = (c) => (c.concept ? "Концепти й новітні розробки" : Logic.category(c.name));
+      const catOf = (c) => (c.own ? "Своя техніка" : c.concept ? "Концепти й новітні розробки" : Logic.category(c.name));
       for (const e of this.entries) {
         const c = byId.get(e.card); if (!String(e.id).startsWith("c_") || !c) continue;
         if (!e.cat) e.cat = catOf(c); e.name = e.name || c.name;
@@ -590,7 +590,7 @@
           const cur = e ? e.imgs.slice() : [];
           const imgs = cur.slice(0, 1).concat(images.map((x) => x.id), cur.slice(1)).slice(0, 20);
           const entry = e ? {id: e.id, ord: e.ord, cat: e.cat, name: e.name, ttx: e.ttx, desc: e.desc, imgs, card: cid}
-            : {id: "c_" + cid, ord: 100000, cat: c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), name: c.name, ttx: toHtml(c.p1), desc: toHtml(c.p2), imgs, card: cid};
+            : {id: "c_" + cid, ord: 100000, cat: c.own ? "Своя техніка" : c.concept ? "Концепти й новітні розробки" : Logic.category(c.name), name: c.name, ttx: toHtml(c.p1), desc: toHtml(c.p2), imgs, card: cid};
           await this.putEntry(entry, images, cur);
         }
         await this.load(); this.renderList();

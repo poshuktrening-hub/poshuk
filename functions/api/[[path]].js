@@ -1014,7 +1014,7 @@ async function submit(env, ctx, req) {
   const scores = (req.scores || []).slice(0, MAX_ROUNDS).map(Number);
   const total = scores.reduce((a, b) => a + b, 0);
   const max = Number(req.max) || scores.length * 10;
-  const pct = max ? Math.round(100 * total / max) : 0;
+  const pct = max ? Math.max(0, Math.round(100 * total / max)) : 0;   // «свій/чужий»: штрафи можуть дати мінус — у відсотках не нижче 0
   const st = [env.DB.prepare("INSERT INTO results (ts,callsign,total,max,pct,conclusion,scores,mode) VALUES (?,?,?,?,?,?,?,?)")
     .bind(when, cs, total, max, pct, String(req.conclusion || "").slice(0, 120), JSON.stringify(scores), String(req.mode || "game").slice(0, 10))];
   // відповіді по кожній цілі/картці — для аналітики інструктора (слабкі місця по категоріях техніки)
