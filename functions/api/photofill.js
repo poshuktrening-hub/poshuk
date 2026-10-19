@@ -246,7 +246,9 @@ async function applyMarkSeeds(env, metaGet, metaSet) {
   const all = JSON.parse(text), up = new Date().toISOString(), st = [];
   // усі id фото й уже розмічені — двома запитами (не по запиту на фото: ліміт запитів до бази на виклик)
   const have = new Set((await env.DB.prepare("SELECT id FROM ref_images").all()).results.map((r) => r.id));
-  const done = new Set((await env.DB.prepare("SELECT img FROM ref_marks").all()).results.map((r) => r.img));
+  // розмітка, внесена з цього файлу раніше (updated = «seed:…» або дата першого внесення) — оновлюється; ручна з адмінки — ні
+  const rows = (await env.DB.prepare("SELECT img, marks, updated FROM ref_marks").all()).results;
+  const done = new Set(rows.filter((r) => !String(r.updated || "").startsWith("seed:") && !/"Позначен/.test(r.marks || "")).map((r) => r.img));
   let miss = 0;
   for (const [id, marks] of Object.entries(all)) {
     if (!Array.isArray(marks) || !marks.length) continue;
@@ -254,7 +256,7 @@ async function applyMarkSeeds(env, metaGet, metaSet) {
     const img = have.has(String(id)) ? String(id) : have.has(CP + id) ? CP + id : null;
     if (!img) { if (SEED.includes(id)) miss++; continue; }   // надіслане фото ще не внесене — наступного разу; видалене — пропускаємо
     if (done.has(img)) continue;   // ручну розмітку не чіпаємо
-    st.push(env.DB.prepare("INSERT INTO ref_marks (img,marks,updated) VALUES (?,?,?) ON CONFLICT(img) DO NOTHING").bind(img, JSON.stringify(marks), up));
+    st.push(env.DB.prepare("INSERT INTO ref_marks (img,marks,updated) VALUES (?,?,?) ON CONFLICT(img) DO UPDATE SET marks=excluded.marks, updated=excluded.updated").bind(img, JSON.stringify(marks), "seed:" + up));
   }
   for (let k = 0; k < st.length; k += 80) await env.DB.batch(st.slice(k, k + 80));
   if (!miss) await metaSet(env, "marks_seed", v);
