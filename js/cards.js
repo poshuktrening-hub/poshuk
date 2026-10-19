@@ -140,14 +140,14 @@
     deck() {
       const ov = (window.Game && Game.cardHard) || {};
       return (window.CARDS || []).map(([id, name, al, p1, p2, x]) => ({id, name, aliases: al.split("|").map((x) => x.trim()).filter(Boolean), p1, p2,
-        concept: !!(x && x.concept), own: !!(x && x.own), hard: ov[id] != null ? !!ov[id] : x && x.hard === 0 ? false : !!(x && x.hard) || this.HARD_TYPES.includes(name.split(" ")[0])}));
+        concept: !!(x && x.concept), own: !!(x && x.own), noff: !!(x && x.noff), hard: ov[id] != null ? !!ov[id] : x && x.hard === 0 ? false : !!(x && x.hard) || this.HARD_TYPES.includes(name.split(" ")[0])}));
     },
     withPhoto(hard) {
       const ph = (window.Game && Game.cardPhotos) || new Map(), ref = window.CARD_REF || {};
       const cp = (window.Game && Game.cardPics) || {};
       const has = (c) => ph.has(c.id) || cp[c.id] || ref[c.id] || (this.refPics && this.refPics.has(c.id));
       // своя техніка — лише в режимі «Свій/чужий» (hard === "own"); в інших режимах — лише ворожа
-      if (hard === "own") return this.deck().filter((c) => c.own && has(c));
+      if (hard === "own") return this.deck().filter((c) => c.own && !c.noff && has(c));   // noff — схожа на російську, лише довідник
       return this.deck().filter((c) => !c.own && (hard === undefined || c.hard === hard) && has(c));
     },
 
