@@ -113,7 +113,7 @@ export async function dropImg(env, imgId) {
   if ((await adminImgs(env)).has(String(imgId))) return false;   // вставлене адміністратором — не чіпаємо
   await rememberReject(env, [imgId]);
   const {results} = await env.DB.prepare("SELECT id, imgs FROM ref_entries WHERE imgs LIKE ?").bind(`%"${imgId}"%`).all();
-  const st = [env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(imgId)];
+  const st = [env.DB.prepare("DELETE FROM ref_images WHERE id=?").bind(imgId), env.DB.prepare("DELETE FROM ref_marks WHERE img=?").bind(imgId)];
   for (const r of results) st.push(env.DB.prepare("UPDATE ref_entries SET imgs=?, updated=? WHERE id=?").bind(JSON.stringify(J(r.imgs).filter((x) => x !== imgId)), now(), r.id));
   await env.DB.batch(st);
 }
