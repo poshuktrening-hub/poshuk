@@ -43,14 +43,15 @@
   }
 
   const Ref = {
-    entries: null, cat: "", q: "",
+    entries: null, cat: "", q: "", side: "",
+    SIDES: {ua: "Техніка України", ru: "Ворожа техніка"},
 
     async open() {
       if (!Game.password) return;
       UI.show("s-ref");
       document.body.dataset.mode = "ref";
       $("r-back").onclick = () => this.close();
-      $("r-q").oninput = (e) => { this.q = e.target.value; this.renderList(); };
+      $("r-q").oninput = (e) => { this.q = e.target.value; this.renderCats(); this.renderList(); };
       $("r-q").value = this.q;
       this.closeDetail();
       if (!this.entries) {
@@ -112,7 +113,11 @@
       if (onlyLinks) return list;
       const extra = deck.filter((c) => !used.has(c.id)).map((c, i) => ({id: "card:" + c.id, ord: 100000 + i, cat: c.own ? "Своя техніка" : c.concept ? "Концепти й новітні розробки" : Logic.category(c.name),
         name: c.name, ttx: c.p1, desc: c.p2, imgs: [], card: c.id, fromCard: true, concept: c.concept}));
-      return sortCats(list.concat(shells, extra).map((e) => Object.assign(e, {cat: canonCat(e.cat, e.name)})));
+      // сторона: техніка України (своя: картки own або розділ «Своя техніка») чи ворожа; своя розкладається за тими ж видами
+      return sortCats(list.concat(shells, extra).map((e) => {
+        const c = e.card && byId.get(e.card), ua = !!(c && c.own) || /^своя техніка$|^техніка україни$/i.test(String(e.cat || "").trim());
+        return Object.assign(e, {side: ua ? "ua" : "ru", cat: canonCat(ua && /^своя техніка$|^техніка україни$/i.test(String(e.cat || "").trim()) ? Logic.category(e.name) : e.cat, e.name)});
+      }));
     },
     async shellCats(pw) {
       const list = (await API.call("ref_list", {}, pw)).entries || [], byId = new Map(Cards.deck().map((c) => [c.id, c]));
@@ -142,9 +147,20 @@
       return w && w.length ? `<section class="r-sec r-weak"><h3>Недоліки</h3><ul>${w.map((x) => `<li>${esc(x)}</li>`).join("")}</ul><p class="muted small">За відкритими джерелами.</p></section>` : "";
     },
 
-    cats() { const m = new Map(); (this.entries || []).forEach((e) => m.set(e.cat, (m.get(e.cat) || 0) + 1)); return [...m]; },
+    cats() { const m = new Map(); (this.entries || []).filter((e) => !this.side || e.side === this.side).forEach((e) => m.set(e.cat, (m.get(e.cat) || 0) + 1)); return [...m]; },
+    /* Сторона: перемикач над розділами (на першому екрані — дві великі плитки) */
+    renderSide() {
+      let el = $("r-side");
+      if (!el) { el = document.createElement("div"); el.id = "r-side"; el.className = "seg r-side"; $("r-cats").before(el); }
+      const n = (s) => this.entries.filter((e) => e.side === s).length;
+      el.hidden = !this.side && !norm(this.q);
+      el.innerHTML = ["ua", "ru"].map((s) => `<button type="button" data-side="${s}" class="${this.side === s ? "on" : ""}">${s === "ua" ? "🇺🇦 " : ""}${this.SIDES[s]} <small>${n(s)}</small></button>`).join("");
+      el.querySelectorAll("[data-side]").forEach((b) => (b.onclick = () => { this.side = this.side === b.dataset.side && norm(this.q) ? "" : b.dataset.side; this.cat = ""; SFX.click(); this.renderCats(); this.renderList(); }));
+    },
     renderCats() {
-      const all = this.entries.length;
+      this.renderSide();
+      $("r-cats").hidden = !this.side;
+      const all = this.entries.filter((e) => !this.side || e.side === this.side).length;
       $("r-cats").innerHTML = [["", `Усі`, all], ...this.cats().map(([c, n]) => [c, c, n])].map(([v, t, n]) =>
         `<button type="button" class="chip${this.cat === v ? " on" : ""}" data-cat="${esc(v)}">${esc(t)}<small>${n}</small></button>`).join("");
       $("r-cats").querySelectorAll("[data-cat]").forEach((b) => (b.onclick = () => { this.cat = b.dataset.cat; SFX.click(); this.renderCats(); this.renderList(); }));
@@ -152,7 +168,7 @@
     /* Пошук: кілька слів у будь-якому порядку, частина слова, одруківка в назві (1 літера на 5+ літер), латиниця/кирилиця,
        і/и/ы, без дефісів і лапок. Шукає в назві, синонімах прив'язаної картки, ТТХ, описі й слабких сторонах. */
     filtered() {
-      const q = norm(this.q), pool = this.entries.filter((e) => !this.cat || e.cat === this.cat);
+      const q = norm(this.q), pool = this.entries.filter((e) => (!this.side || e.side === this.side) && (!this.cat || e.cat === this.cat));
       if (!q) return pool;
       const deck = this._deckMap || (this._deckMap = new Map((window.Cards ? Cards.deck() : []).map((c) => [c.id, c])));
       const qw = String(this.q).split(/[\s,;\/]+/).map(norm).filter(Boolean);
@@ -184,8 +200,18 @@
     },
     renderList() {
       if (!this.entries) return;
+      this.renderSide();
+      const rec = (k) => (k % 10 === 1 && k % 100 !== 11 ? "запис" : [2, 3, 4].includes(k % 10) && ![12, 13, 14].includes(k % 100) ? "записи" : "записів");
+      if (!this.side && !norm(this.q)) {   // перший екран: дві сторони
+        const n = (s) => this.entries.filter((e) => e.side === s).length;
+        $("r-count").textContent = `${this.entries.length} ${rec(this.entries.length)}`;
+        $("r-list").innerHTML = `<div class="r-sides">${["ua", "ru"].map((s) => `<button type="button" class="r-sidebtn r-side-${s}" data-pick="${s}"><b>${s === "ua" ? "🇺🇦 " : "🎯 "}${this.SIDES[s]}</b><small>${n(s)} ${rec(n(s))}</small></button>`).join("")}</div>`;
+        $("r-list").querySelectorAll("[data-pick]").forEach((b) => (b.onclick = () => { this.side = b.dataset.pick; this.cat = ""; SFX.click(); this.renderCats(); this.renderList(); }));
+        return;
+      }
       const list = this.filtered();
-      $("r-count").textContent = `${list.length} з ${this.entries.length}`;
+      const tot = this.entries.filter((e) => !this.side || e.side === this.side).length;
+      $("r-count").textContent = list.length === tot ? `${tot}` : `${list.length} з ${tot}`;
       if (!this.entries.length) { $("r-list").innerHTML = `<p class="muted r-empty">Довідник ще не заповнено. Адміністратору: адмінка → «📘 Довідник».</p>`; return; }
       if (!list.length) { $("r-list").innerHTML = `<p class="muted r-empty">Нічого не знайдено.</p>`; return; }
       let html = "", last = null;
@@ -194,7 +220,7 @@
         if (q) { const h = e._txt ? "Згадується в описі" : "Назва"; if (h !== last) { html += `<h3 class="r-h">${h}</h3>`; last = h; } }
         else if (!this.cat && e.cat !== last) { html += `<h3 class="r-h">${esc(e.cat)}</h3>`; last = e.cat; }
         html += `<button type="button" class="r-item" data-id="${esc(e.id)}"><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : e.card ? `<img loading="lazy" alt="" data-card="${esc(e.card)}">` : ""}${e.concept ? `<em class="r-cpt">КОНЦЕПТ</em>` : ""}</span>
-          <span class="r-nm"><b>${UI.nameHtml(e.name)}</b><small>${esc(plain(e.desc || e.ttx).slice(0, 90))}</small></span></button>`;
+          <span class="r-nm"><b>${!this.side ? (e.side === "ua" ? "🇺🇦 " : "") : ""}${UI.nameHtml(e.name)}</b><small>${esc(plain(e.desc || e.ttx).slice(0, 90))}</small></span></button>`;
       }
       $("r-list").innerHTML = html;
       $("r-list").querySelectorAll("[data-id]").forEach((b) => (b.onclick = () => this.show(b.dataset.id)));
@@ -227,7 +253,7 @@
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
           ${window.Offline && Offline.on ? "" : `<button type="button" id="rd-sugg" title="Запропонувати фото до цього запису" aria-label="Запропонувати фото">📷</button>`}<button type="button" id="rd-print" title="Друк / PDF цього запису" aria-label="Друк">🖨</button><button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
-          ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
+          ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${e.side === "ua" ? "🇺🇦 Техніка України" : "Ворожа техніка"} · ${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
           ${e.card && window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card) ? `<div class="r-gal r-gal-card"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(e.card)}"></button></div>${e.imgs.length ? `<p class="muted small r-hint">Фото з картки цілей</p>` : ""}` : ""}
           ${!e.imgs.length && e.card && !(window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card)) ? `<div class="r-gal"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-card="${esc(e.card)}"></button></div>` : ""}
           ${e.card && extraPics(e.card).length ? `<div class="r-gal">${extraPics(e.card).map((x) => `<button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(x)}"></button>`).join("")}</div><p class="muted small r-hint">Додаткові фото</p>` : ""}

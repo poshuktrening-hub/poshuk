@@ -1189,3 +1189,14 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 /* «Свій/чужий» */
 .c-choices .ff-own { border-color: #3d7bff; } .c-choices .ff-foe { border-color: var(--miss); } .c-choices .ff-unsure { border-style: dashed; }
 .c-v.ff-frat { background: var(--miss); color: #fff; padding: 4px 10px; border-radius: 8px; display: inline-block; }
+/* Довідник: сторони */
+.r-side { display: flex; gap: 6px; margin: 0 0 6px; }
+.r-side button { flex: 1 1 0; padding: .45rem .6rem; border-radius: 10px; font-size: .9rem; }
+.r-side button.on { border-color: var(--accent); background: rgba(255,178,62,.12); }
+.r-side small { color: var(--muted); margin-left: 4px; }
+.r-sides { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; padding: 8px 0; }
+.r-sidebtn { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 4px; min-height: 140px; padding: 18px; border-radius: 16px; text-align: left; border: 1px solid var(--line); background: var(--panel); }
+.r-sidebtn b { font: 700 1.25rem var(--display); }
+.r-sidebtn small { color: var(--muted); }
+.r-side-ua { background: linear-gradient(135deg, rgba(0,87,183,.35), rgba(255,215,0,.18)); border-color: rgba(255,215,0,.35); }
+.r-side-ru { background: linear-gradient(135deg, rgba(180,40,40,.28), rgba(20,22,26,.6)); border-color: rgba(220,80,80,.35); }
