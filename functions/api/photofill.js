@@ -244,18 +244,19 @@ async function applyMarkSeeds(env, metaGet, metaSet) {
   const text = await r.text(), v = "m:" + text.length + ":" + [...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
   if ((await metaGet(env, "marks_seed")) === v) return;
   const all = JSON.parse(text), up = new Date().toISOString(), st = [];
+  // усі id фото й уже розмічені — двома запитами (не по запиту на фото: ліміт запитів до бази на виклик)
+  const have = new Set((await env.DB.prepare("SELECT id FROM ref_images").all()).results.map((r) => r.id));
+  const done = new Set((await env.DB.prepare("SELECT img FROM ref_marks").all()).results.map((r) => r.img));
   let miss = 0;
   for (const [id, marks] of Object.entries(all)) {
     if (!Array.isArray(marks) || !marks.length) continue;
     // ключ — повний id фото (з експорту для розмітки) або id надісланого фото без cp_
-    let img = String(id);
-    if (!(await env.DB.prepare("SELECT id FROM ref_images WHERE id=?").bind(img).first())) {
-      img = CP + id;
-      if (!(await env.DB.prepare("SELECT id FROM ref_images WHERE id=?").bind(img).first())) { if (SEED.includes(id)) miss++; continue; }   // надіслане фото ще не внесене — наступного разу; видалене — пропускаємо
-    }   // фото ще не внесене — наступного разу
+    const img = have.has(String(id)) ? String(id) : have.has(CP + id) ? CP + id : null;
+    if (!img) { if (SEED.includes(id)) miss++; continue; }   // надіслане фото ще не внесене — наступного разу; видалене — пропускаємо
+    if (done.has(img)) continue;   // ручну розмітку не чіпаємо
     st.push(env.DB.prepare("INSERT INTO ref_marks (img,marks,updated) VALUES (?,?,?) ON CONFLICT(img) DO NOTHING").bind(img, JSON.stringify(marks), up));
   }
-  if (st.length) await env.DB.batch(st);
+  for (let k = 0; k < st.length; k += 80) await env.DB.batch(st.slice(k, k + 80));
   if (!miss) await metaSet(env, "marks_seed", v);
 }
 
