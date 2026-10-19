@@ -9,6 +9,7 @@
     game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника.", hint: true, choice: true, sign: true},
     exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
     ff: {id: "ff", name: "Свій/чужий", desc: "15 с на картку: своя це техніка чи ворожа. Вірно +10, помилка −2, не встиг відповісти −1.", ff: true, sec: 15},
+    reveal: {id: "reveal", name: "Проявлення", desc: "Фото спершу сильно розмите й поступово проступає — як погане відео чи знімок з висоти. Що раніше вірно назвав, то більше балів: від 10 до 2. Помилка — 0. 4 варіанти, без підказок, 20 с.", choice: true, reveal: true, sec: 20},
     hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
 
@@ -257,7 +258,7 @@
       const c = this.cur = this.rounds[this.idx];
       this.hintUsed = false; this.signUsed = false; this.weakUsed = false; this.over = false; this.chosen = null;
       const errs = this.results.filter((r) => !r.ok).length;
-      $("c-stage").textContent = `${this.mode.ff ? "Свій/чужий · " : this.mode.id === "exam" ? "Іспит · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
+      $("c-stage").textContent = `${this.mode.ff ? "Свій/чужий · " : this.mode.id === "exam" ? "Іспит · " : this.mode.reveal ? "Проявлення · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
       if ($("c-concept")) $("c-concept").hidden = !c.concept;
       $("c-score").textContent = this.results.reduce((a, r) => a + r.score, 0);
       $("c-reveal").hidden = true; $("c-nextbox").hidden = true; $("c-form").hidden = false;
@@ -277,6 +278,7 @@
       }
       if (window.Marks) Marks.clear($("c-pic"));
       const img = $("c-img"); img.removeAttribute("src"); $("c-loading").hidden = false;
+      img.style.filter = this.mode.reveal ? `blur(${this.blurPx(0)}px)` : "";
       const url = await this.photoUrl(c.id, c.pic).catch(() => null);
       await new Promise((res) => { img.onload = img.onerror = res; img.src = url || ""; });
       $("c-loading").hidden = true;
@@ -294,8 +296,19 @@
       $("c-time").textContent = `0:${String(Math.ceil(left)).padStart(2, "0")}`;
       $("c-time").classList.toggle("warn", left <= 10);
       $("c-timebar").style.transform = `scaleX(${left / T})`;
+      if (this.mode.reveal && !this.over) { const b = this.blurPx(1 - left / T); $("c-img").style.filter = b > 0.2 ? `blur(${b.toFixed(1)}px)` : ""; $("c-time").title = `Зараз за вірну відповідь: +${this.revealScore()}`; $("c-hint").innerHTML = `Зараз за вірну: <b>+${this.revealScore()}</b>`; $("c-hint").hidden = false; }
       document.querySelector("#s-cards .timebar").classList.toggle("warn", left <= 10);
       if (left <= 0) this.finish("", true);
+    },
+
+    /* «Проявлення»: розмиття від ~6% ширини фото до нуля на 85% часу */
+    blurPx(p) {
+      const w = ($("c-pic") && $("c-pic").clientWidth) || 600, k = Math.max(0, 1 - p / 0.85);
+      return w * 0.06 * Math.pow(k, 1.3);
+    },
+    revealScore() {
+      const T = this.mode.sec || ROUND_SEC, el = (performance.now() - (this.t0 || performance.now())) / 1000;
+      return Math.max(2, Math.ceil(10 * (1 - el / T)));
     },
 
     hint() {
@@ -405,13 +418,14 @@
       if (this.mode.ff) return this.ffAnswer("", true);
       if (this.over) return;
       this.over = true; this.stop();
-      const c = this.cur, r = timeout ? {ok: false} : picked !== undefined ? {ok: picked, exact: true} : check(c, answer), score = r.ok ? 10 : 0;
+      $("c-img").style.filter = "";   // «Проявлення»: після відповіді — чітке фото
+      const c = this.cur, r = timeout ? {ok: false} : picked !== undefined ? {ok: picked, exact: true} : check(c, answer), score = r.ok ? (this.mode.reveal ? this.revealScore() : 10) : 0;
       this.results.push({id: c.id, name: c.name, answer, ok: r.ok, score, hint: this.hintUsed, cat: Logic.category(c.name)});
       $("c-score").textContent = this.results.reduce((a, x) => a + x.score, 0);
       if (r.ok) SFX.hit(); else SFX.miss();
       document.activeElement && document.activeElement.blur && document.activeElement.blur();   // сховати клавіатуру
       $("c-form").hidden = true;
-      const verdict = r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +10</p>`
+      const verdict = r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +${score}</p>`
         : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
       $("c-choices").innerHTML = "";
       const cr = c.pic && !c.pic.own ? (c.pic.credit ? (() => { try { return decodeURIComponent(c.pic.credit); } catch (e) { return c.pic.credit; } })() : "навчальний довідник ВОС276") : (Game.cardCredits && Game.cardCredits.get(c.id)) || "";
@@ -469,7 +483,7 @@
       const res = this.results, max = 10 * (this.mode.lives != null && !this.fix ? (this.planned || res.length) : res.length), total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.max(0, Math.round(100 * total / max)) : 0, m = this.mode;
       const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);
-      $("sum-title").textContent = `${this.fix ? "Робота над помилками · картки" : `Картки${m.id === "exam" ? " · Іспит" : m.hard ? " · Хардкор" : m.ff ? " · Свій/чужий" : ""}`} · ${Game.callsign}`;
+      $("sum-title").textContent = `${this.fix ? "Робота над помилками · картки" : `Картки${m.id === "exam" ? " · Іспит" : m.hard ? " · Хардкор" : m.reveal ? " · Проявлення" : m.ff ? " · Свій/чужий" : ""}`} · ${Game.callsign}`;
       $("sum-total").textContent = `${total} з ${max} балів · ${pct}% · ${concl}`;
       $("sum-total").style.color = m.pass ? (pct >= m.pass ? "var(--hit)" : "var(--miss)") : pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
       const rk = Logic.rank(pct);
@@ -478,7 +492,7 @@
         res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${UI.nameHtml(r.name)}</td><td class="${r.ok ? "t-ok" : "t-no"}">${esc(r.answer || "—")}${r.hint ? " 💡" : ""}</td><td class="num">${r.score}</td></tr>`).join("");
       const now = new Date(), p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: Game.callsign, scores: res.map((r) => r.score), max, mode: m.id === "exam" ? "cards_exam" : m.hard ? "cards_hard" : "cards",
-        conclusion: this.fix ? `Картки (робота над помилками): ${concl}` : `Картки${m.id === "exam" ? " (іспит)" : m.hard ? " (хардкор)" : m.ff ? " (свій/чужий)" : ""}: ${concl}`,
+        conclusion: this.fix ? `Картки (робота над помилками): ${concl}` : `Картки${m.id === "exam" ? " (іспит)" : m.hard ? " (хардкор)" : m.reveal ? " (проявлення)" : m.ff ? " (свій/чужий)" : ""}: ${concl}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`, clicks: [],
         items: res.map((r) => ["cards", r.id, r.name, r.cat, r.ok ? 1 : 0])};
       const q = LS.get("poshuk_pending", []); q.push(item); LS.set("poshuk_pending", q);
