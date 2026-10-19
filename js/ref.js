@@ -44,7 +44,7 @@
 
   const Ref = {
     entries: null, cat: "", q: "", side: "",
-    SIDES: {ua: "Техніка України", ru: "Ворожа техніка"},
+    SIDES: {ua: "Українська техніка", ru: "Ворожа техніка"},
 
     async open() {
       if (!Game.password) return;
@@ -253,7 +253,7 @@
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
           ${window.Offline && Offline.on ? "" : `<button type="button" id="rd-sugg" title="Запропонувати фото до цього запису" aria-label="Запропонувати фото">📷</button>`}<button type="button" id="rd-print" title="Друк / PDF цього запису" aria-label="Друк">🖨</button><button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
-          ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${e.side === "ua" ? "🇺🇦 Техніка України" : "Ворожа техніка"} · ${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
+          ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${e.side === "ua" ? "🇺🇦 Українська техніка" : "Ворожа техніка"} · ${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
           ${e.card && window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card) ? `<div class="r-gal r-gal-card"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(e.card)}"></button></div>${e.imgs.length ? `<p class="muted small r-hint">Фото з картки цілей</p>` : ""}` : ""}
           ${!e.imgs.length && e.card && !(window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card)) ? `<div class="r-gal"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-card="${esc(e.card)}"></button></div>` : ""}
           ${e.card && extraPics(e.card).length ? `<div class="r-gal">${extraPics(e.card).map((x) => `<button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(x)}"></button>`).join("")}</div><p class="muted small r-hint">Додаткові фото</p>` : ""}
@@ -388,25 +388,38 @@
       const linked = new Set(this.entries.map((e) => e.card).filter(Boolean));
       const virt = deck.filter((c) => !linked.has(c.id)).map((c, i) => ({id: "c_" + c.id, ord: 100000 + i, cat: catOf(c), name: c.name, ttx: toHtml(c.p1), desc: toHtml(c.p2), imgs: [], v: "", card: c.id, virt: true}));
       this.entries = sortRef(this.entries.concat(virt));
+      // сторона й підтип — як у курсантському довіднику: українська техніка окремо, обидві розбиті за видами
+      for (const e of this.entries) {
+        const c = byId.get(e.card), own = /^своя техніка$|^техніка україни$|^українська техніка$/i.test(String(e.cat || "").trim());
+        e._side = (c && c.own) || own ? "ua" : "ru";
+        e._cat = canonCat(own ? Logic.category(e.name) : e.cat, e.name);
+      }
       Ref.entries = null;   // курсантський список перечитається
     },
     cats() { const out = []; this.entries.forEach((e) => { if (!out.includes(e.cat)) out.push(e.cat); }); return out; },
+    /* підтипи вибраної сторони — за абеткою, «Інше» в кінці */
+    sideCats() { const out = []; this.entries.filter((e) => e._side === this.aside).forEach((e) => { if (!out.includes(e._cat)) out.push(e._cat); }); return out.sort((a, b) => (a === "Інше") - (b === "Інше") || a.localeCompare(b, "uk")); },
     renderList() {
-      const q = norm(this.f), list = this.entries.filter((e) => (!this.fcat || e.cat === this.fcat) && (!q || norm(e.name).includes(q)) && (!this.nophoto || !e.imgs.length));
-      const noPh = this.entries.filter((e) => !e.imgs.length).length;
+      this.aside = this.aside || "ru";
+      if (this.fcat && !this.sideCats().includes(this.fcat)) this.fcat = "";
+      const q = norm(this.f), side = this.entries.filter((e) => e._side === this.aside);
+      const list = side.filter((e) => (!this.fcat || e._cat === this.fcat) && (!q || norm(e.name).includes(q)) && (!this.nophoto || !e.imgs.length))
+        .sort((a, b) => (a._cat === "Інше") - (b._cat === "Інше") || a._cat.localeCompare(b._cat, "uk") || (a.ord || 0) - (b.ord || 0));
+      const noPh = side.filter((e) => !e.imgs.length).length;
       $("ra").innerHTML = `<div class="m-card ra-card"><div class="m-head"><h2>Довідник техніки</h2><button type="button" class="link" id="ra-x">Закрити</button></div>
-        <p class="muted small">Записів: <b>${this.entries.length}</b>, без фото: <b>${noPh}</b>. Курсанти відкривають довідник з головного меню. Щоб додати фото — торкніться порожньої рамки в рядку.</p>
+        <p class="muted small">${esc(Ref.SIDES[this.aside])}: записів <b>${side.length}</b>, без фото: <b>${noPh}</b>. Новий запис української техніки — розділ «Своя техніка». Курсанти відкривають довідник з головного меню. Щоб додати фото — торкніться порожньої рамки в рядку.</p>
         <div class="row"><button type="button" class="primary" id="ra-new">＋ Новий запис</button><button type="button" id="ra-file">Завантажити файл довідника…</button></div>
         <div class="row"><button type="button" id="ra-sugg">📨 Пропозиції курсантів${this.nSugg ? ` <b class="ra-badge">${this.nSugg}</b>` : ""}</button><button type="button" id="ra-bulk" title="Кілька фото одразу: файл з назвою картки (bmp2.jpg, «Т-72Б3.jpg») стає 2-м фото її запису">🖼 Фото з файлів…</button></div>
         <div class="row"><button type="button" id="ra-mkexp" title="Фото без ознак — у ZIP-архіви для розмітки (надіслати Claude)">◎ Експорт фото для розмітки</button></div>
         <input type="file" id="ra-bulk-in" accept="image/*" multiple hidden>
         <input type="file" id="ra-in" accept=".json,application/json" hidden>
         <p class="status" id="ra-st">${this.err ? esc(this.err) : ""}</p>
-        <div class="row ra-filt"><input id="ra-q" type="search" placeholder="Пошук за назвою" value="${esc(this.f)}"><select id="ra-c"><option value="">Усі розділи</option>${this.cats().map((c) => `<option${c === this.fcat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+        <div class="seg r-side ra-side">${["ru", "ua"].map((s) => `<button type="button" data-aside="${s}" class="${this.aside === s ? "on" : ""}">${s === "ua" ? "🇺🇦 " : ""}${Ref.SIDES[s]} <small>${this.entries.filter((e) => e._side === s).length}</small></button>`).join("")}</div>
+        <div class="row ra-filt"><input id="ra-q" type="search" placeholder="Пошук за назвою" value="${esc(this.f)}"><select id="ra-c"><option value="">Усі підтипи</option>${this.sideCats().map((c) => `<option${c === this.fcat ? " selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
         <div class="tabs"><button type="button" id="ra-all" class="${this.nophoto ? "" : "on"}">Усі</button><button type="button" id="ra-noph" class="${this.nophoto ? "on" : ""}">Без фото ${noPh}</button></div>
         <input type="file" id="ra-ph" accept="image/*" multiple hidden>
         <ul class="ra-list">${list.map((e) => `<li><span class="r-th${e.imgs[0] ? "" : " empty"}" ${e.imgs[0] ? `data-edit="${esc(e.id)}" title="Змінити"` : `data-addph="${esc(e.id)}" title="Додати фото" role="button"`}>${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : "＋"}</span>
-          <span class="nm">${esc(Logic.dispName(e.name))}<small>${esc(e.cat)} · фото: ${e.imgs.length}${e.card ? " · 🃏 картка" : ""}${e.virt ? " · ще не в довіднику" : ""}</small></span>
+          <span class="nm">${esc(Logic.dispName(e.name))}<small>${esc(e._cat || e.cat)} · фото: ${e.imgs.length}${e.card ? " · 🃏 картка" : ""}${e.virt ? " · ще не в довіднику" : ""}</small></span>
           <button type="button" data-edit="${esc(e.id)}" title="Змінити">✎</button>${e.virt ? "<span></span>" : `<button type="button" data-del="${esc(e.id)}" title="Видалити">✕</button>`}</li>`).join("") || `<li class="muted small">Нічого не знайдено</li>`}</ul></div>`;
       $("ra-x").onclick = () => { if (!this.busy) $("ra").hidden = true; };
       $("ra-new").onclick = () => this.edit(null);
@@ -428,6 +441,7 @@
         try { await this.importBundle(b); await this.load(); this.renderList(); this.say("Імпорт завершено ✓", "ok"); } catch (err) { this.say(err.message, "no"); }
       };
       $("ra-q").oninput = (e) => { this.f = e.target.value; const pos = e.target.selectionStart; this.renderList(); const q = $("ra-q"); q.focus(); q.setSelectionRange(pos, pos); };
+      $("ra").querySelectorAll("[data-aside]").forEach((b) => (b.onclick = () => { this.aside = b.dataset.aside; this.fcat = ""; this.renderList(); }));
       $("ra-all").onclick = () => { this.nophoto = false; this.renderList(); };
       $("ra-noph").onclick = () => { this.nophoto = true; this.renderList(); };
       // порожня рамка → вибрати фото → одразу в запис (перше — обкладинка); запис-оболонка картки при цьому створюється

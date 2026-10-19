@@ -969,6 +969,9 @@
     if (isFinite(min)) big.forEach((b) => { if (b.clientWidth) b.style.fontSize = min + "px"; });
     document.querySelectorAll(".main-menu .mm.mm-wide .mm-h b, .main-menu .mm.mm-small .mm-h b").forEach(fit);
   }
+  /* «Свій/чужий»: на ПК — квадратна плитка поруч із «Довідником», на телефоні — широка смуга під плитками */
+  const ffWide = () => { const b = document.querySelector(".main-menu .mm-ff"); if (!b) return; const pc = matchMedia("(min-width: 900px) and (min-height: 600px)").matches; b.classList.toggle("mm-wide", !pc); b.classList.toggle("mm-small", !pc); };
+  ffWide(); window.addEventListener("resize", ffWide);
   window.addEventListener("resize", () => requestAnimationFrame(fitMenuTitles));
   /* Офлайн-дані: автооновлення о 08:00 і 20:00 — перевірка при відкритті, при появі мережі й щоп'ять хвилин. */
   const autoOff = () => {
