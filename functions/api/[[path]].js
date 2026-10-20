@@ -9,12 +9,14 @@
  * налаштування й паролі з Google-таблиці.
  */
 import {fillTick, fillState, fillReset, fillInfo, fillOne} from "./photofill.js";
-import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg, rememberReject, markAdmin} from "./cardref.js";
+import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg, rememberReject, markAdmin, imgMime, isB64} from "./cardref.js";
 const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
 const LOCK_FAILS = 20, LOCK_SECONDS = 15 * 60;       // невдалі входи з однієї адреси за 15 хв → ця адреса чекає 15 хв (клас за одним Wi-Fi — одна адреса, тому не менше)
 const GLOBAL_FAILS = 150;                             // невдалі входи з усіх адрес за 15 хв → нові входи паролем чекають 15 хв (токени працюють)
-const RATE = {api: [300, 60e3], img: [900, 60e3], login: [60, 60e3], heavy: [40, 60e3]};   // запитів з однієї адреси за вікно (мс)
+const RATE = {api: [300, 60e3], img: [900, 60e3], login: [60, 60e3], heavy: [40, 60e3], suggest: [6, 60e3]};   // запитів з однієї адреси за вікно (мс)
+const SUGGEST_MAX = 60, SUGGEST_BYTES = 60e6;         // пропозицій курсантів, що чекають перевірки, і їхніх фото разом — щоб не заповнити базу
+const DUEL_PACK_MAX = 25e6, DUEL_CHUNKS_MAX = 120;    // знімок дуелі одного гравця; частин дуелей у базі разом (≈180 МБ)
 const MAX_BODY = 30e6;                                // байт у POST-запиті (імпорт довідника, фото)
 const CHUNK = 1_500_000; // < 2 МБ — ліміт рядка D1
 const TOKEN_HOURS = 12;
@@ -109,8 +111,10 @@ function cookieOf(request, name) {
 class HttpError extends Error { constructor(msg, status = 200) { super(msg); this.status = status; } }
 
 const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj), {
-  status, headers: Object.assign({"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"}, extra),
+  status, headers: Object.assign({"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}, extra),
 });
+/* Заголовки для файлів із бази (фото, моделі, знімки): браузер не вгадує тип і не виконує вміст як сторінку. */
+const FILE_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Content-Disposition": "inline"};
 
 // ------------------------------------------------------------------ база
 const SCHEMA_V = "2026-10-19a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
@@ -478,14 +482,6 @@ async function action(env, ctx, req, origin) {
   const a = req.action;
   switch (a) {
     case "ping": return {ok: true, version: VERSION};
-    case "diag": {
-      if (!env.SHEETS_URL) return {ok: true, gas: "no SHEETS_URL"};
-      try {
-        const r = await fetch(env.SHEETS_URL, {method: "POST", body: JSON.stringify({action: "ping"}), redirect: "follow"});
-        const t = await r.text();
-        return {ok: true, status: r.status, type: r.headers.get("content-type"), url: r.url.slice(0, 60), body: t.slice(0, 160), secret: !!env.SHEETS_SECRET};
-      } catch (e) { return {ok: true, error: String(e)}; }
-    }
     case "login": { const role = await auth(env, req, "player"); return {ok: true, role, token: await makeToken(env, role)}; }
     case "config": {
       const role = await auth(env, req, req.off ? "offline" : "player");
@@ -493,7 +489,7 @@ async function action(env, ctx, req, origin) {
       const {results: cp} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
       let cardHard = {}; try { cardHard = JSON.parse((await metaGet(env, "cards_hard")) || "{}"); } catch (e) { cardHard = {}; }
       return {ok: true, brandIcon: (await metaGet(env, "brand_icon")) || "", settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]), cardPics: await cardPics(env),
-        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), cardHard, marks: await marksAll(env), token: role === "off" ? undefined : await makeToken(env, role)};
+        cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), cardHard, marks: await marksAll(env), role, token: role === "off" ? undefined : await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
     case "offline_key": {   // ключ офлайн-пристрою (видається після входу паролем; ключем — продовжується)
@@ -553,6 +549,10 @@ async function action(env, ctx, req, origin) {
       if (!/^[a-f0-9]{16,64}$/.test(dev)) throw new HttpError("Оновіть сторінку — потрібна нова версія застосунку");
       const pend = await env.DB.prepare("SELECT COUNT(*) AS n FROM ref_suggest WHERE dev=?").bind(dev).first();
       if (pend && pend.n >= 15) throw new HttpError("Забагато пропозицій очікують перевірки — дочекайтесь, поки адміністратор їх розгляне");
+      // загальна межа (id пристрою задає клієнт, тож межа «на пристрій» сама по собі базу не захищає)
+      const tot = await env.DB.prepare("SELECT COUNT(*) AS n FROM ref_suggest").first();
+      const bytes = await env.DB.prepare("SELECT COALESCE(SUM(LENGTH(data)),0) AS b FROM ref_images WHERE id LIKE 'sg\\_%' ESCAPE '\\'").first();
+      if ((tot && tot.n >= SUGGEST_MAX) || (bytes && bytes.b >= SUGGEST_BYTES)) throw new HttpError("Черга пропозицій заповнена — адміністратор має розглянути попередні");
       const kind = req.kind === "photos" ? "photos" : "new", d = req.data || {};
       const target = kind === "photos" ? String(req.target || "").slice(0, 60) : "";
       if (kind === "photos" && !target) throw new HttpError("Не вказано запис");
@@ -563,6 +563,7 @@ async function action(env, ctx, req, origin) {
       const id = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), up = new Date().toISOString(), st = [], ids = [];
       for (let i = 0; i < ims.length; i++) {
         if (!ims[i] || !ims[i].data || ims[i].data.length > 1_900_000) throw new HttpError("Фото завелике (до ~1,4 МБ)");
+        if (!isB64(ims[i].data, true)) throw new HttpError("Фото має бути у форматі JPEG");
         const iid = `sg_${id}-${i + 1}`; ids.push(iid);
         st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_images (id,data,mime,updated,credit) VALUES (?,?,?,?,?)").bind(iid, String(ims[i].data), "image/jpeg", up, `Запропонував: ${cs || "курсант"}`));
       }
@@ -577,6 +578,14 @@ async function action(env, ctx, req, origin) {
   }
   await auth(env, req, "admin");
   switch (a) {
+    case "diag": {   // лише адміністратору: відповідь містить адресу Google-скрипта
+      if (!env.SHEETS_URL) return {ok: true, gas: "no SHEETS_URL"};
+      try {
+        const r = await fetch(env.SHEETS_URL, {method: "POST", body: JSON.stringify({action: "ping"}), redirect: "follow"});
+        const t = await r.text();
+        return {ok: true, status: r.status, type: r.headers.get("content-type"), body: t.slice(0, 160), secret: !!env.SHEETS_SECRET};
+      } catch (e) { return {ok: true, error: String(e)}; }
+    }
     case "admin_stages": return {ok: true, stages: await stages(env, true), token: await makeToken(env, "admin")};
     case "set_card_hard": {   // галочка «складний рівень» для картки (перекриває прапорець у даних)
       let m = {}; try { m = JSON.parse((await metaGet(env, "cards_hard")) || "{}"); } catch (e) { m = {}; }
@@ -758,6 +767,7 @@ async function action(env, ctx, req, origin) {
       // модель зберігається частинами (D1 тримає до ~2 МБ у рядку) — ліміт розміру фактично знято
       if (!req.data || typeof req.data !== "string") throw new HttpError("Немає файлу моделі");
       if (req.data.length > OBJ_MAX) throw new HttpError("Модель завелика (понад ~20 МБ) — зменште її");
+      if (!isB64(req.data)) throw new HttpError("Файл моделі пошкоджений (очікується base64)");
       const o = {id: newId(), name: String(req.name || "техніка").slice(0, 40), length_m: Number(req.length_m) || 7, type: String(req.type || ""), ttx: String(req.ttx || "").slice(0, 2000), decoy: req.decoy ? 1 : 0};
       // без дублів: модель з такою самою назвою — оновлюється (нова версія замість старої)
       const {results: same} = await env.DB.prepare("SELECT id,name,decoy,ttx FROM objects").all();
@@ -814,7 +824,8 @@ async function action(env, ctx, req, origin) {
       for (const im of (req.images || []).slice(0, 20)) {
         const iid = String(im.id || "").slice(0, 50);
         if (!/^[a-z0-9_-]+$/i.test(iid) || !im.data || im.data.length > 1_900_000) throw new HttpError("Зображення завелике або без id");
-        st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_images (id,data,mime,updated) VALUES (?,?,?,?)").bind(iid, String(im.data), String(im.mime || "image/jpeg"), up));
+        if (!isB64(im.data)) throw new HttpError("Зображення пошкоджене (очікується base64)");
+        st.push(env.DB.prepare("INSERT OR REPLACE INTO ref_images (id,data,mime,updated) VALUES (?,?,?,?)").bind(iid, String(im.data), imgMime(im.mime), up));
       }
       // фото, які адміністратор прибрав із запису, — видалити з бази
       const old = await env.DB.prepare("SELECT imgs, card FROM ref_entries WHERE id=?").bind(id).first();
@@ -892,6 +903,7 @@ async function action(env, ctx, req, origin) {
       const id = String(req.id || "").slice(0, 40);
       if (!/^[a-z0-9_]+$/.test(id)) throw new HttpError("Невірний id картки");
       if (!req.data || req.data.length > 1_900_000) throw new HttpError("Фото завелике (до ~1,4 МБ)");
+      if (!isB64(req.data)) throw new HttpError("Фото пошкоджене (очікується base64)");
       // фото картки — у довідник (перше в записі картки; попереднє фото «з картки» замінюється)
       const r = await putCardImg(env, id, {data: String(req.data), mime: String(req.mime || "image/jpeg"), credit: String(req.credit || ""), replace: true});
       await markAdmin(env, r.img);   // завантажене адміністратором — під захистом від автопошуку
@@ -1006,17 +1018,22 @@ async function top3(env, since = "0000") {   // since — початок доб�
 }
 
 async function submit(env, ctx, req) {
-  const when = req.date || new Date().toISOString().slice(0, 16).replace("T", " ");
-  const cs = String(req.callsign || "").slice(0, 40);
+  // дата — від клієнта (його місцевий час; офлайн-результати досилаються пізніше), але лише у форматі «YYYY-MM-DD HH:MM»,
+  // не старша за 30 діб і не з майбутнього (понад добу) — інакше час сервера
+  const nowIso = new Date().toISOString().slice(0, 16).replace("T", " ");
+  let when = String(req.date || "").slice(0, 16);
+  const dt = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(when) ? Date.parse(when.replace(" ", "T") + ":00Z") - Date.now() : NaN;
+  if (!(dt >= -30 * 86400e3 && dt <= 86400e3)) when = nowIso;
+  const cs = String(req.callsign || "").trim().slice(0, 40);
   if (isTestName(cs)) return {ok: true, test: true};   // тестовий запуск — нікуди не записуємо
   // перший пристрій, з якого грають під цим прізвищем, стає його власником («Мої результати» відкриваються лише на ньому)
   if (cs.trim() && /^[a-f0-9]{16,64}$/.test(String(req.dev || ""))) {
     try { await env.DB.prepare("INSERT OR IGNORE INTO callsign_owner (cs, dev, ts) VALUES (?,?,?)").bind(cs.trim(), String(req.dev), new Date().toISOString()).run(); } catch (e) { /* не критично */ }
   }
-  const scores = (req.scores || []).slice(0, MAX_ROUNDS).map(Number);
+  const scores = (Array.isArray(req.scores) ? req.scores : []).slice(0, MAX_ROUNDS).map((v) => Math.max(-100, Math.min(100, Math.round(Number(v) || 0))));
   const total = scores.reduce((a, b) => a + b, 0);
-  const max = Number(req.max) || scores.length * 10;
-  const pct = max ? Math.max(0, Math.round(100 * total / max)) : 0;   // «свій/чужий»: штрафи можуть дати мінус — у відсотках не нижче 0
+  const max = Math.max(0, Math.min(10000, Math.round(Number(req.max)))) || scores.length * 10;
+  const pct = max ? Math.max(0, Math.min(100, Math.round(100 * total / max))) : 0;   // «свій/чужий»: штрафи можуть дати мінус — у відсотках 0…100
   const st = [env.DB.prepare("INSERT INTO results (ts,callsign,total,max,pct,conclusion,scores,mode) VALUES (?,?,?,?,?,?,?,?)")
     .bind(when, cs, total, max, pct, String(req.conclusion || "").slice(0, 120), JSON.stringify(scores), String(req.mode || "game").slice(0, 10))];
   // відповіді по кожній цілі/картці — для аналітики інструктора (слабкі місця по категоріях техніки)
@@ -1027,8 +1044,8 @@ async function submit(env, ctx, req) {
       .bind(when, cs, s(it[0], 10), s(req.mode || "game", 10), s(it[1], 60), s(it[2], 80), s(it[3], 40), it[4] ? 1 : 0));
   });
   const who = (await hmac(env, "who." + cs)).slice(0, 10); // позивний у кліках не зберігаємо
-  (req.clicks || []).slice(0, 500).forEach((c) => st.push(env.DB.prepare("INSERT INTO clicks (stage,x,y,hit,ts,who) VALUES (?,?,?,?,?,?)")
-    .bind(String(c[0]), Math.round(c[1]), Math.round(c[2]), c[3] ? 1 : 0, when, who)));
+  (Array.isArray(req.clicks) ? req.clicks : []).slice(0, 500).forEach((c) => { if (!Array.isArray(c)) return; st.push(env.DB.prepare("INSERT INTO clicks (stage,x,y,hit,ts,who) VALUES (?,?,?,?,?,?)")
+    .bind(String(c[0] || "").slice(0, 40), Math.round(Number(c[1]) || 0), Math.round(Number(c[2]) || 0), c[3] ? 1 : 0, when, who)); });
   await env.DB.batch(st);
   if (env.SHEETS_URL && env.SHEETS_SECRET) {
     const body = Object.assign({}, req, {action: "ingest", secret: env.SHEETS_SECRET, p: undefined, t: undefined});
@@ -1054,6 +1071,8 @@ async function ownCallsign(env, cs, dev) {
 }
 
 // ------------------------------------------------------------------ зображення техніки для брифінгу курсанта
+/* base64 з бази → байти; зіпсований запис — порожня відповідь, а не помилка сервера */
+function b64bytes(s) { try { const bin = atob(String(s || "")), out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; } catch (e) { return null; } }
 async function getCardPhoto(env, ctx, request, id, t, v) {
   if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
   const cache = caches.default, key = new Request(new URL(`/api/card/${id}?v=${encodeURIComponent(v || "")}`, request.url).toString());
@@ -1064,10 +1083,9 @@ async function getCardPhoto(env, ctx, request, id, t, v) {
       const first = ((await linked(env)).get(id) || []).flatMap((e) => e.imgs).find(isGameImg);
       if (first) r = await env.DB.prepare("SELECT data,mime FROM ref_images WHERE id=?").bind(first).first();
     }
-    if (!r) return new Response("Не знайдено", {status: 404});
-    const bin = atob(r.data), bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    res = new Response(bytes, {headers: {"Content-Type": r.mime || "image/jpeg", "Cache-Control": "public, max-age=86400"}});
+    const bytes = r && b64bytes(r.data);
+    if (!bytes) return new Response("Не знайдено", {status: 404});
+    res = new Response(bytes, {headers: Object.assign({"Content-Type": imgMime(r.mime), "Cache-Control": "public, max-age=86400"}, FILE_HEADERS)});
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   }
   const out = new Response(res.body, res);
@@ -1081,10 +1099,9 @@ async function getRefImage(env, ctx, request, id, t, v) {
   let res = await cache.match(key);
   if (!res) {
     const r = await env.DB.prepare("SELECT data,mime FROM ref_images WHERE id=?").bind(id).first();
-    if (!r) return new Response("Не знайдено", {status: 404});
-    const bin = atob(r.data), bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    res = new Response(bytes, {headers: {"Content-Type": r.mime || "image/jpeg", "Cache-Control": "public, max-age=604800"}});
+    const bytes = r && b64bytes(r.data);
+    if (!bytes) return new Response("Не знайдено", {status: 404});
+    res = new Response(bytes, {headers: Object.assign({"Content-Type": imgMime(r.mime), "Cache-Control": "public, max-age=604800"}, FILE_HEADERS)});
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   }
   const out = new Response(res.body, res);
@@ -1098,10 +1115,9 @@ async function getObject(env, ctx, request, id, t) {
   let res = await cache.match(key);
   if (!res) {
     const data = await objData(env, id);
-    if (data === null) return new Response("Не знайдено", {status: 404});
-    const bin = atob(data), bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    res = new Response(bytes, {headers: {"Content-Type": "image/png", "Cache-Control": "public, max-age=3600"}});
+    const bytes = data === null ? null : b64bytes(data);
+    if (!bytes) return new Response("Не знайдено", {status: 404});
+    res = new Response(bytes, {headers: Object.assign({"Content-Type": "image/png", "Cache-Control": "public, max-age=3600"}, FILE_HEADERS)});
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   }
   const out = new Response(res.body, res);
@@ -1124,7 +1140,7 @@ async function getImage(env, ctx, request, id, t, v) {
       if (!r) return new Response("Знімок пошкоджено", {status: 500});
       parts.push(r.data instanceof ArrayBuffer ? new Uint8Array(r.data) : new Uint8Array(r.data));
     }
-    res = new Response(new Blob(parts), {headers: {"Content-Type": "application/octet-stream", "Cache-Control": "public, max-age=31536000, immutable"}});
+    res = new Response(new Blob(parts), {headers: Object.assign({"Content-Type": "application/octet-stream", "Cache-Control": "public, max-age=31536000, immutable"}, FILE_HEADERS)});
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   }
   const out = new Response(res.body, res);
@@ -1138,7 +1154,7 @@ async function putBlob(env, request, id, part) {
   let st;
   if (id.startsWith("new_")) { try { st = JSON.parse(await metaGet(env, "reimg_" + id.slice(4)) || "null"); } catch (e) { st = null; } }
   else st = await env.DB.prepare("SELECT chunks FROM stages WHERE id=?").bind(id).first();
-  if (!st || part < 0 || part >= st.chunks) return json({ok: false, error: "Невірна частина"}, 400);
+  if (!st || !(part >= 0 && part < st.chunks)) return json({ok: false, error: "Невірна частина"}, 400);
   const buf = await request.arrayBuffer();
   if (buf.byteLength > CHUNK) return json({ok: false, error: "Частина завелика"}, 400);
   await env.DB.prepare("INSERT INTO blobs (id,part,data) VALUES (?,?,?) ON CONFLICT(id,part) DO UPDATE SET data=excluded.data").bind(id, part, buf).run();
@@ -1157,7 +1173,7 @@ async function duelRow(env, code) {
   if (!r) throw new HttpError("Кімнату не знайдено — перевірте код");
   return r;
 }
-function whoAmI(r, secret) { if (secret && secret === r.s1) return 1; if (secret && secret === r.s2) return 2; throw new HttpError("Ви не в цій кімнаті"); }
+function whoAmI(r, secret) { const s = String(secret || ""); if (s && r.s1 && safeEqual(s, r.s1)) return 1; if (s && r.s2 && safeEqual(s, r.s2)) return 2; throw new HttpError("Ви не в цій кімнаті"); }
 
 /* Лінива «годинникова» логіка: прострочений хід передається, зниклий гравець програє. */
 async function duelTick(env, r, me) {
@@ -1202,7 +1218,8 @@ async function duel(env, req, a) {
   const now = Date.now();
   if (a === "duel_create") {
     // старі кімнати: знімки — геть через 6 год; сам запис (хто переміг) лишається 2 доби — для «Топу дня»
-    const {results: old} = await env.DB.prepare("SELECT code FROM duels WHERE created < ? AND COALESCE(purged,0)=0").bind(now - 6 * 3600e3).all();
+    // завершені кімнати — знімки геть через годину (вони великі), решта — через 6 год
+    const {results: old} = await env.DB.prepare("SELECT code FROM duels WHERE COALESCE(purged,0)=0 AND (created < ? OR (state='done' AND created < ?))").bind(now - 6 * 3600e3, now - 3600e3).all();
     for (const o of old) await env.DB.batch([env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${o.code}_%`), env.DB.prepare("UPDATE duels SET purged=1 WHERE code=?").bind(o.code)]);
     await env.DB.prepare("DELETE FROM duels WHERE created < ?").bind(now - 48 * 3600e3).run();
     // карта: чистий знімок з масштабом (етап без цілей)
@@ -1254,9 +1271,11 @@ async function duel(env, req, a) {
     if (units.length !== kit.length) throw new HttpError("Розставте всю техніку");
     const us = units.map((u, i) => ({x: Math.round(Number(u.x) || 0), y: Math.round(Number(u.y) || 0), r: Math.max(6, Math.min(200, Number(u.r) || 12)), type: String(u.type || kit[i].name || "").slice(0, 60), decoy: !!kit[i].decoy}));
     const size = Number(req.size) || 0;
-    if (!size || size > 60e6) throw new HttpError("Знімок завеликий");
+    if (!size || size > DUEL_PACK_MAX) throw new HttpError("Знімок завеликий");
     const chunks = Math.ceil(size / CHUNK);
-    await env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${r.code}_${me}`).run();
+    const used = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id LIKE 'duel\\_%' ESCAPE '\\'").first();
+    if (used && used.n + chunks > DUEL_CHUNKS_MAX) throw new HttpError("Сервер зайнятий іншими дуелями — спробуйте за кілька хвилин");
+    await env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(`duel_${r.code}_${me}`).run();
     await env.DB.prepare(`UPDATE duels SET u${me}=?, c${me}=?, r${me}=0, dims=COALESCE(dims, ?) WHERE code=?`).bind(JSON.stringify(us), chunks, JSON.stringify({w: Number(req.w) || 0, h: Number(req.h) || 0}), r.code).run();
     return {ok: true, id: `duel_${r.code}_${me}`, chunk: CHUNK, chunks, token: await makeToken(env, "player")};
   }
@@ -1315,7 +1334,8 @@ async function putDuelBlob(env, request, id, part) {
   const m = /^duel_(\d{4})_([12])$/.exec(id);
   if (!m) return json({ok: false, error: "Невірна частина"}, 400);
   const r = await env.DB.prepare("SELECT * FROM duels WHERE code=?").bind(m[1]).first();
-  if (!r || request.headers.get("X-Duel") !== r["s" + m[2]] || part < 0 || part >= r["c" + m[2]]) return json({ok: false, error: "Невірна частина"}, 400);
+  const xd = String(request.headers.get("X-Duel") || "");
+  if (!r || !xd || !r["s" + m[2]] || !safeEqual(xd, r["s" + m[2]]) || !(part >= 0 && part < r["c" + m[2]])) return json({ok: false, error: "Невірна частина"}, 400);
   const buf = await request.arrayBuffer();
   if (buf.byteLength > CHUNK) return json({ok: false, error: "Частина завелика"}, 400);
   await env.DB.prepare("INSERT INTO blobs (id,part,data) VALUES (?,?,?) ON CONFLICT(id,part) DO UPDATE SET data=excluded.data").bind(id, part, buf).run();
@@ -1325,15 +1345,16 @@ async function putDuelBlob(env, request, id, part) {
 async function getDuelImage(env, code, n, t, secret) {
   if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
   const r = await env.DB.prepare("SELECT * FROM duels WHERE code=?").bind(String(code)).first();
-  if (!r || (secret !== r.s1 && secret !== r.s2) || (n !== 1 && n !== 2)) return new Response("Не знайдено", {status: 404});
-  if (!r["r" + n] || (r.state !== "battle" && r.state !== "done" && secret !== r["s" + n])) return new Response("Ще не готово", {status: 404});
+  const s = String(secret || ""), isP = (k) => !!r && !!r[k] && safeEqual(s, r[k]);
+  if (!r || !s || (!isP("s1") && !isP("s2")) || (n !== 1 && n !== 2)) return new Response("Не знайдено", {status: 404});
+  if (!r["r" + n] || (r.state !== "battle" && r.state !== "done" && !isP("s" + n))) return new Response("Ще не готово", {status: 404});
   const parts = [];
   for (let i = 0; i < r["c" + n]; i++) {
     const b = await env.DB.prepare("SELECT data FROM blobs WHERE id=? AND part=?").bind(`duel_${r.code}_${n}`, i).first();
     if (!b) return new Response("Знімок пошкоджено", {status: 500});
     parts.push(new Uint8Array(b.data));
   }
-  return new Response(new Blob(parts), {headers: {"Content-Type": "application/octet-stream", "Cache-Control": "private, max-age=3600"}});
+  return new Response(new Blob(parts), {headers: Object.assign({"Content-Type": "application/octet-stream", "Cache-Control": "private, max-age=3600"}, FILE_HEADERS)});
 }
 
 // ------------------------------------------------------------------ точка входу
@@ -1365,11 +1386,13 @@ export async function onRequest(context) {
     if (!req || typeof req !== "object") return json({ok: false, error: "Некоректний запит"});
     req._ip = ip;
     if (req.action === "offline_assets" || req.action === "duel_create" || req.action === "duel_join") rateLimit(ip, "heavy");
+    if (req.action === "ref_suggest") rateLimit(ip, "suggest");
     return json(await action(env, context, req, url.origin));
   } catch (e) {
     // внутрішні помилки бази не показуємо назовні (назви таблиць і SQL — зайва інформація для стороннього)
     const msg = String(e && e.message || e);
     if (!(e instanceof HttpError)) console.error("api error:", msg);
-    return json({ok: false, error: e instanceof HttpError ? msg : (/D1_|SQLITE|no such|syntax error/i.test(msg) ? "Помилка бази даних — спробуйте пізніше" : msg)}, e instanceof HttpError ? e.status : 200);
+    // стороннім — лише загальний текст: подробиці внутрішніх помилок (SQL, назви полів, стек) назовні не віддаємо
+    return json({ok: false, error: e instanceof HttpError ? msg : (/D1_|SQLITE|no such|syntax error/i.test(msg) ? "Помилка бази даних — спробуйте пізніше" : "Внутрішня помилка сервера — спробуйте пізніше")}, e instanceof HttpError ? e.status : 200);
   }
 }

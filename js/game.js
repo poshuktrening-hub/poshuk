@@ -104,7 +104,8 @@
         this.password = pw;
         // один тихий повтор, якщо перший запит не дійшов (сервер «прокидається»)
         try { await this.loadConfig(); } catch (e1) { if (!/зв'язку/.test(e1.message || "")) throw e1; await new Promise((r) => setTimeout(r, 1200)); await this.loadConfig(); }
-        LS.set("poshuk_pw", pw);
+        // пароль адміністратора в браузері не зберігаємо (спільний пристрій у класі): адмін входить щоразу
+        if (this.role !== "admin") LS.set("poshuk_pw", pw); else LS.del("poshuk_pw");
         this.showStart();
       } catch (e) {
         if (window.Offline && Offline.ready && !Offline.on && /зв'язку/.test(e.message)) { Offline.goOffline(); return this.login(pw); }
@@ -117,7 +118,7 @@
 
     async loadConfig() {
       const j = await API.call("config", {}, this.password);
-      this.cfg = j.settings;
+      this.cfg = j.settings; this.role = j.role || "player";
       // підпис автора: іконка завантажується в адмінці (у базі, не в репозиторії); немає — лишається слово
       const ci = $("credit-icon");
       if (ci) ci.innerHTML = j.brandIcon ? `<img src="${j.brandIcon}" alt="росомаха">` : "росомахою";

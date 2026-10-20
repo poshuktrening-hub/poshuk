@@ -7,6 +7,11 @@
 import {NAMES} from "./photo-queries.js";
 
 export const CP = "cp_";
+/* Тип зображення для зберігання й віддачі: лише справжні картинки. Інакше текст/HTML, записаний як «фото»,
+   віддавався б із нашого домену як сторінка (XSS). Невідомий тип → JPEG. */
+export const imgMime = (m) => { const t = String(m || "").toLowerCase().split(";")[0].trim(); return /^image\/(jpeg|jpg|png|webp|gif|avif)$/.test(t) ? (t === "image/jpg" ? "image/jpeg" : t) : "image/jpeg"; };
+/* base64 без префікса data: — інакше atob на віддачі падає; JPEG від курсантів має починатися з /9j/ */
+export const isB64 = (s, jpeg) => typeof s === "string" && s.length > 0 && s.length % 4 === 0 && /^[A-Za-z0-9+/]+=*$/.test(s) && (!jpeg || s.startsWith("/9j/"));
 export const isGameImg = (id) => !String(id).includes("--ref");
 const MAX_IMGS = 20;
 const now = () => new Date().toISOString();
@@ -74,6 +79,7 @@ export async function entryFor(env, card) {
 
 /* Додати фото картці. front — першим (обкладинка); replace — замість першого фото «з картки» (cp_). */
 export async function putCardImg(env, card, {data, mime = "image/jpeg", credit = "", imgId, front = true, replace = false, pos = null}) {
+  mime = imgMime(mime);
   const e = await entryFor(env, card), up = now(), st = [];
   const iid = imgId || (CP + card + "-" + Date.now().toString(36));   // id картки не містить «-»
   let imgs = e.imgs.filter((x) => x !== iid);

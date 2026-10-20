@@ -4,7 +4,7 @@
    Фото зберігається як у ручному підборі (card_photos: мініатюра 1280 px + підпис автора/ліцензії).
    Стан — у meta «photo_fill»: позиція у переліку, скільки знайдено, яких не знайдено. Перелік — photo-queries.js. */
 import {LIST_V, ORDER, NAMES, QUERIES, VARIANTS, DESIG, CODES, TYPEW, STRONG, STRICT} from "./photo-queries.js";
-import {cardPics, putCardImg, dropImg, adminImgs, CP} from "./cardref.js";
+import {cardPics, putCardImg, dropImg, adminImgs, imgMime, CP} from "./cardref.js";
 
 const UA = "poshuk-trener/1.0 (https://poshuk.pages.dev; contact: mrqwerty841@gmail.com)";
 const PER_TICK = 1, TICK_MS = 20e3,   // до ~20 підзапитів на картку — в межах ліміту 50 на запит
@@ -202,7 +202,7 @@ async function fetchThumb(url) {
     const r = await fetch(u, {headers: {"User-Agent": UA}});
     if (!r.ok) throw new Error("thumb " + r.status);
     const buf = await r.arrayBuffer();
-    if (buf.byteLength <= 1_350_000) return {data: b64(buf), mime: r.headers.get("Content-Type") || "image/jpeg"};
+    if (buf.byteLength <= 1_350_000) return {data: b64(buf), mime: imgMime(r.headers.get("Content-Type"))};
     if (!/\/\d+px-/.test(url)) break;
   }
   throw new Error("thumb too big");
