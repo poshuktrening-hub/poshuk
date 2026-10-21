@@ -35,10 +35,11 @@
       for (let y = 0; y < h; y += TILE) for (let x = 0; x < w; x += TILE) {
         const tw = Math.min(TILE, w - x), th = Math.min(TILE, h - y);
         const old = opt.reuse && opt.reuse.tiles && !hit(x, y, tw, th) && opt.reuse.tiles.find((q) => q.x === x && q.y === y && q.w === tw && q.h === th);
-        if (old) { header.tiles.push([x, y, tw, th, ...await addBlob(old.blob)]); continue; }
+        if (old) { if (opt.reuse.rest) await opt.reuse.rest; header.tiles.push([x, y, tw, th, ...await addBlob(opt.reuse.blobOf(old))]); continue; }
         const t = canvas(tw, th);
         t.getContext("2d").drawImage(full, x, y, tw, th, 0, 0, tw, th);
-        header.tiles.push([x, y, tw, th, ...await add(t, 0.9)]);
+        header.tiles.push([x, y, tw, th, ...await add(t, 0.86)]);   // 0.86 замість 0.9: пакет на ~25% менший, різниці на око немає
+        t.width = 0; t.height = 0;
       }
     }
     const hb = new TextEncoder().encode(JSON.stringify(header));
@@ -56,25 +57,35 @@
     return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(blob); });
   }
 
+  /* rest — проміс, що виконується, коли докачався весь пакет (потокове відкриття: превʼю показується одразу,
+     плитки повної роздільності — коли дійдуть). Без rest пакет уже цілий. */
   class TiledImage {
-    constructor(header, buf, base, preview) {
+    constructor(header, buf, base, preview, rest) {
       this.width = header.w; this.height = header.h;
       this.preview = preview;
-      this.tiles = header.tiles.map(([x, y, w, h, off, len]) => ({x, y, w, h, blob: new Blob([new Uint8Array(buf, base + off, len)], {type: "image/jpeg"}), bmp: null, p: null}));
+      this._buf = buf; this._base = base;
+      this.rest = rest || null; this.restErr = null;
+      if (rest) rest.then(() => { this.rest = null; if (this.onTile) this.onTile(); }, (e) => { this.restErr = e; });
+      this.tiles = header.tiles.map(([x, y, w, h, off, len]) => ({x, y, w, h, off, len, blob: null, bmp: null, p: null}));
       this.onTile = null;
     }
+    blobOf(t) { return t.blob || (t.blob = new Blob([new Uint8Array(this._buf, this._base + t.off, t.len)], {type: "image/jpeg"})); }
     load(t) {
-      if (!t.p) t.p = decode(t.blob).then((b) => { t.bmp = b; if (this.onTile) this.onTile(); return b; });
+      if (!t.p) t.p = (this.rest || Promise.resolve()).then(() => decode(this.blobOf(t))).then((b) => { t.bmp = b; if (this.onTile) this.onTile(); return b; }, (e) => { t.p = null; throw e; });
       return t.p;
     }
     drawTo(ctx, tx, ty, s, W, H) {
       ctx.drawImage(this.preview, tx, ty, this.width * s, this.height * s);
-      if (!this.tiles.length || s <= (this.preview.width / this.width) * 1.05) return;
+      if (!this.tiles.length || this.restErr || s <= (this.preview.width / this.width) * 1.05) return;
       for (const t of this.tiles) {
         const x = tx + t.x * s, y = ty + t.y * s, w = t.w * s, h = t.h * s;
         if (x > W || y > H || x + w < 0 || y + h < 0) continue;
-        if (t.bmp) ctx.drawImage(t.bmp, x, y, w + 0.6, h + 0.6); else this.load(t);
+        if (t.bmp) ctx.drawImage(t.bmp, x, y, w + 0.6, h + 0.6); else if (!this.rest) this.load(t).catch(() => {});
       }
+    }
+    /* Звільнити розпаковані плитки (на телефоні 10 етапів × десятки МБ бітмапів = чорний екран). Повторний показ розпакує знову. */
+    release() {
+      for (const t of this.tiles) { if (t.bmp) { try { t.bmp.close && t.bmp.close(); } catch (e) { /* ок */ } } t.bmp = null; t.p = null; t.blob = null; }
     }
     /* Лише ділянка (sx,sy,sw,sh) у полотно dw×dh — без повнорозмірного полотна. Плитки, які довелось розпакувати
        саме для цього, одразу звільняються: на телефонах великий знімок цілком не влазить у пам'ять полотен (чорний екран). */
@@ -97,13 +108,30 @@
     async full() {
       if (!this.tiles.length) { const c = canvas(this.width, this.height); c.getContext("2d").drawImage(this.preview, 0, 0, this.width, this.height); return c; }
       const c = canvas(this.width, this.height), ctx = c.getContext("2d");
-      await Promise.all(this.tiles.map((t) => this.load(t)));
-      for (const t of this.tiles) ctx.drawImage(t.bmp, t.x, t.y);
+      // по одній плитці: розпакувати → намалювати → звільнити (інакше на великій карті всі бітмапи в пам'яті разом)
+      for (const t of this.tiles) {
+        const had = !!t.bmp, bmp = await this.load(t);
+        ctx.drawImage(bmp, t.x, t.y);
+        if (!had) { try { bmp.close && bmp.close(); } catch (e) { /* ок */ } t.bmp = null; t.p = null; }
+      }
       return c;
     }
   }
 
-  async function open(buf) {
+  /* Скільки байтів треба, щоб відкрити пакет (заголовок + превʼю), і повний розмір; null — ще замало даних. */
+  function info(u8, got) {
+    if (got < 8) return null;
+    const dv = new DataView(u8.buffer, u8.byteOffset, got);
+    if (dv.getUint32(0) !== 0x50534b31) throw new Error("Пошкоджений знімок");
+    const hl = dv.getUint32(4, true);
+    if (got < 8 + hl) return null;
+    const header = JSON.parse(new TextDecoder().decode(u8.subarray(8, 8 + hl)));
+    const end = (a) => a[0] + a[1];
+    const total = 8 + hl + Math.max(end(header.preview), ...header.tiles.map((t) => t[4] + t[5]));
+    return {need: 8 + hl + end(header.preview), total};
+  }
+
+  async function open(buf, rest) {
     const dv = new DataView(buf);
     if (buf.byteLength < 8 || dv.getUint32(0) !== 0x50534b31) throw new Error("Пошкоджений знімок");
     const hl = dv.getUint32(4, true);
@@ -111,8 +139,8 @@
     const base = 8 + hl;
     const [off, len] = header.preview;
     const preview = await decode(new Blob([new Uint8Array(buf, base + off, len)], {type: "image/jpeg"}));
-    return new TiledImage(header, buf, base, preview);
+    return new TiledImage(header, buf, base, preview, rest);
   }
 
-  window.Tiles = {build, open, toCanvas, TiledImage};
+  window.Tiles = {build, open, info, toCanvas, TiledImage};
 })();

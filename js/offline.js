@@ -139,7 +139,8 @@
       const keep = new Set(["snap"]);
       let bytes = 0;
       // знімки етапів — по одному запиту на етап; незмінені (та сама версія) не перекачуємо
-      const old = (this.info() || {}).ver || {};
+      // уже докачані етапи (і з перерваного завантаження — poshuk_off_part) не качаються вдруге
+      const part = LS.get("poshuk_off_part", {}) || {}, old = Object.assign({}, (this.info() || {}).ver || {}, part);
       for (let i = 0; i < stages.length; i++) {
         const s = stages[i], k = "img:" + s.id;
         keep.add(k);
@@ -148,6 +149,7 @@
         if (have) { bytes += have.byteLength || 0; continue; }
         const buf = await API.fetchPack(s.id, password);
         await put(k, buf);
+        part[s.id] = s.v || ""; LS.set("poshuk_off_part", part);
         bytes += buf.byteLength; changed++;
       }
       // зображення: техніка (брифінг), фото карток, довідник — пачками в один запит
@@ -157,7 +159,8 @@
       ref.forEach((e) => (e.imgs || []).forEach((id) => want.push(["ref", id])));
       want.forEach(([kind, id]) => keep.add(kind + ":" + id));
       const have = new Set(await keys());
-      let todo = want.filter(([kind, id]) => !have.has(kind + ":" + id) || kind === "card"), done = want.length - todo.length;
+      const cv = Object.fromEntries(cfg.cardPhotos || []), oldCv = (this.info() || {}).cv || {};
+      let todo = want.filter(([kind, id]) => !have.has(kind + ":" + id) || (kind === "card" && oldCv[id] !== cv[id])), done = want.length - todo.length;
       while (todo.length) {
         progress(`Фото техніки й довідника: ${done} з ${want.length}…`, 0.65 + 0.3 * done / Math.max(1, want.length));
         const batch = todo.slice(0, 120);
@@ -178,8 +181,10 @@
       this.snap = null;
       if (!opt.auto) { urls.forEach((u) => URL.revokeObjectURL(u)); urls.clear(); }
       await cacheShell();
-      LS.set(KEY, {at: new Date().toISOString(), stages: stages.length, cards: (cfg.cardPhotos || []).length, ref: ref.length, bytes, pw: await sha(password),
-        ver: Object.fromEntries(stages.map((s) => [s.id, s.v || ""]))});
+      LS.set(KEY, {at: new Date().toISOString(), stages: stages.length, cards: (cfg.cardPhotos || []).length, ref: ref.length, bytes,
+        pw: password === "" ? (prev.pw || "") : await sha(password),   // автооновлення ключем пристрою не стирає пароль входу
+        ver: Object.fromEntries(stages.map((s) => [s.id, s.v || ""])), cv});
+      LS.del("poshuk_off_part");
       if (!opt.auto) LS.del(PAUSE);   // після завантаження вручну — одразу в офлайн
       // ключ пристрою для автооновлень (не залежить від зміни паролів); з кожним оновленням продовжується
       try { const k = await API.callNet("offline_key", password === "" ? {off: 1} : {}, password); if (k.key) LS.set("poshuk_off_key", k.key); } catch (e) { /* лишається старий */ }
