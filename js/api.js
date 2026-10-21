@@ -203,10 +203,13 @@
     return j.stage;
   }
 
+  /* Версії картинок моделей техніки (дата заміни) — з config: замінили модель → нова адреса, кеш не віддасть стару. */
+  const objVer = {};
+  function noteObjects(list) { for (const o of list || []) if (o && o.id) objVer[o.id] = o.created || ""; }
   async function objUrl(id, password) {
     if (id && off()) return Offline.url("obj", id);
     if (!isCF || !id) return null;
-    return `${url}/obj/${encodeURIComponent(id)}?v=1${tq(await token(password))}`;
+    return `${url}/obj/${encodeURIComponent(id)}?v=${encodeURIComponent(objVer[id] || "1")}${tq(await token(password))}`;
   }
 
   async function cardUrl(id, ver, password) {
@@ -261,5 +264,5 @@
   const ready = (...groups) => groups.every((g) => lazyDone[g]);
   const lazyFiles = () => Object.values(LAZY).flat().map(lazySrc);
 
-  window.API = {need, ready, lazyFiles, lazySrc, refList, refReset, useKey, call, callNet, fetchPack, token, noteStages, loadImage, trimImages, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
+  window.API = {noteObjects, need, ready, lazyFiles, lazySrc, refList, refReset, useKey, call, callNet, fetchPack, token, noteStages, loadImage, trimImages, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
 })();

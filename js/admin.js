@@ -388,7 +388,7 @@
 
     // ---------- моделі техніки (бібліотека генератора) для брифінгу
     async loadObjects() {
-      try { this.objects = (await API.call("objects", {}, this.pw)).objects; } catch (e) { this.objects = []; }
+      try { this.objects = (await API.call("objects", {}, this.pw)).objects; API.noteObjects(this.objects); } catch (e) { this.objects = []; }
       this.objects.push(...Models.LIST);
       this.typeOptions(this.$("a-type").value);
       this.showModel();
