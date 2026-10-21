@@ -11,7 +11,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; }
+html, body { height: 100%; margin: 0; overscroll-behavior: none; }   /* без pull-to-refresh: свайп униз не перезавантажує гру */
 body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); overflow: hidden; }
 [hidden] { display: none !important; }
 h1 { font: 600 1.6rem/1.2 var(--display); letter-spacing: .03em; margin: 0 0 .3rem; text-wrap: balance; }
@@ -1225,3 +1225,10 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 }
 /* «Проявлення»: пікселізоване фото поверх прихованого оригіналу */
 .c-pic .c-pix { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* Сенсорні екрани: кнопки й чіпи — щонайменше 44/40 пкс заввишки (у грі на час легко промахнутись по дрібних) */
+@media (pointer: coarse) {
+  .game .bar.bottom button, #g-hint, #g-skip, #g-quit, .c-hints button, .hdr-menu, .help-link, .admin-link { min-height: 44px; }
+  #c-quit { min-height: 44px; padding: 0 10px; }
+  .chip { min-height: 40px; }
+}

@@ -89,12 +89,15 @@
   const quoted = (c) => (c.name.match(/«([^»]+)»/) || [])[1] || "";
   function options(card, deck, must, all) {
     const t = typeOf(card), g = GROUPS.find((x) => x.includes(t)) || [t], q = quoted(card);
-    const fit = (c) => c.id !== card.id && !(q && quoted(c) === q);
+    // своя техніка — лише серед своїх, ворожа — серед ворожих (інакше Leopard/MaxxPro серед варіантів відкидаються одразу);
+    // концепти — серед концептів, якщо їх досить (значок «КОНЦЕПТ» не підказує відповідь)
+    const fit = (c) => c.id !== card.id && !!c.own === !!card.own && !(q && quoted(c) === q);
     const pool = deck.filter(fit), wide = (all || deck).filter((c) => fit(c) && !c.own);
     const pick = [], add = (list) => { for (const c of Logic.shuffle(list)) { if (pick.length >= 3) break; if (!pick.some((x) => x.id === c.id)) pick.push(c); } };
     // те, з чим цю техніку плутають (пара або власні помилки), — серед варіантів обов'язково
     const navy = NAVY.includes(t);
     for (const id of must || []) { const c = pool.find((x) => x.id === id); if (c && pick.length < 2 && !pick.includes(c) && (!navy || NAVY.includes(typeOf(c)))) pick.push(c); }
+    if (card.concept) add(pool.filter((c) => c.concept && g.includes(typeOf(c))));
     add(pool.filter((c) => typeOf(c) === t)); add(pool.filter((c) => g.includes(typeOf(c))));
     add(wide.filter((c) => g.includes(typeOf(c))));   // своєї групи замало на цьому рівні — беремо з усієї техніки тієї ж групи
     if (!navy) add(pool);
@@ -144,11 +147,12 @@
       this._refP = (async () => {
         let list = [];
         let j = {};
-        try { j = await API.call("ref_list", {}, Game.password); list = j.entries || []; } catch (e) { this._refP = null; return null; }
+        try { j = await API.refList(Game.password); list = j.entries || []; } catch (e) { this._refP = null; return null; }
         const byId = new Map(list.map((e) => [e.id, e])), map = new Map();
         this.refDesc = new Map(list.filter((e) => e.card && e.desc).map((e) => [e.card, e.desc]));   // для підказки «Ознака»
         if (j.marks && window.Game) Game.marks = Object.assign(Game.marks || {}, j.marks);
-        const add = (cid, e) => { if (!e || !e.imgs || !e.imgs.length) return; const a = map.get(cid) || []; e.imgs.forEach((im) => { if (!a.some((x) => x.id === im)) a.push({id: im, v: e.v || "1"}); }); map.set(cid, a); };
+        // фото «--ref» (лише для довідника, з підписами) — ніколи не фото завдання
+        const add = (cid, e) => { const imgs = ((e && e.imgs) || []).filter((x) => !String(x).includes("--ref")); if (!imgs.length) return; const a = map.get(cid) || []; imgs.forEach((im) => { if (!a.some((x) => x.id === im)) a.push({id: im, v: e.v || "1"}); }); map.set(cid, a); };
         const ref = window.CARD_REF || {};
         // 1) явні відповідності: картка → запис (id зображення «r024-2» → запис r024)
         for (const [cid, img] of Object.entries(ref)) add(cid, byId.get(String(img).replace(/-[^-]+$/, "")));
@@ -229,9 +233,12 @@
       else { const mm = LS.get("poshuk_cmode", "game"); this.mode = MODES[mm] || MODES.game; }
       let pool = Logic.shuffle(this.fix ? this.fix.slice() : this.withPhoto(!!this.mode.hard));
       if (this.mode.ff && !this.fix) {   // порівну своїх і чужих, перемішано
-        const f = this.ffPools(), half = Math.ceil(ROUNDS / 2);
-        pool = Logic.shuffle(Logic.shuffle(f.own).slice(0, half).concat(Logic.shuffle(f.foe).slice(0, ROUNDS - Math.min(half, f.own.length))));
+        // своїх — випадково від 3 до 7 (не завжди 5+5: інакше останні картки вгадуються підрахунком)
+        const f = this.ffPools(), want = 3 + Math.floor(Math.random() * 5);
+        const nOwn = Math.min(f.own.length, Math.max(want, ROUNDS - f.foe.length));
+        pool = Logic.shuffle(Logic.shuffle(f.own).slice(0, nOwn).concat(Logic.shuffle(f.foe).slice(0, ROUNDS - nOwn)));
       }
+      this.quitted = false;
       this.rounds = pool.slice(0, ROUNDS).map((c) => Object.assign({}, c, {pic: this.pickPic(c.id, !!this.mode.ff && !this.fix)})); this.idx = -1; this.results = []; this.planned = this.rounds.length;
       UI.show("s-cards");
       document.body.dataset.mode = "cards";
@@ -244,11 +251,13 @@
       $("c-weak-btn").onclick = () => this.weak();
       this.used5050 = false;   // 50/50 — один раз за всю гру
       $("c-next").onclick = () => this.next();
-      $("c-quit").onclick = () => { if (confirm("Перервати? Результат не буде збережено.")) { this.stop(); Game.showStart(); } };
+      $("c-quit").onclick = () => { if (confirm("Перервати? Результат не буде збережено.")) { this.quit(); Game.showStart(); } };
       this.fitViewport();
       this.next();
     },
     stop() { clearInterval(this.tT); clearInterval(this.rT); this.unpixel(); const i = $("c-img"); if (i) i.style.visibility = ""; },
+    /* Вихід: гра не продовжується у фоні (завантаження фото, що вже йде, після повернення нічого не запускає). */
+    quit() { this.stop(); this.over = true; this.cur = null; this.quitted = true; },
 
     /* Телефон: коли відкрито клавіатуру — екран займає лише видиму частину, фото стискається. */
     fitViewport() {
@@ -258,14 +267,16 @@
     },
 
     async next() {
+      if (this.quitted) return;
       this.stop();
       this.idx++;
       if (this.idx >= this.rounds.length) return this.summary();
       const c = this.cur = this.rounds[this.idx];
-      this.hintUsed = false; this.signUsed = false; this.weakUsed = false; this.over = false; this.chosen = null;
+      this.hintUsed = false; this.signUsed = false; this.weakUsed = false; this.chosen = null;
+      this.over = true;   // відповіді приймаються лише коли фото вже видно
       const errs = this.results.filter((r) => !r.ok).length;
       $("c-stage").textContent = `${this.mode.ff ? "Свій/чужий · " : this.mode.id === "exam" ? "Іспит · " : this.mode.reveal ? "Проявлення · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
-      if ($("c-concept")) $("c-concept").hidden = !c.concept;
+      if ($("c-concept")) $("c-concept").hidden = true;   // «КОНЦЕПТ» — лише після відповіді (у розборі), інакше підказує
       $("c-score").textContent = this.results.reduce((a, r) => a + r.score, 0);
       $("c-reveal").hidden = true; $("c-nextbox").hidden = true; $("c-form").hidden = false;
       $("c-hint").hidden = true; $("c-hint-btn").hidden = !this.mode.hint; $("c-hint-btn").textContent = this.mode.choice ? "💡 50/50" : "💡 Підказка";
@@ -301,7 +312,7 @@
       // наступне фото — заздалегідь
       const nx = this.rounds[this.idx + 1];
       if (nx) this.photoUrl(nx.id, nx.pic).then((u) => { if (u) { const p = new Image(); p.src = u; } }).catch(() => {});
-      this.t0 = performance.now();
+      this.t0 = performance.now(); this.over = false;
       this.tick(); this.tT = setInterval(() => this.tick(), 200);
       if (!this.mode.choice && !matchMedia("(pointer: coarse)").matches) $("c-answer").focus();
     },
@@ -508,8 +519,13 @@
     },
 
     summary() {
+      if (this.quitted) return;
       this.stop();
       if (window.Marks) Marks.clear($("c-pic"));
+      if (!this.results.length) {   // жодне фото не відкрилось (зв'язок) — порожній результат не записуємо
+        Game.showStart(); UI.toast("Фото не завантажились — перевірте зв'язок і спробуйте ще раз.");
+        return;
+      }
       UI.show("s-summary");
       Game.lastGame = "cards"; Game.lastFix = !!this.fix; Game.lastCardsMode = this.mode.ff ? "ff" : null;
       const res = this.results, max = 10 * (this.mode.lives != null && !this.fix ? (this.planned || res.length) : res.length), total = res.reduce((a, r) => a + r.score, 0);
@@ -527,7 +543,7 @@
         conclusion: this.fix ? `Картки (робота над помилками): ${concl}` : `Картки${m.id === "exam" ? " (іспит)" : m.hard ? " (хардкор)" : m.reveal ? " (проявлення)" : m.ff ? " (свій/чужий)" : ""}: ${concl}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`, clicks: [],
         items: res.map((r) => ["cards", r.id, r.name, r.cat, r.ok ? 1 : 0])};
-      const q = LS.get("poshuk_pending", []); q.push(item); LS.set("poshuk_pending", q);
+      Game.queueResult(item);
       $("sum-sync").className = "muted"; $("sum-sync").textContent = "Записую результат…";
       Game.flushPending().then((left) => {
         $("sum-sync").textContent = left ? "Немає зв'язку: результат збережено в браузері й надішлеться при наступному вході." : (/(^|[^a-zа-яіїєґ])(тест|test)/i.test(String(Game.callsign || "")) ? "Тестовий вхід — результат не записується в аналітику." : (window.Offline && Offline.on ? "Збережено на цьому пристрої (офлайн-версія)." : "Результат записано."));

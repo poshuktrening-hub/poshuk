@@ -29,7 +29,7 @@
         $("d-tools").appendChild(this.viewer.rail);
         this.viewer.grab = (ph, x, y, e) => this.grab(ph, x, y, e);
         $("d-quit").onclick = () => this.quit();
-        $("d-ready").onclick = () => this.ready();
+        $("d-ready").onclick = () => this.ready(true);
         $("d-hint").onclick = () => this.hint();
         $("d-tabs").querySelectorAll("[data-v]").forEach((b) => (b.onclick = () => this.showMap(b.dataset.v)));
         document.addEventListener("keydown", (e) => this.key(e));
@@ -43,7 +43,7 @@
       for (const c of [this.base, this.work]) if (c && c.width) { c.width = 0; c.height = 0; }
       if (this.oppImg && this.oppImg.tiles) for (const t of this.oppImg.tiles) { try { t.bmp && t.bmp.close && t.bmp.close(); } catch (e) { /* ок */ } t.bmp = null; t.p = null; }
       $("d-turnbar").hidden = true; $("d-units").hidden = true; $("d-hint").hidden = true;
-      Object.assign(this, {extraShown: false, extraMode: false, sending: false, lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
+      Object.assign(this, {retryAt: 0, fails: 0, _pack: null, loadedSent: false, helpOpen: false, extraShown: false, extraMode: false, sending: false, lastTurn: "", code: "", secret: "", me: 0, st: null, units: [], sel: -1, base: null, work: null, oppImg: null, seenShots: 0, mapView: "", placing: false, sprites: this.sprites || new Map()});
       $("d-tabs").hidden = true; $("d-ready").hidden = true; $("d-msg").textContent = "";
       $("d-title").textContent = "⚔ Дуель"; ["d-turn", "d-time", "d-me", "d-opp"].forEach((id) => ($(id).textContent = "—"));
       $("d-timebar").style.transform = "scaleX(0)";
@@ -88,17 +88,25 @@
       return pick;
     },
 
-    async create() {
-      try {
-        SFX.unlock();
-        const j = await API.call("duel_create", {callsign: this.cs, kit: this.kit()}, this.pw);
-        this.joined(j);
-      } catch (e) { this.err(e.message); }
+    sendLoaded() {
+      if (this.loadedSent || this.helpOpen || !this.base || !this.code) return;
+      this.loadedSent = true;
+      API.call("duel_loaded", {code: this.code, secret: this.secret}, this.pw).then((r) => this.apply(r)).catch(() => { this.loadedSent = false; setTimeout(() => this.sendLoaded(), 2000); });
     },
-    async join() {
+    /* Кнопки «Створити»/«Приєднатись» — неактивні, поки йде запит (подвійний тап не створює дві кімнати). */
+    async busy(fn) {
+      if (this._busy) return;
+      this._busy = true;
+      const bs = ["d-create", "d-join"].map($).filter(Boolean); bs.forEach((b) => (b.disabled = true));
+      try { await fn(); } catch (e) { this.err(e.message); } finally { this._busy = false; bs.forEach((b) => (b.disabled = false)); }
+    },
+    create() {
+      return this.busy(async () => { SFX.unlock(); this.joined(await API.call("duel_create", {callsign: this.cs, kit: this.kit()}, this.pw)); });
+    },
+    join() {
       const code = ($("d-code").value || "").replace(/\D/g, "");
       if (code.length !== 4) return this.err("Введіть 4 цифри коду");
-      try { SFX.unlock(); this.joined(await API.call("duel_join", {code, callsign: this.cs}, this.pw)); } catch (e) { this.err(e.message); }
+      return this.busy(async () => { SFX.unlock(); this.joined(await API.call("duel_join", {code, callsign: this.cs}, this.pw)); });
     },
     joined(j) {
       this.code = j.code; this.secret = j.secret; this.me = j.me;
@@ -128,7 +136,8 @@
       $("d-me").textContent = j.alive.me != null ? j.alive.me : "—";
       $("d-opp").textContent = j.alive.opp != null ? j.alive.opp : "?";
       if (j.state === "place") {
-        if (this.helpFor !== j.code) { this.helpFor = j.code; Help.show("duel"); }   // правила — щоразу після зʼєднання
+        // правила — лише вперше (далі кнопкою «Правила»); поки відкриті — таймер розстановки не стартує
+        if (this.helpFor !== j.code) { this.helpFor = j.code; this.helpOpen = Help.maybe("duel", () => { this.helpOpen = false; this.sendLoaded(); }); }
         if (!this.base && !this.placing) this.startPlacing(j);
         $("d-turn").textContent = "розстановка";
         this.placeBanner(j);
@@ -181,7 +190,7 @@
         this.mapView = "mine";
         this.renderKit();
         this.msg("Торкніться знімка — поставити вибрану техніку. Тягніть — перемістити; ⟳ — повернути.");
-        API.call("duel_loaded", {code: this.code, secret: this.secret}, this.pw).then((r) => this.apply(r)).catch(() => {});   // таймер стартує, коли карта відкрилась в обох
+        this.loadedSent = false; this.sendLoaded();   // таймер стартує, коли карта відкрилась в обох (і правила закрито)
         clearInterval(this.tickT); this.tickT = setInterval(() => this.tick(), 250);
       } catch (e) {
         // не вийшло (зв'язок, пам'ять) — наступне опитування спробує ще раз, а не лишає чорний екран
@@ -294,14 +303,18 @@
       e.preventDefault(); this.redraw();
     },
 
-    async ready() {
+    async ready(manual) {
       if (!this.units.every((u) => u.x !== null) || this.sending) return;
+      if (!manual && this.retryAt && performance.now() < this.retryAt) return;   // після збою — пауза, а не нова спроба кожні 250 мс
       this.sending = true;
       $("d-ready").disabled = true;
       this.loading("Відправляю вашу карту…");
       try {
         while (this.drawing) await sleep(50);
-        const pack = await Tiles.build(this.work);
+        // пакет карти будується раз на розстановку (повтор після обриву — без повторного стиснення 4096-пкс карти)
+        const key = JSON.stringify(this.units.map((u) => [u.x, u.y, u.angle, u.size]));
+        if (!this._pack || this._pack.key !== key) this._pack = {key, pack: await Tiles.build(this.work)};
+        const pack = this._pack.pack;
         const b = await API.call("duel_place_begin", {code: this.code, secret: this.secret, size: pack.bytes.byteLength,
           w: this.work.width, h: this.work.height,
           units: this.units.map((u) => ({x: u.x, y: u.y, r: Math.max(8, Math.round(u.size * 0.6)), type: Logic.typeOf(u.k.name.replace(/^муляж\s+/i, ""))}))}, this.pw);
@@ -317,7 +330,12 @@
         }
         this.apply(await API.call("duel_place_end", {code: this.code, secret: this.secret}, this.pw));
         this.renderKit();
-      } catch (e) { this.msg(e.message, "no"); $("d-ready").disabled = false; this.sending = false; }
+        this.retryAt = 0; this._pack = null;
+      } catch (e) {
+        this.fails = (this.fails || 0) + 1;
+        this.retryAt = performance.now() + Math.min(15000, 2000 * this.fails);
+        this.msg(e.message + " — повторю автоматично", "no"); $("d-ready").disabled = false; this.sending = false;
+      }
       this.loading(null);
     },
 

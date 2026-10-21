@@ -37,14 +37,16 @@
     async boot() {
       this.password = LS.get("poshuk_pw", null);
       $("login-form").onsubmit = (e) => { e.preventDefault(); this.login($("login-pass").value); };
-      $("start-form").onsubmit = (e) => { e.preventDefault(); this.start(); };
+      // Enter у полі «Прізвище» не запускає гру: старт — лише кнопкою в підменю «Пошук»
+      $("start-form").onsubmit = (e) => { e.preventDefault(); if ($("start-form").dataset.view === "search") this.start(); };
+      $("callsign").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
       $("logout-btn").onclick = () => { LS.del("poshuk_pw"); this.password = null; this.showLogin(); };
       $("g-skip").onclick = () => this.skip();
       $("g-hint").onclick = () => this.hint();
       $("g-sound").textContent = SFX.on ? "🔊" : "🔇";
       $("g-sound").onclick = () => { $("g-sound").textContent = SFX.toggle() ? "🔊" : "🔇"; };
       $("g-next").onclick = () => this.goNext();
-      $("g-quit").onclick = () => { clearInterval(this.nextT); if (confirm("Перервати гру? Результат не буде збережено.")) this.showStart(); };
+      $("g-quit").onclick = () => { if (confirm("Перервати гру? Результат не буде збережено.")) { this.quit(); this.showStart(); } };
       $("sum-again").onclick = () => { SFX.click(); if (this.lastFix) return this.againFix(this.lastGame); if (this.lastGame === "cards" && window.Cards) Cards.start(this.lastCardsMode ? {mode: this.lastCardsMode} : undefined); else this.start(); };   // та сама гра з тими ж налаштуваннями
       $("sum-menu").onclick = () => { SFX.click(); this.lastView = "menu"; this.showStart(); };
       $("sum-exit").onclick = () => $("logout-btn").click();
@@ -347,7 +349,16 @@
       if (v === "duel") { if (window.Duel) Duel.open(); return; }
       if (v === "ff") {   // «Свій/чужий» — окремою плиткою меню, одразу в гру
         if (!window.Cards) return;
-        if (!Cards.refPics && API.isCF) { toast("Завантажую фото…"); Cards.loadRefPics().then(() => this.view("ff")).catch(() => {}); return; }
+        if (!Cards.refPics && API.isCF) {
+          if (this._ffWait) return;   // уже чекаємо — не дублювати запит
+          this._ffWait = true; toast("Завантажую фото…");
+          Cards.loadRefPics().catch(() => null).then((m) => {
+            this._ffWait = false;
+            if (!m) return toast("Немає зв'язку — фото не завантажились. Спробуйте ще раз.");
+            if (!$("s-start").hidden) this.view("ff");   // курсант уже пішов в інший розділ — не перекидати
+          });
+          return;
+        }
         const f = Cards.ffPools();
         if (f.own.length < 3 || f.foe.length < 3) { toast(`Мало фото своєї техніки (${f.own.length}): автопошук ще підбирає. Адміністратору: адмінка → «Картки» → «🤖 Автопошук фото».`); return; }
         Cards.start({mode: "ff"}); return;
@@ -437,7 +448,7 @@
         : hardFirst.length >= this.cfg.rounds_per_game ? Logic.pickRounds(hardFirst, this.cfg.rounds_per_game, taken)
         : [...Logic.pickRounds(hardFirst, hardFirst.length, taken), ...Logic.pickRounds(fl.filter((s) => !hardFirst.includes(s)), this.cfg.rounds_per_game - hardFirst.length, taken)];
       this.results = [];
-      this.idx = -1;
+      this.idx = -1; this.loadFail = null;
       show("s-game");
       if (!this.viewer) {
         this.viewer = new Viewer($("g-view"), {fill: true, onLeft: (x, y) => this.leftClick(x, y), onRight: (x, y) => this.rightClick(x, y), onChange: () => this.hud()});
@@ -453,12 +464,11 @@
       this.nextRound();
     },
 
-    /* Знімки підвантажуються по черзі (а не всі 10 одразу): перший етап відкривається швидше,
-       наступні встигають завантажитись, поки курсант проходить поточний. */
+    /* Наперед — лише наступний етап: поки курсант проходить поточний, наступний встигає завантажитись,
+       а в пам'яті телефона не накопичуються всі 10 знімків. */
     preload(i) {
-      const st = this.rounds[i];
-      if (!st) return;
-      API.loadImage(st.id, this.password).catch(() => {}).then(() => { if (this.rounds && this.rounds[i + 1]) this.preload(i + 1); });
+      const st = this.rounds && this.rounds[i];
+      if (st) API.loadImage(st.id, this.password).catch(() => {});
     },
 
     /* Кнопка «Далі» по центру з відліком 5 с — потім сама переходить далі.
@@ -505,7 +515,19 @@
       this.nextRound();
     },
 
+    /* Вихід посеред гри: зупинити все, що ще чекає (таймер, брифінг, «Далі», підвантаження), щоб гра не йшла далі у фоні. */
+    quit() {
+      this.over = true;
+      clearTimeout(this.tickT); clearInterval(this.nextT); clearTimeout(this.outroT); clearTimeout(this._fcT);
+      if (this._briefEnd) this._briefEnd();
+      this.rounds = null; this.cur = null; this.loadFail = null;
+      $("g-brief").hidden = true; $("g-next").hidden = true; $("g-next").classList.remove("center-next");
+      if (this.viewer) this.viewer.setImage(null);
+      API.trimImages && API.trimImages([]);
+    },
+
     async nextRound() {
+      if (!this.rounds) return;
       this.idx++;
       if (this.idx >= this.rounds.length) return this.summary();
       clearTimeout(this.outroT);
@@ -521,15 +543,22 @@
       $("g-stage").textContent = `${this.mode.id === "game" ? "" : this.mode.name + " · "}Етап ${this.idx + 1}/${this.rounds.length} · ${st.title}`;
       this.msg("Завантажую знімок…");
       $("g-loading").hidden = false;
-      let img;
-      try { img = await API.loadImage(st.id, this.password); } catch (e) {
-        $("g-loading").hidden = true;
-        this.msg("Не вдалось завантажити знімок: " + e.message + " Етап пропущено.", "no");
-        this.results.push({title: st.title, id: st.id, found: 0, total: st.targets.length, misses: 0, time: 0, score: 0, clicks: [], report: ""});
-        $("g-skip").hidden = true; this.showNext("Далі");
-        return;
+      // знімок — до 3 спроб (обрив мережі, застарілий токен: api.js сам перевходить)
+      let img = null, err = null;
+      for (let k = 0; k < 3 && !img; k++) {
+        try { img = await API.loadImage(st.id, this.password); } catch (e) { err = e; if (k < 2 && this.cur === st) await new Promise((r) => setTimeout(r, 1500 * (k + 1))); }
+        if (this.cur !== st) return;   // гру перервано
       }
       $("g-loading").hidden = true;
+      if (!img) {   // не вдалось — «Повторити» або «Пропустити»; пропущений через зв'язок етап не рахується в оцінку
+        this.msg(`Не вдалось завантажити знімок: ${String(err && err.message || "немає зв'язку").replace(/[.\s]+$/, "")}. Повторіть або пропустіть — на оцінку це не вплине.`, "no");
+        this.loadFail = st; this.idx--;
+        $("g-skip").hidden = false;
+        const b = $("g-next"); b.innerHTML = "Повторити ↻"; b.hidden = false; b.classList.add("center-next"); b.style.top = "50%";
+        return;
+      }
+      this.loadFail = null;
+      if (API.trimImages) API.trimImages(this.rounds.slice(this.idx, this.idx + 2).map((s) => s.id));   // у пам'яті — лише поточний і наступний
       this.preload(this.idx + 1);
       this.viewer.setImage(img);
       if (window.FX && FX.prepare) FX.prepare(this.viewer);
@@ -625,7 +654,7 @@
         box.hidden = false; wirePics();
         const bar = box.querySelector(".b-bar i");
         requestAnimationFrame(() => { bar.style.transition = `transform ${BRIEF_MS}ms linear`; bar.style.transform = "scaleX(0)"; });
-        await new Promise((res) => { const t = setTimeout(res, BRIEF_MS); box.querySelector("#b-go").onclick = () => { clearTimeout(t); res(); }; });
+        await this.briefWait(box);
         box.hidden = true;
         return;
       }
@@ -638,8 +667,17 @@
       SFX.radio();
       const bar = box.querySelector(".b-bar i");
       requestAnimationFrame(() => { bar.style.transition = `transform ${BRIEF_MS}ms linear`; bar.style.transform = "scaleX(0)"; });
-      await new Promise((res) => { const t = setTimeout(res, BRIEF_MS); box.querySelector("#b-go").onclick = () => { clearTimeout(t); res(); }; });
+      await this.briefWait(box);
       box.hidden = true;
+    },
+    /* Очікування брифінгу: BRIEF_MS, кнопка «Почати» або вихід з гри (quit) — що станеться раніше. */
+    briefWait(box) {
+      return new Promise((res) => {
+        const end = () => { clearTimeout(t); this._briefEnd = null; res(); };
+        const t = setTimeout(end, BRIEF_MS);
+        this._briefEnd = end;
+        box.querySelector("#b-go").onclick = end;
+      });
     },
 
     // ---------- вигляд камери дрона
@@ -749,7 +787,7 @@
       const box = $("g-fcard") || (() => { const d = document.createElement("div"); d.id = "g-fcard"; d.className = "fcard"; d.setAttribute("role", "status"); $("g-view").parentElement.appendChild(d); return d; })();
       box.innerHTML = `<b>🎯 ${UI.nameHtml(name)}</b>${sign ? `<p>🔎 ${cap(sign[0])}</p>` : t.signs && t.signs.length ? `<p>🔎 ${esc(t.signs.join(", "))}</p>` : ""}${weak ? `<p>⚠ ${cap(weak[0])}</p>` : ""}${c ? `<button type="button" class="link" data-ref="${esc(c.id)}">У довідник →</button>` : ""}`;
       const b = box.querySelector("[data-ref]");
-      if (b) b.onclick = () => { if (confirm("Відкрити довідник? Етап буде перервано, результат не збережеться.")) { clearTimeout(this.tickT); this.over = true; box.hidden = true; Ref.openCard(b.dataset.ref); } };
+      if (b) b.onclick = () => { if (confirm("Відкрити довідник? Етап буде перервано, результат не збережеться.")) { this.quit(); box.hidden = true; Ref.openCard(b.dataset.ref); } };
       box.hidden = false; box.classList.remove("in"); void box.offsetWidth; box.classList.add("in");
       clearTimeout(this._fcT); this._fcT = setTimeout(() => { box.hidden = true; }, 6000);
     },
@@ -770,7 +808,15 @@
       v.zoomAt(1 / 1.6, cx, cy);
     },
 
-    skip() { if (!this.over) this.endRound("Етап пропущено."); },
+    skip() {
+      if (this.loadFail) {   // знімок не завантажився — етап пропускається без впливу на оцінку
+        const st = this.loadFail; this.loadFail = null; this.idx++;
+        this.results.push({title: st.title, id: st.id, found: 0, total: st.targets.filter((t) => !t.decoy).length, misses: 0, time: 0, score: 0, clicks: [], report: "", failed: 1});
+        const b = $("g-next"); b.hidden = true; b.classList.remove("center-next"); b.style.top = "";
+        return this.nextRound();
+      }
+      if (!this.over) this.endRound("Етап пропущено.");
+    },
 
     /* Підказка: блок 2×2 квадрати, всередині якого ціль (ціль не обов'язково в центрі блоку). */
     hint() {
@@ -893,7 +939,7 @@
     summary() {
       show("s-summary");
       this.lastGame = "search"; this.lastFix = !!this.fix;
-      const res = this.results;
+      const all = this.results, res = all.filter((r) => !r.failed);   // етапи, що не завантажились, — поза оцінкою
       const max = 10 * res.length, total = res.reduce((a, r) => a + r.score, 0);
       const pct = max ? Math.round(100 * total / max) : 0, m = this.mode || Logic.MODES.game;
       const concl = m.pass ? (pct >= m.pass ? "Склав" : "Не склав") : Logic.conclusion(total, max);
@@ -903,16 +949,20 @@
       $("sum-rank").innerHTML = `${Logic.rankBadge(rk.level)}<div><div class="rk-label">Звання</div><div class="rk-name">${esc(rk.name)}</div><div class="rk-next">${rk.next ? `До «${esc(rk.next.name)}» — від ${rk.next.min}%` : "Найвище звання"}</div></div>`;
       $("sum-total").style.color = m.pass ? (pct >= m.pass ? "var(--hit)" : "var(--miss)") : pct >= 60 ? "var(--hit)" : pct >= 40 ? "var(--accent)" : "var(--miss)";
       $("sum-table").innerHTML = `<tr><th class="num">Етап</th><th>Знімок</th><th class="num">Цілі</th><th class="num">Промахи</th><th class="num">Час, с</th><th class="num">Бали</th></tr>` +
-        res.map((r, i) => `<tr><td class="num">${i + 1}</td><td>${esc(r.title)}</td><td class="num">${r.found}/${r.total}</td><td class="num">${r.misses}</td><td class="num">${r.time}</td><td class="num">${r.score}</td></tr>`).join("");
+        all.map((r, i) => r.failed ? `<tr class="muted"><td class="num">${i + 1}</td><td>${esc(r.title)}</td><td colspan="4">не завантажився — поза оцінкою</td></tr>`
+          : `<tr><td class="num">${i + 1}</td><td>${esc(r.title)}</td><td class="num">${r.found}/${r.total}</td><td class="num">${r.misses}</td><td class="num">${r.time}</td><td class="num">${r.score}</td></tr>`).join("");
       const now = new Date();
       const p2 = (x) => String(x).padStart(2, "0");
       const item = {callsign: this.callsign, scores: res.map((r) => r.score), max, mode: m.id,
         conclusion: this.fix ? `Робота над помилками: ${concl}` : m.id === "game" ? concl : `${m.name}: ${concl}${m.pass ? ` (поріг ${m.pass}%)` : ""}`,
         date: `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}`,
         clicks: res.flatMap((r) => r.clicks), items: res.flatMap((r) => r.items || [])};
-      const q = LS.get("poshuk_pending", []);
-      q.push(item);
-      LS.set("poshuk_pending", q);
+      if (!res.length) {   // жоден знімок не завантажився — нема чого записувати
+        $("sum-sync").className = "muted"; $("sum-sync").style.color = "var(--miss)";
+        $("sum-sync").textContent = "Знімки не завантажились (зв'язок) — результат не записано. Спробуйте ще раз.";
+        return;
+      }
+      this.queueResult(item);
       $("sum-sync").className = "muted";
       $("sum-sync").textContent = "Записую результат…";
       this.flushPending().then((left) => {
@@ -922,18 +972,27 @@
       });
     },
 
+    /* Результат — у чергу з унікальним id: сервер не задвоїть його, навіть якщо відповідь загубилась і він надійде вдруге. */
+    queueResult(item) {
+      item.cid = item.cid || (Date.now().toString(36) + Math.random().toString(36).slice(2, 10));
+      const q = LS.get("poshuk_pending", []); q.push(item); LS.set("poshuk_pending", q);
+    },
     async flushPending() {
-      const q = LS.get("poshuk_pending", []);
-      if (!q.length || !this.password || this._flushing) return q.length;
-      this._flushing = true;
+      if (this._flushing) { await this._flushing; }   // уже надсилаємо — дочекатись і надіслати решту (новий результат не губиться)
+      if (!LS.get("poshuk_pending", []).length || !this.password) return LS.get("poshuk_pending", []).length;
+      let done;
+      this._flushing = new Promise((r) => (done = r));
       try {
-        while (q.length) {
-          await API.call("submit", Object.assign({dev: deviceId()}, q[0]), this.password);
-          q.shift();
-          LS.set("poshuk_pending", q);
+        for (;;) {
+          const q = LS.get("poshuk_pending", []);   // щоразу свіжа черга: поки йшов запит, міг додатися новий результат
+          if (!q.length) break;
+          const it = q[0];
+          if (!it.cid) { it.cid = Date.now().toString(36) + Math.random().toString(36).slice(2, 10); LS.set("poshuk_pending", q); }
+          await API.call("submit", Object.assign({dev: deviceId()}, it), this.password);
+          LS.set("poshuk_pending", LS.get("poshuk_pending", []).filter((x) => x.cid !== it.cid));
         }
-      } catch (e) { /* лишаємо в черзі */ } finally { this._flushing = false; this.refreshPending(); }
-      return q.length;
+      } catch (e) { /* лишаємо в черзі */ } finally { this._flushing = null; done(); this.refreshPending(); }
+      return LS.get("poshuk_pending", []).length;
     },
 
     refreshPending() {
@@ -974,6 +1033,7 @@
   /* Офлайн-дані: автооновлення о 08:00 і 20:00 — перевірка при відкритті, при появі мережі й щоп'ять хвилин. */
   const autoOff = () => {
     if (!window.Offline || !Offline.ready) return;   // лише пристрої з офлайн-версією; онлайн бачить зміни одразу
+    if ($("s-start").hidden) return;   // лише з меню: посеред гри фонове оновлення гальмує телефон
     Offline.autoUpdate(Game.password, (n) => { if (n) { toast("Офлайн-дані оновлено з сервера ✓"); Game.offUi(); if ($("off-body") && !$("sub-off").hidden) Game.renderOff(); } });
   };
   setTimeout(autoOff, 15000); setInterval(autoOff, 5 * 60e3); window.addEventListener("online", () => setTimeout(autoOff, 5000));

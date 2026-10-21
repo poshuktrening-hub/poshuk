@@ -50,7 +50,21 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS stage_backups (id TEXT PRIMARY KEY, targets TEXT, size INTEGER, chunks INTEGER, created TEXT)`,
   // ознаки на фото довідника: прямокутники з підписами (частки від розміру зображення) — показуються після відповіді в картках
   `CREATE TABLE IF NOT EXISTS ref_marks (img TEXT PRIMARY KEY, marks TEXT, updated TEXT)`,
+  // id надісланих результатів: повтор того самого (відповідь сервера загубилась, клієнт надіслав ще раз) не дублюється
+  `CREATE TABLE IF NOT EXISTS submits (cid TEXT PRIMARY KEY, ts INTEGER)`,
 ];
+
+/* Умова «не в архіві» для results/answers/clicks: старий прапорець archived + межа rowid з останнього архівування
+   (meta archive_cut). Межа кешується в ізоляті на хвилину. */
+let liveCut = null, liveAt = 0;
+async function live(env, table) {
+  if (!liveCut || Date.now() - liveAt > 60e3) {
+    try { liveCut = JSON.parse((await metaGet(env, "archive_cut")) || "{}") || {}; } catch (e) { liveCut = {}; }
+    liveAt = Date.now();
+  }
+  const n = Math.max(0, Math.floor(Number(liveCut[table]) || 0));
+  return `COALESCE(archived,0)=0${n ? ` AND rowid > ${n}` : ""}`;
+}
 
 /* Адреса клієнта (Cloudflare підставляє справжню) — для лімітів і блокування перебору пароля. */
 const ipOf = (request) => request.headers.get("CF-Connecting-IP") || (request.headers.get("X-Forwarded-For") || "").split(",")[0].trim() || "local";
@@ -117,7 +131,7 @@ const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj)
 const FILE_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Content-Disposition": "inline"};
 
 // ------------------------------------------------------------------ база
-const SCHEMA_V = "2026-10-19a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
+const SCHEMA_V = "2026-10-21a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
 let schemaReady = false;
 async function db(env) {
   if (!env.DB) throw new HttpError("База D1 не підключена (Settings → Functions → D1 binding: DB)");
@@ -528,7 +542,7 @@ async function action(env, ctx, req, origin) {
       if (!cs) return {ok: true, results: [], answers: []};
       await ownCallsign(env, cs, req.dev);
       const {results} = await env.DB.prepare("SELECT ts, pct, total, max, mode, conclusion FROM results WHERE callsign=? ORDER BY ts DESC LIMIT 60").bind(cs).all();
-      const {results: answers} = await env.DB.prepare("SELECT kind, item, name, cat, ok, ts FROM answers WHERE callsign=? AND COALESCE(archived,0)=0 ORDER BY ts DESC LIMIT 2000").bind(cs).all();
+      const {results: answers} = await env.DB.prepare(`SELECT kind, item, name, cat, ok, ts FROM answers WHERE callsign=? AND ${await live(env, "answers")} ORDER BY ts DESC LIMIT 2000`).bind(cs).all();
       return {ok: true, results, answers};
     }
     case "mistakes": {   // робота над помилками: етапи й картки, де ОСТАННЯ спроба курсанта була з помилкою
@@ -536,7 +550,7 @@ async function action(env, ctx, req, origin) {
       const cs = String(req.callsign || "").trim().slice(0, 40);
       if (!cs) return {ok: true, stages: [], cards: []};
       await ownCallsign(env, cs, req.dev);
-      const {results} = await env.DB.prepare("SELECT kind, item, ts, MIN(ok) ok FROM answers WHERE callsign=? AND COALESCE(archived,0)=0 AND kind IN ('search','cards') GROUP BY kind, item, ts").bind(cs).all();
+      const {results} = await env.DB.prepare(`SELECT kind, item, ts, MIN(ok) ok FROM answers WHERE callsign=? AND ${await live(env, "answers")} AND kind IN ('search','cards') GROUP BY kind, item, ts`).bind(cs).all();
       const last = new Map();
       for (const r of results) { const k = r.kind + "|" + r.item, p = last.get(k); if (!p || r.ts >= p.ts) last.set(k, r); }
       const out = {ok: true, stages: [], cards: []};
@@ -695,8 +709,8 @@ async function action(env, ctx, req, origin) {
       return {ok: true, stage: rowToStage(r)};
     }
     case "heat": {
-      const {results} = await env.DB.prepare("SELECT x,y,hit FROM clicks WHERE stage=? AND COALESCE(archived,0)=0").bind(String(req.id)).all();
-      const pl = await env.DB.prepare("SELECT COUNT(DISTINCT who) AS n FROM clicks WHERE stage=? AND COALESCE(archived,0)=0").bind(String(req.id)).first();
+      const {results} = await env.DB.prepare(`SELECT x,y,hit FROM clicks WHERE stage=? AND ${await live(env, "clicks")}`).bind(String(req.id)).all();
+      const pl = await env.DB.prepare(`SELECT COUNT(DISTINCT who) AS n FROM clicks WHERE stage=? AND ${await live(env, "clicks")}`).bind(String(req.id)).first();
       return {ok: true, clicks: results.map((r) => [r.x, r.y, !!r.hit]), players: pl ? pl.n : 0};
     }
     case "get_settings": { const s = await settings(env); delete s._empty; return {ok: true, settings: s}; }
@@ -791,17 +805,21 @@ async function action(env, ctx, req, origin) {
     }
     case "analytics": {
       const since = String(req.since || "0000");
-      const {results: ans} = await env.DB.prepare("SELECT callsign, kind, cat, name, SUM(ok) ok, COUNT(*) n FROM answers WHERE ts >= ? AND COALESCE(archived,0)=0 GROUP BY callsign, kind, cat, name").bind(since).all();
-      const {results: res} = await env.DB.prepare("SELECT callsign, mode, COUNT(*) n, AVG(pct) avg, MAX(ts) last FROM results WHERE ts >= ? AND COALESCE(archived,0)=0 GROUP BY callsign, mode").bind(since).all();
-      const {results: list} = await env.DB.prepare("SELECT ts, callsign, mode, total, max, pct, conclusion FROM results WHERE ts >= ? AND COALESCE(archived,0)=0 ORDER BY ts DESC LIMIT 500").bind(since).all();
-      const first = await env.DB.prepare("SELECT MIN(ts) t FROM answers WHERE COALESCE(archived,0)=0").first();
+      const {results: ans} = await env.DB.prepare(`SELECT callsign, kind, cat, name, SUM(ok) ok, COUNT(*) n FROM answers WHERE ts >= ? AND ${await live(env, "answers")} GROUP BY callsign, kind, cat, name`).bind(since).all();
+      const {results: res} = await env.DB.prepare(`SELECT callsign, mode, COUNT(*) n, AVG(pct) avg, MAX(ts) last FROM results WHERE ts >= ? AND ${await live(env, "results")} GROUP BY callsign, mode`).bind(since).all();
+      const {results: list} = await env.DB.prepare(`SELECT ts, callsign, mode, total, max, pct, conclusion FROM results WHERE ts >= ? AND ${await live(env, "results")} ORDER BY ts DESC LIMIT 500`).bind(since).all();
+      const first = await env.DB.prepare(`SELECT MIN(ts) t FROM answers WHERE ${await live(env, "answers")}`).first();
       const real = (r) => !isTestName(r.callsign);
       return {ok: true, answers: ans.filter(real), results: res.filter(real), list: list.filter(real), since: first ? first.t : null};
     }
     case "archive_history": {
-      const A = "COALESCE(archived,0)=0";
-      const n = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM results WHERE ${A}) r, (SELECT COUNT(*) FROM answers WHERE ${A}) a, (SELECT COUNT(*) FROM clicks WHERE ${A}) c`).first();
-      await env.DB.batch(["results", "answers", "clicks"].map((t) => env.DB.prepare(`UPDATE ${t} SET archived=1 WHERE ${A}`)));
+      // без переписування рядків (раніше UPDATE усієї історії з'їдав добовий ліміт записів D1): запам'ятовуємо
+      // останній rowid кожної таблиці — усе до нього вважається архівом
+      const T = ["results", "answers", "clicks"];
+      const n = await env.DB.prepare(`SELECT (SELECT COUNT(*) FROM results WHERE ${await live(env, "results")}) r, (SELECT COUNT(*) FROM answers WHERE ${await live(env, "answers")}) a, (SELECT COUNT(*) FROM clicks WHERE ${await live(env, "clicks")}) c`).first();
+      const mx = await env.DB.prepare("SELECT (SELECT COALESCE(MAX(rowid),0) FROM results) results, (SELECT COALESCE(MAX(rowid),0) FROM answers) answers, (SELECT COALESCE(MAX(rowid),0) FROM clicks) clicks").first();
+      await metaSet(env, "archive_cut", JSON.stringify(Object.fromEntries(T.map((t) => [t, Number(mx[t]) || 0]))));
+      liveCut = null;
       // Google-таблиця: рядки результатів переносяться на сусідній аркуш «Архів»
       let sheet = null;
       if (env.SHEETS_URL && env.SHEETS_SECRET) {
@@ -1004,7 +1022,7 @@ async function duelTop(env, sinceMs) {
 }
 
 async function top3(env, since = "0000") {   // since — початок доби за часом курсанта («YYYY-MM-DD 00:00»)
-  const {results} = await env.DB.prepare("SELECT callsign, mode, pct, ts, conclusion FROM results WHERE COALESCE(archived,0)=0 AND ts >= ? ORDER BY ts DESC LIMIT 5000").bind(since).all();
+  const {results} = await env.DB.prepare(`SELECT callsign, mode, pct, ts, conclusion FROM results WHERE ${await live(env, "results")} AND ts >= ? ORDER BY ts DESC LIMIT 5000`).bind(since).all();
   const out = {search: new Map(), cards: new Map(), ff: new Map()};
   for (const r of results) {
     const name = String(r.callsign || "").trim(); if (!name || isTestName(name)) continue;
@@ -1034,8 +1052,10 @@ async function submit(env, ctx, req) {
   const total = scores.reduce((a, b) => a + b, 0);
   const max = Math.max(0, Math.min(10000, Math.round(Number(req.max)))) || scores.length * 10;
   const pct = max ? Math.max(0, Math.min(100, Math.round(100 * total / max))) : 0;   // «свій/чужий»: штрафи можуть дати мінус — у відсотках 0…100
-  const st = [env.DB.prepare("INSERT INTO results (ts,callsign,total,max,pct,conclusion,scores,mode) VALUES (?,?,?,?,?,?,?,?)")
-    .bind(when, cs, total, max, pct, String(req.conclusion || "").slice(0, 120), JSON.stringify(scores), String(req.mode || "game").slice(0, 10))];
+  const cid = /^[a-z0-9]{8,40}$/.test(String(req.cid || "")) ? String(req.cid) : "";
+  const st = cid ? [env.DB.prepare("INSERT INTO submits (cid, ts) VALUES (?,?)").bind(cid, Date.now())] : [];
+  st.push(env.DB.prepare("INSERT INTO results (ts,callsign,total,max,pct,conclusion,scores,mode) VALUES (?,?,?,?,?,?,?,?)")
+    .bind(when, cs, total, max, pct, String(req.conclusion || "").slice(0, 120), JSON.stringify(scores), String(req.mode || "game").slice(0, 10)));
   // відповіді по кожній цілі/картці — для аналітики інструктора (слабкі місця по категоріях техніки)
   (req.items || []).slice(0, 200).forEach((it) => {
     if (!Array.isArray(it)) return;
@@ -1046,9 +1066,11 @@ async function submit(env, ctx, req) {
   const who = (await hmac(env, "who." + cs)).slice(0, 10); // позивний у кліках не зберігаємо
   (Array.isArray(req.clicks) ? req.clicks : []).slice(0, 500).forEach((c) => { if (!Array.isArray(c)) return; st.push(env.DB.prepare("INSERT INTO clicks (stage,x,y,hit,ts,who) VALUES (?,?,?,?,?,?)")
     .bind(String(c[0] || "").slice(0, 40), Math.round(Number(c[1]) || 0), Math.round(Number(c[2]) || 0), c[3] ? 1 : 0, when, who)); });
-  await env.DB.batch(st);
+  try { await env.DB.batch(st); }   // пакет — одна транзакція: повторний cid відкочує все
+  catch (e) { if (cid && /UNIQUE|constraint/i.test(String(e.message || e))) return {ok: true, dup: true}; throw e; }
+  if (cid && Math.random() < 0.02) ctx.waitUntil(env.DB.prepare("DELETE FROM submits WHERE ts < ?").bind(Date.now() - 60 * 86400e3).run().catch(() => {}));
   if (env.SHEETS_URL && env.SHEETS_SECRET) {
-    const body = Object.assign({}, req, {action: "ingest", secret: env.SHEETS_SECRET, p: undefined, t: undefined});
+    const body = Object.assign({}, req, {action: "ingest", secret: env.SHEETS_SECRET, p: undefined, t: undefined, _ip: undefined, dev: undefined, cid: undefined});
     ctx.waitUntil(gas(env, body).catch(() => {}));
   }
   return {ok: true};

@@ -51,12 +51,13 @@
       UI.show("s-ref");
       document.body.dataset.mode = "ref";
       $("r-back").onclick = () => this.close();
-      $("r-q").oninput = (e) => { this.q = e.target.value; this.renderCats(); this.renderList(); };
+      // пошук — з паузою 150 мс після останньої літери (не перебудовувати список ~600 записів на кожне натискання)
+      $("r-q").oninput = (e) => { this.q = e.target.value; clearTimeout(this._qT); this._qT = setTimeout(() => { this.renderCats(); this.renderList(); }, 150); };
       $("r-q").value = this.q;
       this.closeDetail();
       if (!this.entries) {
         $("r-list").innerHTML = `<p class="muted r-empty">Завантажую довідник…</p>`;
-        try { const j = await API.call("ref_list", {}, Game.password); if (j.marks) Game.marks = Object.assign(Game.marks || {}, j.marks); this.entries = this.withCards(sortRef(j.entries || [])); }
+        try { const j = await API.refList(Game.password); if (j.marks) Game.marks = Object.assign(Game.marks || {}, j.marks); this.entries = this.withCards(sortRef(j.entries || [])); }
         catch (e) { $("r-list").innerHTML = `<p class="err r-empty">${esc(e.message)}</p>`; return; }
       }
       this.renderCats(); this.renderList();
@@ -139,7 +140,7 @@
       while (j.left > 0 && n++ < 100) j = await API.call("ref_link", {}, pw);
       const more = await this.shellCats(pw); if (more.length) await API.call("ref_link", {shells: more}, pw);   // оболонки, створені під час перенесення
       this._synced = true;
-      this.entries = null;
+      this.entries = null; API.refReset();
       return j;
     },
     weakHtml(e) {
@@ -250,6 +251,7 @@
       this.cur = id;
       const prev = list[i - 1], next = list[i + 1];
       const box = $("r-detail");
+      this.clearMarks();   // розмітка попереднього запису: зняти слухачі (інакше накопичуються з кожним ‹ ›)
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
           ${window.Offline && Offline.on ? "" : `<button type="button" id="rd-sugg" title="Запропонувати фото до цього запису" aria-label="Запропонувати фото">📷</button>`}<button type="button" id="rd-print" title="Друк / PDF цього запису" aria-label="Друк">🖨</button><button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
@@ -333,7 +335,8 @@
       };
       draw();
     },
-    closeDetail() { $("r-detail").hidden = true; $("r-zoom").hidden = true; this.cur = null; },
+    closeDetail() { this.clearMarks(); $("r-detail").hidden = true; $("r-zoom").hidden = true; this.cur = null; },
+    clearMarks() { if (window.Marks) $("r-detail").querySelectorAll(".mk-layer").forEach((l) => Marks.clear(l.parentElement)); },
     zoom(src) {
       if (!src) return;
       const z = $("r-zoom"); z.innerHTML = `<img alt="" src="${esc(src)}"><button type="button" class="r-zx" aria-label="Закрити">✕</button>`;
@@ -394,7 +397,7 @@
         e._side = (c && c.own) || own ? "ua" : "ru";
         e._cat = canonCat(own ? Logic.category(e.name) : e.cat, e.name);
       }
-      Ref.entries = null;   // курсантський список перечитається
+      Ref.entries = null; API.refReset();   // курсантський список перечитається
     },
     cats() { const out = []; this.entries.forEach((e) => { if (!out.includes(e.cat)) out.push(e.cat); }); return out; },
     /* підтипи вибраної сторони — за абеткою, «Інше» в кінці */
@@ -663,7 +666,7 @@
           done += ch;
         }
       } finally { this.busy = false; }
-      Ref.entries = null;
+      Ref.entries = null; API.refReset();
       return `Готово ✓ Оновлено полів: ${done}${already ? `, уже були оновлені: ${already}` : ""}${skipped.length ? `. Пропущено: ${skipped.join("; ")}` : ""}.`;
     },
 
@@ -682,7 +685,7 @@
         }
         const pr = await API.call("ref_prune", {keep: b.entries.map((e) => e.id)}, this.pw);
         this.say(`Готово ✓ Позицій: ${b.entries.length}${pr.removed ? `, прибрано застарілих записів: ${pr.removed}` : ""}.`, "ok");
-        Ref.entries = null;
+        Ref.entries = null; API.refReset();
         return b.entries.length;
       } finally { this.busy = false; }
     },
