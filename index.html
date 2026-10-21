@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex,nofollow">
 <title>Пошук техніки</title>
 <link rel="preload" href="fonts/geologica-cyrillic-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="fonts.css?v=202610211700">
-<link rel="stylesheet" href="style.css?v=202610211700">
+<link rel="stylesheet" href="fonts.css?v=28029914333">
+<link rel="stylesheet" href="style.css?v=964267439">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f1317">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -18,10 +18,12 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f1317'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23ffb23e' stroke-width='2.5'/%3E%3Cpath d='M16 3v8M16 21v8M3 16h8M21 16h8' stroke='%23ffb23e' stroke-width='2.5'/%3E%3C/svg%3E">
 </head>
 <body>
+<!-- заставка, поки вантажаться скрипти (інакше на повільній мережі кілька секунд порожній екран) -->
+<div class="splash" id="splash" aria-live="polite"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="11" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 2v9M20 29v9M2 20h9M29 20h9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="20" cy="20" r="2.5" fill="currentColor"/></svg><b>Пошук техніки</b><span>Завантаження…</span></div>
 
 <!-- фон стартових екранів -->
 <div class="bgvid" id="bgvid" aria-hidden="true" hidden>
-  <video muted loop playsinline preload="metadata" poster="media/bg.jpg"><source src="media/bg.mp4" type="video/mp4"><source src="media/bg.webm" type="video/webm"></video>
+  <video muted loop playsinline preload="none" poster="media/bg.jpg"><source src="media/bg.mp4" type="video/mp4"><source src="media/bg.webm" type="video/webm"></video>
 </div>
 
 <!-- вхід -->
@@ -216,31 +218,18 @@
 
 <div class="toast" id="toast" role="status" hidden></div>
 
-<script src="config.js?v=202610211700"></script>
-<script src="js/sfx.js?v=202610211700"></script>
-<script src="js/fx.js?v=202610211700"></script>
-<script src="js/api.js?v=202610211700"></script>
-<script src="js/offline.js?v=202610211700"></script>
-<script src="js/tiles.js?v=202610211700"></script>
-<script src="js/viewer.js?v=202610211700"></script>
-<script src="js/logic.js?v=202610211700"></script>
-<script src="js/game.js?v=202610211700"></script>
-<script src="js/cards-data.js?v=202610211700"></script>
-<script src="js/cards-data3.js?v=202610211700"></script>
-<script src="js/cards-weak.js?v=202610211700"></script>
-<script src="js/cards-data2.js?v=202610211700"></script>
-<script src="js/cards-own.js?v=202610211700"></script>
-<script src="js/ff-skip.js?v=202610211700"></script>
-<script src="js/cards.js?v=202610211700"></script>
-<script src="js/marks.js?v=202610211700"></script>
-<script src="js/ref.js?v=202610211700"></script>
-<script src="js/markexport.js?v=202610211700"></script>
-<script src="js/print.js?v=202610211700"></script>
-<script src="js/help.js?v=202610211700"></script>
-<script src="js/compose.js?v=202610211700"></script>
-<script src="js/models.js?v=202610211700"></script>
-<script src="js/models2.js?v=202610211700"></script>
-<script src="js/duel.js?v=202610211700"></script>
-<script src="js/main.js?v=202610211700"></script>
+<script type="application/json" id="asset-v">{"admin":"js/admin.js?v=67447240126","analytics":"js/analytics.js?v=48233850806","cards-admin":"js/cards-admin.js?v=281604721","cards-commons":"js/cards-commons.js?v=20765811011","cards-data":"js/cards-data.js?v=65619974686","cards-data2":"js/cards-data2.js?v=58036373329","cards-data3":"js/cards-data3.js?v=16801233847","cards-own":"js/cards-own.js?v=16750467521","cards-weak":"js/cards-weak.js?v=5292358349","compose-legacy":"js/compose-legacy.js?v=21010762684","compose":"js/compose.js?v=49659535683","crop":"js/crop.js?v=21914974793","duel":"js/duel.js?v=30600300189","ff-skip":"js/ff-skip.js?v=66592551684","generator":"js/generator.js?v=25756699985","markexport":"js/markexport.js?v=6646250012","marks":"js/marks.js?v=67433988315","models":"js/models.js?v=56821953081","models2":"js/models2.js?v=46640107294","print":"js/print.js?v=31233701313","ref":"js/ref.js?v=23766501883","restage":"js/restage.js?v=58664594882","scale":"js/scale.js?v=19763324438","variants":"js/variants.js?v=66481414487"}</script>
+<script src="config.js?v=46648795609"></script>
+<script src="js/sfx.js?v=4608450919"></script>
+<script src="js/fx.js?v=55477703782"></script>
+<script src="js/api.js?v=22422811461"></script>
+<script src="js/offline.js?v=4111256711"></script>
+<script src="js/tiles.js?v=35963360108"></script>
+<script src="js/viewer.js?v=23246492751"></script>
+<script src="js/logic.js?v=51322096098"></script>
+<script src="js/game.js?v=6181630663"></script>
+<script src="js/cards.js?v=19529616874"></script>
+<script src="js/help.js?v=14799264201"></script>
+<script src="js/main.js?v=60422564981"></script>
 </body>
 </html>

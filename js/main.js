@@ -8,16 +8,23 @@
       return;
     }
     if (location.hash === "#admin") loadAdmin().then(() => Admin.boot()).catch((e) => { UI.show("s-login"); document.getElementById("login-sub").textContent = e.message; });
-    else Game.boot();
+    else {
+      Game.boot();
+      // решта модулів — у фоні після першого екрана; меню карток перемальовується, коли дані дійшли
+      const bg = () => API.need("data", "models", "extra").then(() => { if (window.Cards && !document.getElementById("s-start").hidden) Cards.renderMenu(); return API.need("duel"); }).catch(() => {});
+      setTimeout(bg, 300);
+    }
   }
   /* Адмінка — окремі модулі (~200 КБ), які курсантові не потрібні: вантажаться лише за адресою #admin. */
   const ADMIN_JS = ["cards-commons", "cards-admin", "analytics", "scale", "crop", "generator", "compose-legacy", "restage", "variants", "admin"];
   function loadAdmin() {
     if (window.Admin) return Promise.resolve();
-    const me = document.querySelector('script[src*="js/main.js"]'), v = me && (me.getAttribute("src").match(/v=([^&]+)/) || [])[1] || "";
+    return API.need("data", "models", "extra", "duel").then(loadAdminJs);
+  }
+  function loadAdminJs() {
     return ADMIN_JS.reduce((p, name) => p.then(() => new Promise((res, rej) => {
       const s = document.createElement("script");
-      s.src = `js/${name}.js${v ? "?v=" + v : ""}`;
+      s.src = API.lazySrc(name);
       s.onload = res; s.onerror = () => rej(new Error(`Не завантажився модуль адмінки: ${name}.js — оновіть сторінку`));
       document.body.appendChild(s);
     })), Promise.resolve());

@@ -1232,3 +1232,12 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
   #c-quit { min-height: 44px; padding: 0 10px; }
   .chip { min-height: 40px; }
 }
+
+/* заставка до першого екрана */
+.splash { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: var(--bg); color: var(--accent, #ffb23e); z-index: 50; }
+.splash svg { width: 56px; height: 56px; animation: splash-spin 2.4s linear infinite; }
+.splash b { font: 700 1.25rem/1.2 var(--head, sans-serif); color: var(--fg); }
+.splash span { color: var(--muted, #8a96a3); font-size: .9rem; }
+.splash[hidden] { display: none; }
+@keyframes splash-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .splash svg { animation: none; } }

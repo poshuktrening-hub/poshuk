@@ -47,6 +47,7 @@
     const list = new Set(["./", "index.html", "manifest.webmanifest", "media/icon-192.png", "media/icon-512.png", "media/bg.jpg",
       "media/help-search.svg", "media/help-cards.svg", "media/help-ref.svg", "media/help-duel.svg"]);
     document.querySelectorAll("script[src]").forEach((s) => list.add(s.getAttribute("src")));
+    API.lazyFiles().forEach((u) => list.add(u));   // модулі, що вантажаться пізніше, — теж у кеш (офлайн без них не працює)
     document.querySelectorAll("link[rel=stylesheet][href]").forEach((l) => list.add(l.getAttribute("href")));
     try { const css = await (await fetch("fonts.css")).text(); (css.match(/url\(([^)]+)\)/g) || []).forEach((u) => list.add(u.slice(4, -1).replace(/["']/g, ""))); } catch (e) { /* шрифти підтягнуться з кешу браузера */ }
     const c = await caches.open("poshuk-shell");

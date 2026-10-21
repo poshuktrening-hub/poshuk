@@ -226,6 +226,7 @@
     start(opt) {
       if (!Game.callsignOk()) return;
       SFX.unlock();
+      if (!API.ready("data", "extra")) { API.need("data", "extra").then(() => this.start(opt), (e) => UI.toast(e.message)); return; }
       if (window.Help && Help.maybe("cards", () => this.start(opt))) return;   // перший раз — інструкція
       this.fix = opt && opt.fix && opt.fix.length ? opt.fix : null;
       if (this.fix) this.mode = MODES.game;

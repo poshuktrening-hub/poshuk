@@ -13,6 +13,7 @@
   const inTrap = () => !!(history.state && history.state.trap);
   const trap = () => { if (!inTrap()) try { history.pushState({trap: 1}, ""); } catch (e) { /* ок */ } };
   function show(id) {
+    const sp = $("splash"); if (sp) sp.remove();
     document.querySelectorAll(".screen").forEach((s) => (s.hidden = s.id !== id));
     if (!/^s-(start|login|admin)$/.test(id)) trap();
     const bg = $("bgvid"), on = BG_SCREENS.includes(id);
@@ -20,7 +21,9 @@
     bg.hidden = !on;
     document.body.classList.toggle("with-bg", on);
     const v = bg.querySelector("video");
-    const still = matchMedia("(prefers-reduced-motion: reduce)").matches || (navigator.connection && navigator.connection.saveData);
+    // відео тла (2+ МБ) — лише на ПК зі швидким зв'язком; на телефоні й повільній мережі — нерухома картинка
+    const cn = navigator.connection || {};
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches || cn.saveData || /(^|-)(2g|3g)$/.test(cn.effectiveType || "") || matchMedia("(pointer: coarse)").matches;
     if (on && !still) v.play().catch(() => {}); else v.pause();
   }
   function toast(text, ms = 3500) {
@@ -318,7 +321,7 @@
           const j = await API.call("mistakes", {callsign: cs, dev: deviceId()}, this.password);
           const ids = new Set(j.stages || []);
           this.mist.stages = this.playable().filter((s) => ids.has(s.id));
-          if (window.Cards) { await Cards.loadRefPics().catch(() => null); const c = new Set(j.cards || []); this.mist.cards = Cards.withPhoto().filter((x) => c.has(x.id)); }
+          if (window.Cards) { await API.need("data"); await Cards.loadRefPics().catch(() => null); const c = new Set(j.cards || []); this.mist.cards = Cards.withPhoto().filter((x) => c.has(x.id)); }
         } catch (e) { /* без списку помилок */ }
       }
       const n = this.mist.stages.length, m = this.mist.cards.length;
@@ -345,6 +348,15 @@
 
     /* Головне меню → підменю режиму. */
     view(v, fromPop) {
+      // розділу потрібні модулі, які ще докачуються у фоні, — дочекатись їх
+      const dep = {ref: ["data", "extra"], weak: ["data", "extra"], duel: ["data", "models", "duel"], ff: ["data", "extra"], cards: ["data", "extra"], fix: ["data", "extra", "models"]}[v];
+      if (dep && !API.ready(...dep)) {
+        if (this._needWait === v) return;
+        this._needWait = v; toast("Завантажую…", 20000);
+        API.need(...dep).then(() => { this._needWait = null; $("toast").hidden = true; if (!$("s-start").hidden) this.view(v, fromPop); },
+          (e) => { this._needWait = null; toast(e.message); });
+        return;
+      }
       if (v === "ref") { if (window.Ref) Ref.open(); return; }
       if (v === "duel") { if (window.Duel) Duel.open(); return; }
       if (v === "ff") {   // «Свій/чужий» — окремою плиткою меню, одразу в гру
@@ -436,6 +448,13 @@
     start(opt) {
       if (!this.callsignOk()) return;
       SFX.unlock();
+      if (!API.ready("data", "models", "extra")) {   // моделі техніки для брифінгу ще докачуються
+        if (this._startWait) return;
+        this._startWait = true; toast("Завантажую…", 20000);
+        API.need("data", "models", "extra").then(() => { this._startWait = false; $("toast").hidden = true; if (!$("s-start").hidden) this.start(opt); },
+          (e) => { this._startWait = false; toast(e.message); });
+        return;
+      }
       if (window.Help && Help.maybe("search", () => this.start(opt))) return;   // перший раз — інструкція
       this.fix = opt && opt.fix && opt.fix.length ? opt.fix : null;
       this.mode = this.fix ? Logic.MODES.game : Logic.MODES[this.sel.mode] || Logic.MODES.game;

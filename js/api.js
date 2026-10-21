@@ -230,5 +230,36 @@
   }
   const refReset = () => { refP = null; };
 
-  window.API = {refList, refReset, useKey, call, callNet, fetchPack, token, noteStages, loadImage, trimImages, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
+  /* Модулі, яких немає на першому екрані (дані карток ~470 КБ, довідник, дуель, моделі техніки) — вантажаться
+     після входу у фоні, а розділ, якому вони потрібні, чекає на них (API.need). Так вхід з'являється в рази швидше. */
+  const LAZY = {
+    data: ["cards-data", "cards-data3", "cards-weak", "cards-data2", "cards-own", "ff-skip"],
+    models: ["compose", "models", "models2"],
+    extra: ["marks", "ref", "markexport", "print"],
+    duel: ["duel"],
+  };
+  const LAZY_DEPS = {extra: ["data"], duel: ["models"]};
+  const lazyP = {}, lazyDone = {};
+  // адреси з версією за вмістом файлу (tools/stamp.js пише їх в index.html)
+  const AV = (() => { try { return JSON.parse((document.getElementById("asset-v") || {}).textContent || "{}"); } catch (e) { return {}; } })();
+  const lazySrc = (name) => AV[name] || `js/${name}.js`;
+  function script(name) {
+    return new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = lazySrc(name);
+      s.onload = res; s.onerror = () => { s.remove(); rej(new Error(`Не завантажився модуль ${name}.js — перевірте зв'язок`)); };
+      document.body.appendChild(s);
+    });
+  }
+  function need(...groups) {
+    return Promise.all(groups.map((g) => lazyP[g] || (lazyP[g] = (async () => {
+      if (LAZY_DEPS[g]) await need(...LAZY_DEPS[g]);
+      for (const n of LAZY[g]) await script(n);
+      lazyDone[g] = true;
+    })().catch((e) => { delete lazyP[g]; throw e; }))));
+  }
+  const ready = (...groups) => groups.every((g) => lazyDone[g]);
+  const lazyFiles = () => Object.values(LAZY).flat().map(lazySrc);
+
+  window.API = {need, ready, lazyFiles, lazySrc, refList, refReset, useKey, call, callNet, fetchPack, token, noteStages, loadImage, trimImages, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
 })();
