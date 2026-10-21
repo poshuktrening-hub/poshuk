@@ -388,6 +388,14 @@ async function auth(env, req, need) {
 }
 
 // ------------------------------------------------------------------ етапи
+/* Етап без координат цілей: тип, муляж, модель, ознаки лишаються (брифінг), позиції — ні.
+   scene — відбиток розстановки (щоб день і зима тієї самої сцени не потрапляли в одну гру), з якого координат не відновити. */
+function hideTargets(st) {
+  const pos = (st.targets || []).map((t) => Math.round(t.x / 20) + ":" + Math.round(t.y / 20)).sort().join(",");
+  let h = 2166136261; for (const ch of `${st.w}x${st.h}|${pos}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+  return Object.assign({}, st, {scene: pos ? "s" + h.toString(36) : "", targets: (st.targets || []).map(({x, y, r, ...rest}) => rest)});
+}
+
 function rowToStage(r) {
   let targets = [];
   try { targets = JSON.parse(r.targets || "[]"); } catch (e) { targets = []; }
@@ -502,10 +510,21 @@ async function action(env, ctx, req, origin) {
       const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects").all();
       const {results: cp} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
       let cardHard = {}; try { cardHard = JSON.parse((await metaGet(env, "cards_hard")) || "{}"); } catch (e) { cardHard = {}; }
-      return {ok: true, brandIcon: (await metaGet(env, "brand_icon")) || "", settings: publicSettings(await settings(env)), stages: await stages(env, false), objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]), cardPics: await cardPics(env),
+      // координати цілей — не в загальному списку (інакше всі відповіді видно в DevTools); гра бере їх на початку
+      // етапу (дія "round"). Офлайн-версія й адмін — з координатами.
+      const full = role === "admin" || role === "offline" || req.off || req.full;
+      const st = (await stages(env, false)).map((x) => (full ? x : hideTargets(x)));
+      return {ok: true, brandIcon: (await metaGet(env, "brand_icon")) || "", settings: publicSettings(await settings(env)), stages: st, objects: objs, cardPhotos: cp.map((r) => [r.id, r.updated]), cardPics: await cardPics(env),
         cardCredits: cp.filter((r) => r.credit).map((r) => [r.id, r.credit]), cardHard, marks: await marksAll(env), role, token: role === "off" ? undefined : await makeToken(env, role)};
     }
     case "submit": { await auth(env, req, "player"); return submit(env, ctx, req); }
+    case "round": {   // цілі етапу з координатами — коли етап починається
+      await auth(env, req, "player");
+      const r = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id=? AND ready=1").bind(String(req.id || "").slice(0, 40)).first();
+      const sg = r && rowToStage(r);
+      if (!sg || !sg.enabled) throw new HttpError("Етап не знайдено", 404);
+      return {ok: true, targets: sg.targets};
+    }
     case "offline_key": {   // ключ офлайн-пристрою (видається після входу паролем; ключем — продовжується)
       await auth(env, req, "offline");
       return {ok: true, key: await makeOffToken(env), days: OFF_DAYS};
@@ -1035,6 +1054,25 @@ async function top3(env, since = "0000") {   // since — початок доб�
   return {search: pick(out.search), cards: pick(out.cards), ff: pick(out.ff)};
 }
 
+async function checkSearch(env, req, scores) {
+  const order = [...new Set(req.items.filter((it) => Array.isArray(it) && it[0] === "search").map((it) => String(it[1]).slice(0, 40)))];
+  if (!order.length || order.length !== scores.length) return;
+  const {results} = await env.DB.prepare(`SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE id IN (${order.map(() => "?").join(",")})`).bind(...order).all();
+  const byId = new Map(results.map((r) => [r.id, rowToStage(r)]));
+  const clicks = (Array.isArray(req.clicks) ? req.clicks : []).filter(Array.isArray);
+  order.forEach((id, i) => {
+    const sg = byId.get(id); if (!sg) return;
+    const tg = sg.targets.filter((t) => !t.decoy);
+    const mine = clicks.filter((c) => String(c[0]) === id);
+    const found = new Set();
+    tg.forEach((t, k) => { if (mine.some((c) => Math.hypot(Number(c[1]) - t.x, Number(c[2]) - t.y) <= (t.r || 14) + 2)) found.add(k); });
+    if (scores[i] > 0 && found.size < tg.length) scores[i] = 0;
+    // відповіді по цілях — теж за геометрією
+    let k = 0;
+    req.items.forEach((it) => { if (Array.isArray(it) && it[0] === "search" && String(it[1]) === id) { if (it[4] && !found.has(k)) it[4] = 0; k++; } });
+  });
+}
+
 async function submit(env, ctx, req) {
   // дата — від клієнта (його місцевий час; офлайн-результати досилаються пізніше), але лише у форматі «YYYY-MM-DD HH:MM»,
   // не старша за 30 діб і не з майбутнього (понад добу) — інакше час сервера
@@ -1049,6 +1087,10 @@ async function submit(env, ctx, req) {
     try { await env.DB.prepare("INSERT OR IGNORE INTO callsign_owner (cs, dev, ts) VALUES (?,?,?)").bind(cs.trim(), String(req.dev), new Date().toISOString()).run(); } catch (e) { /* не критично */ }
   }
   const scores = (Array.isArray(req.scores) ? req.scores : []).slice(0, MAX_ROUNDS).map((v) => Math.max(-100, Math.min(100, Math.round(Number(v) || 0))));
+  // «Пошук»: бали етапу перевіряються за кліками — 10 лише якщо кліки справді влучили в усі цілі етапу
+  if (!/^cards|^duel/.test(String(req.mode || "")) && Array.isArray(req.items)) {
+    try { await checkSearch(env, req, scores); } catch (e) { /* перевірка не вдалась — лишаємо як є */ }
+  }
   const total = scores.reduce((a, b) => a + b, 0);
   const max = Math.max(0, Math.min(10000, Math.round(Number(req.max)))) || scores.length * 10;
   const pct = max ? Math.max(0, Math.min(100, Math.round(100 * total / max))) : 0;   // «свій/чужий»: штрафи можуть дати мінус — у відсотках 0…100
