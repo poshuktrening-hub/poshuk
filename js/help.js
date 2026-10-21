@@ -41,7 +41,7 @@
       let box = $("help"); if (!box) { box = document.createElement("div"); box.id = "help"; box.className = "modal help-modal"; document.body.appendChild(box); }
       box.innerHTML = `<div class="m-card help-card" role="dialog" aria-modal="true" aria-labelledby="help-t">
         <h2 id="help-t">${UI.esc(d.title)}</h2>
-        <img class="help-img" src="${d.img}?v=2" alt="Схема інтерфейсу з пронумерованими кроками">
+        <img class="help-img" src="${d.img}" alt="Схема інтерфейсу з пронумерованими кроками">
         <ol class="help-steps">${d.steps.map((s) => `<li>${UI.esc(s)}</li>`).join("")}</ol>
         <button type="button" class="primary" id="help-ok">Зрозуміло</button></div>`;
       box.hidden = false;
