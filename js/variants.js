@@ -201,7 +201,7 @@
     },
     close() { $("vr").hidden = true; this.admin.renderList(); },
     list() { return ReStage.list().filter((x) => x.ok); },
-    has(s, mode) { return this.admin.stages.some((x) => x.cond === mode && x.title.startsWith(s.title + " · ")); },
+    has(s, mode) { return this.admin.stages.some((x) => x.cond === mode && (x.of === s.id || x.title.startsWith(s.title + " · "))); },
 
     render() {
       const L = this.list();
@@ -249,12 +249,22 @@
         if (r) items.push({t, o, spr, size: r.size, angle: r.angle, hide: r.hide, slen, sun});
         await new Promise((res) => setTimeout(res, 0));
       }
+      // дуже велика карта: обробка тримає в пам'яті ~десяток повнорозмірних масивів — на слабкому ноутбуці вкладка може впасти
+      const mp = work.width * work.height / 1e6;
+      if (mp > 40 && !confirm(`Карта велика (${Math.round(mp)} Мпкс): обробка займе ~${Math.round(mp * 0.06)} ГБ пам'яті й може тривати хвилину. Закрийте інші вкладки. Продовжити?`)) throw new Error("Скасовано");
       if (onStep) onStep(mode === "winter" ? "засніжую знімок…" : "перетворюю на тепловізор…");
       await new Promise((res) => setTimeout(res, 0));
       const base = mode === "winter" ? winter(work) : thermal(work);
       for (const it of items) {
         if (mode === "winter" && !it.t.decoy && gsd > 0) { /* накати на снігу видно найкраще */
-          try { AutoGen.maps = AutoGen.maps || new Map(); AutoGen.pw = this.pw; AutoGen.addTracks(base, await AutoGen.mapData(map), [it.t.x, it.t.y], it.angle, it.size, gsd); } catch (e) { /* без накатів */ }
+          // накат позаду техніки вздовж її курсу, з легким вигином (раніше тут був виклик неіснуючого AutoGen — накатів не було)
+          try {
+            const a = (it.angle || 0) * Math.PI / 180, dx = Math.sin(a), dy = -Math.cos(a), L = Math.max(8, it.size || 20);
+            const bend = (Math.random() - 0.5) * 0.6, pts = [];
+            for (let k = 0; k <= 6; k++) { const d = L * (0.2 + k * 0.7), b = bend * k * k * L * 0.05; pts.push([it.t.x - dx * d - dy * b, it.t.y - dy * d + dx * b]); }
+            const g = 2.4 / gsd;
+            Compose.tracks(base, pts, {gauge: g, rut: g * 0.22, str: 0.7, seed: 5});
+          } catch (e) { /* без накатів */ }
         }
         const r = place(mode, base, work, it.spr, it.o, it);
         if (r && r.hidden > 0.6) it.t.hidden = Math.round(r.hidden * 100) / 100; else delete it.t.hidden;
@@ -299,9 +309,10 @@
           for (let k = 2; A.stages.some((x) => x.title === title); k++) title = title.replace(/ #\d+$/, "") + ` #${k}`;
           this.say(`${pre}: зберігаю…`);
           const st = await API.uploadStage(r.canvas, {title, targets: r.targets, name: `${mode}_${Date.now()}`}, this.pw, (m) => this.say(`${pre}: ${m}`));
-          const meta = {direction: s.direction || "", season: mode === "winter" ? "Зима" : (s.season || ""), gsd: s.gsd || 0, hard: !!s.hard, cond: mode};
-          await API.call("save_stage", Object.assign({id: st.id}, meta), this.pw);
-          A.stages.push(Object.assign(st, meta));
+          const meta = {direction: s.direction || "", season: mode === "winter" ? "Зима" : (s.season || ""), gsd: s.gsd || 0, hard: !!s.hard, cond: mode, of: s.id, src: s.src || ""};
+          A.stages.push(Object.assign(st, meta));   // знімок уже на сервері — показати, навіть якщо мітки не запишуться
+          try { await API.call("save_stage", Object.assign({id: st.id}, meta), this.pw); }
+          catch (e) { fail.push(`${s.title}: варіант створено, але не записано напрямок/пору — перевірте його в списку (${e.message})`); }
           made++;
         } catch (e) { fail.push(`${s.title}: ${e.message}`); }
       }

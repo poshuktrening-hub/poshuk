@@ -26,6 +26,7 @@
 
     /* Карта, з якої зроблено етап: її назва — початок назви етапу (« · »), той самий розмір. */
     sourceMap(s) {
+      if (s.src) { const m = this.admin.stages.find((x) => x.id === s.src); if (m) return m; }   // новіші етапи знають карту за id
       // джерелом може бути й етап з розміткою (генератор бере «З вибраного етапу») — важить назва й розмір; чиста карта — у пріоритеті
       const c = this.admin.stages.filter((m) => m.id !== s.id && !m.cond && s.title.startsWith(m.title + " · ") && (!m.w || !s.w || (m.w === s.w && m.h === s.h)));
       return c.sort((a, b) => b.title.length - a.title.length || a.targets.length - b.targets.length)[0] || null;
@@ -105,7 +106,7 @@
         if (!r) continue;
         dirty.push(r.rect);
         if (r.hidden > 0.6) t.hidden = Math.round(r.hidden * 100) / 100; else delete t.hidden;
-        pairs.push(r.pair); (this.log = this.log || []).push([t.x, t.y, r.angle, r.hide]);
+        pairs.push(r.pair);
         await new Promise((res) => setTimeout(res, 0));   // не морозити сторінку
       }
       return {canvas: out, old: oldT, targets, dirty, pairs};
