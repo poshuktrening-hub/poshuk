@@ -14,7 +14,7 @@ const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
 const LOCK_FAILS = 20, LOCK_SECONDS = 15 * 60;       // невдалі входи з однієї адреси за 15 хв → ця адреса чекає 15 хв (клас за одним Wi-Fi — одна адреса, тому не менше)
 const GLOBAL_FAILS = 150;                             // невдалі входи з усіх адрес за 15 хв → нові входи паролем чекають 15 хв (токени працюють)
-const RATE = {api: [300, 60e3], img: [900, 60e3], login: [60, 60e3], heavy: [40, 60e3], suggest: [6, 60e3]};   // запитів з однієї адреси за вікно (мс)
+const RATE = {api: [300, 60e3], img: [900, 60e3], login: [60, 60e3], heavy: [40, 60e3], suggest: [6, 60e3], ip: [4000, 60e3]};   // запитів з однієї адреси за вікно (мс)
 const SUGGEST_MAX = 60, SUGGEST_BYTES = 60e6;         // пропозицій курсантів, що чекають перевірки, і їхніх фото разом — щоб не заповнити базу
 const DUEL_PACK_MAX = 25e6, DUEL_CHUNKS_MAX = 120;    // знімок дуелі одного гравця; частин дуелей у базі разом (≈180 МБ)
 const MAX_BODY = 30e6;                                // байт у POST-запиті (імпорт довідника, фото)
@@ -252,7 +252,9 @@ function sheetSyncTick(env, ctx) {
 // ------------------------------------------------------------------ Google-скрипт (перенесення й дублювання результатів)
 async function gas(env, body) {
   if (!env.SHEETS_URL) throw new HttpError("Не задано SHEETS_URL");
-  const r = await fetch(env.SHEETS_URL, {method: "POST", body: JSON.stringify(body), redirect: "follow"});
+  // Google-скрипт інколи «висить» — не тримати запит довше 20 с (архівування й імпорт — до 60 с)
+  const ms = /archive|import|export/.test(String(body && body.action || "")) ? 60e3 : 20e3;
+  const r = await fetch(env.SHEETS_URL, {method: "POST", body: JSON.stringify(body), redirect: "follow", signal: AbortSignal.timeout(ms)});
   return r.json();
 }
 
@@ -419,8 +421,29 @@ async function healStuck(env) {
   return results.length;
 }
 
+/* Сміття від перерваних вивантажень (раз на годину на ізолят): етапи ready=0 без бекапу, старші за добу, і недовантажені
+   нові знімки перерендеру (new_<id>). Їх ніде не видно, але вони займають місце в базі (ліміт 500 МБ). */
+let gcAt = 0;
+async function gcOrphans(env) {
+  if (Date.now() - gcAt < 3600e3) return;
+  gcAt = Date.now();
+  const st = [];
+  const day = new Date(Date.now() - 86400e3).toISOString();
+  const {results: dead} = await env.DB.prepare("SELECT s.id FROM stages s LEFT JOIN stage_backups b ON b.id = s.id WHERE s.ready = 0 AND b.id IS NULL AND s.created < ? LIMIT 20").bind(day).all();
+  for (const {id} of dead) st.push(env.DB.prepare("DELETE FROM blobs WHERE id=?").bind(id), env.DB.prepare("DELETE FROM stages WHERE id=? AND ready=0").bind(id));
+  const {results: re} = await env.DB.prepare("SELECT k, v FROM meta WHERE k LIKE 'reimg\\_%' ESCAPE '\\' LIMIT 20").all();
+  for (const r of re) {
+    let at = 0; try { at = Number(JSON.parse(r.v).at) || 0; } catch (e) { at = 0; }
+    if (Date.now() - at < 86400e3) continue;   // ще може докачуватись
+    const id = r.k.slice(6);
+    st.push(env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("new_" + id), env.DB.prepare("DELETE FROM meta WHERE k=?").bind(r.k));
+  }
+  if (st.length) await env.DB.batch(st.slice(0, 40));
+}
+
 async function stages(env, all) {
   try { await healStuck(env); } catch (e) { /* не заважати завантаженню списку */ }
+  try { await gcOrphans(env); } catch (e) { /* наступного разу */ }
   const {results} = await env.DB.prepare("SELECT id,title,enabled,w,h,targets,meta FROM stages WHERE ready=1 ORDER BY created").all();
   return results.map(rowToStage).filter((s) => all || (s.enabled && s.targets.length));
 }
@@ -507,7 +530,7 @@ async function action(env, ctx, req, origin) {
     case "login": { const role = await auth(env, req, "player"); return {ok: true, role, token: await makeToken(env, role)}; }
     case "config": {
       const role = await auth(env, req, req.off ? "offline" : "player");
-      const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects").all();
+      const {results: objs} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy,created FROM objects").all();   // created — версія картинки моделі
       const {results: cp} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
       let cardHard = {}; try { cardHard = JSON.parse((await metaGet(env, "cards_hard")) || "{}"); } catch (e) { cardHard = {}; }
       // координати цілей — не в загальному списку (інакше всі відповіді видно в DevTools); гра бере їх на початку
@@ -696,7 +719,7 @@ async function action(env, ctx, req, origin) {
       // новий знімок вантажиться окремо ("new_<id>"); живий етап не чіпається, доки все не дійде (stage_reimage_end)
       const chunks = Math.ceil(size / CHUNK);
       await env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("new_" + id).run();
-      await metaSet(env, "reimg_" + id, JSON.stringify({size, chunks}));
+      await metaSet(env, "reimg_" + id, JSON.stringify({size, chunks, at: Date.now()}));
       return {ok: true, id: "new_" + id, chunk: CHUNK, chunks, token: await makeToken(env, "admin")};
     }
     case "stage_reimage_end": {
@@ -788,7 +811,7 @@ async function action(env, ctx, req, origin) {
     }
     case "objects": {
       await dedupeObjects(env);
-      const {results} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy FROM objects ORDER BY name").all();
+      const {results} = await env.DB.prepare("SELECT id,name,length_m,type,ttx,decoy,created FROM objects ORDER BY name").all();
       return {ok: true, objects: results};
     }
     case "object": {
@@ -1173,9 +1196,10 @@ async function getRefImage(env, ctx, request, id, t, v) {
   return out;
 }
 
-async function getObject(env, ctx, request, id, t) {
+async function getObject(env, ctx, request, id, t, v) {
   if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
-  const cache = caches.default, key = new Request(new URL(`/api/obj/${id}`, request.url).toString());
+  // версія (дата заміни моделі) — у ключі кешу: замінена модель одразу має нову адресу в усіх дата-центрах
+  const cache = caches.default, key = new Request(new URL(`/api/obj/${id}?v=${encodeURIComponent(String(v || "").slice(0, 40))}`, request.url).toString());
   let res = await cache.match(key);
   if (!res) {
     const data = await objData(env, id);
@@ -1185,7 +1209,7 @@ async function getObject(env, ctx, request, id, t) {
     ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
   }
   const out = new Response(res.body, res);
-  out.headers.set("Cache-Control", "private, max-age=86400");
+  out.headers.set("Cache-Control", v ? "private, max-age=604800" : "private, max-age=3600");
   return out;
 }
 
@@ -1284,7 +1308,13 @@ async function duel(env, req, a) {
     // старі кімнати: знімки — геть через 6 год; сам запис (хто переміг) лишається 2 доби — для «Топу дня»
     // завершені кімнати — знімки геть через годину (вони великі), решта — через 6 год
     const {results: old} = await env.DB.prepare("SELECT code FROM duels WHERE COALESCE(purged,0)=0 AND (created < ? OR (state='done' AND created < ?))").bind(now - 6 * 3600e3, now - 3600e3).all();
-    for (const o of old) await env.DB.batch([env.DB.prepare("DELETE FROM blobs WHERE id LIKE ?").bind(`duel_${o.code}_%`), env.DB.prepare("UPDATE duels SET purged=1 WHERE code=?").bind(o.code)]);
+    // одним пакетом (не по пакету на кімнату — після вечора з десятками дуелей перевищувався ліміт запитів на виклик)
+    const codes = old.slice(0, 40).map((o) => o.code);
+    if (codes.length) {
+      const ids = codes.flatMap((c) => [`duel_${c}_1`, `duel_${c}_2`]), q = (n) => Array(n).fill("?").join(",");
+      await env.DB.batch([env.DB.prepare(`DELETE FROM blobs WHERE id IN (${q(ids.length)})`).bind(...ids),
+        env.DB.prepare(`UPDATE duels SET purged=1 WHERE code IN (${q(codes.length)})`).bind(...codes)]);
+    }
     await env.DB.prepare("DELETE FROM duels WHERE created < ?").bind(now - 48 * 3600e3).run();
     // карта: чистий знімок з масштабом (етап без цілей)
     const {results: maps} = await env.DB.prepare("SELECT id, meta, w, h FROM stages WHERE ready=1 AND (targets IS NULL OR targets='[]' OR targets='')").all();
@@ -1433,9 +1463,11 @@ export async function onRequest(context) {
     if (request.method === "POST") context.waitUntil(fillTick(env, metaGet, metaSet, false).catch(() => {}));
     // токен для картинок: у запиті (?t=), у заголовку (fetch) або в cookie (<img>) — тоді адреса стала й кеш браузера живе довго
     const t = url.searchParams.get("t") || request.headers.get("X-Token") || cookieOf(request, "pt");
-    if (request.method === "GET" && path[0]) rateLimit(ipOf(request), "img");
+    // ліміти — на сеанс (токен), а не на адресу: клас за одним Wi-Fi має одну адресу; загальна межа на адресу — окремо
+    const who = (tk) => (tk ? "t" + String(tk).slice(-24) : ipOf(request));
+    if (request.method === "GET" && path[0]) { rateLimit(who(t), "img"); rateLimit(ipOf(request), "ip"); }
     if (request.method === "GET" && path[0] === "img" && path[1]) return await getImage(env, context, request, path[1], t, url.searchParams.get("v"));
-    if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], t);
+    if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], t, url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], t, url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "ref" && path[1]) return await getRefImage(env, context, request, path[1], t, url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "duel" && path[1] && path[2]) return await getDuelImage(env, path[1], Number(path[2]), url.searchParams.get("t"), url.searchParams.get("s"));
@@ -1443,13 +1475,14 @@ export async function onRequest(context) {
     if (request.method === "GET") return json({ok: true, app: "poshuk", version: VERSION});
     if (request.method !== "POST") return json({ok: false, error: "Метод не підтримується"}, 405);
     const ip = ipOf(request);
-    rateLimit(ip, "api");
+    rateLimit(ip, "ip");
     if (Number(request.headers.get("Content-Length") || 0) > MAX_BODY) return json({ok: false, error: "Запит завеликий"}, 413);
     let req;
     try { req = JSON.parse(await request.text()); } catch (e) { return json({ok: false, error: "Некоректний запит"}); }
     if (!req || typeof req !== "object") return json({ok: false, error: "Некоректний запит"});
     req._ip = ip;
-    if (req.action === "offline_assets" || req.action === "duel_create" || req.action === "duel_join") rateLimit(ip, "heavy");
+    rateLimit(who(req.t), "api");
+    if (req.action === "offline_assets" || req.action === "duel_create" || req.action === "duel_join") rateLimit(who(req.t), "heavy");
     if (req.action === "ref_suggest") rateLimit(ip, "suggest");
     return json(await action(env, context, req, url.origin));
   } catch (e) {

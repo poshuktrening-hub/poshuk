@@ -128,7 +128,7 @@
       const ci = $("credit-icon");
       if (ci) ci.innerHTML = j.brandIcon ? `<img src="${j.brandIcon}" alt="росомаха">` : "росомахою";
       this.stages = j.stages; API.noteStages(j.stages);
-      this.objects = j.objects || [];
+      this.objects = j.objects || []; API.noteObjects(this.objects);
       this.cardPhotos = new Map(j.cardPhotos || []);
       this.cardCredits = new Map(j.cardCredits || []);
       this.cardPics = j.cardPics || {};   // фото карток із довідника: картка → [[id фото, версія, джерело]]
