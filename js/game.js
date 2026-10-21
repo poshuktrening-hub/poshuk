@@ -534,6 +534,14 @@
       this.nextRound();
     },
 
+    /* Цілі етапу з координатами: у загальному списку їх немає (щоб не було видно всіх відповідей) — беремо на старті етапу. */
+    async roundTargets(st) {
+      if (!st.targets.length || st.targets.every((t) => t.x != null)) return st.targets;
+      const j = await API.call("round", {id: st.id}, this.password);
+      if (Array.isArray(j.targets) && j.targets.length) st.targets = j.targets;
+      return st.targets;
+    },
+
     /* Вихід посеред гри: зупинити все, що ще чекає (таймер, брифінг, «Далі», підвантаження), щоб гра не йшла далі у фоні. */
     quit() {
       this.over = true;
@@ -562,12 +570,15 @@
       $("g-stage").textContent = `${this.mode.id === "game" ? "" : this.mode.name + " · "}Етап ${this.idx + 1}/${this.rounds.length} · ${st.title}`;
       this.msg("Завантажую знімок…");
       $("g-loading").hidden = false;
-      // знімок — до 3 спроб (обрив мережі, застарілий токен: api.js сам перевходить)
+      // знімок і координати цілей (сервер віддає їх лише на початку етапу) — до 3 спроб
+      // (обрив мережі, застарілий токен: api.js сам перевходить)
       let img = null, err = null;
       for (let k = 0; k < 3 && !img; k++) {
-        try { img = await API.loadImage(st.id, this.password); } catch (e) { err = e; if (k < 2 && this.cur === st) await new Promise((r) => setTimeout(r, 1500 * (k + 1))); }
+        try { const [im] = await Promise.all([API.loadImage(st.id, this.password), this.roundTargets(st)]); img = im; }
+        catch (e) { err = e; if (k < 2 && this.cur === st) await new Promise((r) => setTimeout(r, 1500 * (k + 1))); }
         if (this.cur !== st) return;   // гру перервано
       }
+      if (img) { this.targets = st.targets.filter((t) => !t.decoy); this.decoys = st.targets.filter((t) => t.decoy); }
       $("g-loading").hidden = true;
       if (!img) {   // не вдалось — «Повторити» або «Пропустити»; пропущений через зв'язок етап не рахується в оцінку
         this.msg(`Не вдалось завантажити знімок: ${String(err && err.message || "немає зв'язку").replace(/[.\s]+$/, "")}. Повторіть або пропустіть — на оцінку це не вплине.`, "no");

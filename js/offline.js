@@ -74,6 +74,7 @@
       switch (action) {
         case "login": return {ok: true, role: "player"};
         case "config": return Object.assign({ok: true}, s.config);
+        case "round": { const st = (s.config.stages || []).find((x) => x.id === data.id); return {ok: true, targets: st ? st.targets : []}; }
         case "ref_list": return {ok: true, entries: s.ref || []};
         case "top": return {ok: true, top: {search: [], cards: [], duel: []}};
         case "submit": {
@@ -134,7 +135,7 @@
       progress("Отримую список етапів…", 0);
       // ключем офлайн-пристрою (password === "") — з позначкою off; паролем — як завжди
       const off = password === "" ? {off: 1} : {};
-      const cfg = await API.callNet("config", off, password);
+      const cfg = await API.callNet("config", Object.assign({full: 1}, off), password);   // офлайн — з координатами цілей
       const ref = (await API.callNet("ref_list", off, password)).entries || [];
       const stages = (cfg.stages || []).filter((s) => s.targets && s.targets.some((t) => !t.decoy));
       const keep = new Set(["snap"]);
