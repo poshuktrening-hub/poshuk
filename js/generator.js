@@ -111,7 +111,7 @@
       })));
       $("gp-hide").querySelectorAll("button")[0].classList.add("on");
       this.syncQuick();
-      $("g-back").onclick = () => this.close();
+      $("g-back").onclick = () => { if (this.placed.length && !confirm(`Закрити генератор? Розставлена техніка (${this.placed.length}) не збережена.`)) return; this.close(); };
       $("g-from-stage").onclick = () => this.baseFromStage();
       $("g-from-file").onclick = () => $("g-base-file").click();
       $("g-base-file").onchange = (e) => e.target.files[0] && this.baseFromFile(e.target.files[0]);
@@ -135,11 +135,19 @@
       $("g-tracks").onclick = () => this.toggleTracks();
       $("g-undo").onclick = () => this.undoCommit();
       $("g-save").onclick = () => this.save();
+      // перезавантаження/закриття вкладки з нерозставленою роботою — браузер перепитає
+      this.unloadH = (e) => { if (this.placed.length) { e.preventDefault(); e.returnValue = ""; } };
+      addEventListener("beforeunload", this.unloadH);
       await this.loadObjects();
       if (admin.sel) this.baseFromStage();
     },
 
-    close() { document.removeEventListener("keydown", this.keyH); this.admin.render(); if (this.admin.sel) this.admin.select(this.admin.sel); },
+    close() {
+      document.removeEventListener("keydown", this.keyH); removeEventListener("beforeunload", this.unloadH);
+      clearTimeout(this.job); if (this.viewer) this.viewer.setImage(null);
+      for (const c of [this.base, this.work]) if (c && c.width) { c.width = 0; c.height = 0; }   // звільнити великі полотна
+      this.base = this.work = null; this.placed = []; this.undo = [];
+      this.admin.render(); if (this.admin.sel) this.admin.select(this.admin.sel); },
 
     hint(t) { this.$("g-hint").textContent = t; },
     loading(t) { this.$("g-loading").hidden = !t; if (t) this.$("g-loading-t").textContent = t; },
@@ -203,7 +211,7 @@
         const spr = Compose.normalizeModel(await loadImg(await fileToDataURL(file)));
         const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
         const name = Logic.dispName(file.name.replace(/\.[^.]+$/, "").replace(/_/g, " ")).slice(0, 40);
-        const j = await API.call("object_upload", {name, data, length_m: lenFor(name), type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: Logic.cleanTtx(this.$("g-ttx").value), decoy: this.$("g-decoy").checked || /^муляж/i.test(name) ? 1 : 0}, this.pw);
+        const j = await API.call("object_upload", {name, data, length_m: lenFor(name), type: Logic.typeOf(name.replace(/^муляж\s+/i, "")), ttx: "", decoy: /^муляж/i.test(name) ? 1 : 0}, this.pw);   // нова модель не бере прапорці/ТТХ вибраної раніше
         this.sprites.set(j.object.id, spr);
         await this.loadObjects(j.object.id);
         st.textContent = j.replaced ? `«${name}» вже був — замінено новою версією.` : `Додано «${name}». Перевірте довжину й тип.`; st.className = "status ok";
@@ -274,7 +282,7 @@
       this.loading("Завантажую знімок…");
       try {
         await this.setBase(await API.loadImage(s.id, this.pw), s.title);
-        this.baseMeta = {direction: s.direction || "", season: s.season || "", gsd: s.gsd || 0};
+        this.baseMeta = {direction: s.direction || "", season: s.season || "", gsd: s.gsd || 0, src: s.id};
         if (s.gsd) { this.$("g-gsd").value = s.gsd; this.autoSize(); }
       } catch (e) { this.hint(e.message); }
       this.loading(null);
@@ -476,22 +484,6 @@
     },
 
     /* Імпорт папки poshuk_local: PNG з objects/ — у бібліотеку (без дублів за назвою). */
-    async importObjects(files, pw) {
-      if (!files.length) return 0;
-      let have = [];
-      try { have = (await API.call("objects", {}, pw)).objects.map((o) => o.name); } catch (e) { return 0; }
-      let n = 0;
-      for (const f of files) {
-        const name = Logic.dispName(f.name.replace(/\.[^.]+$/, "").replace(/_/g, " ")).slice(0, 40);
-        const spr = Compose.normalizeModel(await loadImg(await fileToDataURL(f)));
-        const data = (await fileToDataURL(await toBlob(spr, "image/png"))).split(",")[1];
-        const decoy = /^муляж/i.test(name), base = name.replace(/^муляж\s+/i, "");
-        const len = lenFor(base);
-        await API.call("object_upload", {name, data, length_m: len, type: Logic.typeOf(base), decoy: decoy ? 1 : 0}, pw);
-        n++;
-      }
-      return n;
-    },
   };
 
   window.Gen = Gen;

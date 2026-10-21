@@ -184,12 +184,14 @@
       const s = this.stage();
       this.renderList(); this.renderStage();
       this.$("a-loading").hidden = false;
+      let img;
       try {
-        this.img = await API.loadImage(id, this.pw);
+        img = await API.loadImage(id, this.pw);
       } catch (e) { if (this.$("a-loading")) this.$("a-loading").hidden = true; UI.toast(e.message); return; }
       if (!this.$("a-loading")) return;   // поки вантажилось — відкрили генератор
+      if (this.sel !== id) return;   // поки вантажилось — вибрали інший етап: його знімок не підміняти
       this.$("a-loading").hidden = true;
-      if (this.sel !== id) return;
+      this.img = img;
       if (!s.w) { s.w = this.img.width; s.h = this.img.height; }
       this.viewer.setImage(this.img);
       this.viewer.setGrid(this.cols || 8);
@@ -287,7 +289,8 @@
       const tol = 12 / this.viewer.s;
       let best = null, bd = Infinity;
       s.targets.forEach((t, i) => { const d = Math.hypot(t.x - x, t.y - y); if (d <= (t.r || 14) + tol && d < bd) { best = i; bd = d; } });
-      if (best !== null && !this.heatOn) this.deleteTarget(best); else this.viewer.zoomAt(0.5, cx, cy);
+      if (best !== null && !this.heatOn) { const t = s.targets[best]; if (confirm(`Видалити ціль «${t.type || "ціль"}»${t.decoy ? " (муляж)" : ""}?`)) this.deleteTarget(best); }
+      else this.viewer.zoomAt(0.5, cx, cy);
     },
 
     deleteTarget(i) {
@@ -300,6 +303,7 @@
 
     // ---------- збереження (автоматично через 1,2 с після зміни)
     dirty() {
+      (this.dirtyIds = this.dirtyIds || new Set()).add(this.sel);   // які етапи змінено (зберігаються саме вони, навіть після переходу на інший)
       clearTimeout(this.saveT);
       this.status("Не збережено…", "");
       this.saveT = setTimeout(() => this.flushSave(), 1200);
@@ -308,14 +312,18 @@
     async flushSave() {
       if (!this.saveT) return;
       clearTimeout(this.saveT); this.saveT = null;
-      const s = this.stage();
-      if (!s) return;
+      const ids = [...(this.dirtyIds || [])];
+      if (!ids.length) return;
       this.status("Зберігаю…", "");
       try {
-        await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, task: s.task || "", direction: s.direction || "", season: s.season || "", gsd: s.gsd || 0, hard: !!s.hard}, this.pw);
+        for (const id of ids) {
+          const s = this.stages.find((x) => x.id === id);
+          if (s) await API.call("save_stage", {id: s.id, title: s.title, enabled: s.enabled, targets: s.targets, task: s.task || "", direction: s.direction || "", season: s.season || "", gsd: s.gsd || 0, hard: !!s.hard}, this.pw);
+          this.dirtyIds.delete(id);
+        }
         this.status("Збережено ✓", "ok");
       } catch (e) {
-        this.status("Не збережено: " + e.message, "no");
+        this.status("Не збережено: " + e.message + " — повторю за 5 с", "no");
         this.saveT = setTimeout(() => this.flushSave(), 5000);
       }
     },
@@ -323,17 +331,13 @@
     status(t, cls) { const el = this.$("a-save-status"); if (el) { el.textContent = t; el.className = "status " + cls; } },
 
     // ---------- завантаження
+    /* Файл → зображення через object URL (без base64: для 80-МБ карти це ~220 МБ рядків у пам'яті). */
     readImage(file) {
       return new Promise((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => {
-          const img = new Image();
-          img.onload = () => resolve({img, data: String(fr.result).split(",")[1], mime: file.type || "image/png"});
-          img.onerror = () => reject(new Error(`«${file.name}» — не зображення`));
-          img.src = fr.result;
-        };
-        fr.onerror = () => reject(new Error(`Не вдалось прочитати «${file.name}»`));
-        fr.readAsDataURL(file);
+        const u = URL.createObjectURL(file), img = new Image();
+        img.onload = () => { URL.revokeObjectURL(u); resolve({img, mime: file.type || "image/png"}); };
+        img.onerror = () => { URL.revokeObjectURL(u); reject(new Error(`«${file.name}» — не зображення`)); };
+        img.src = u;
       });
     },
 
@@ -373,7 +377,11 @@
             last.direction = Logic.regionOf(d) || d;
             await API.call("save_stage", {id: last.id, direction: last.direction, season: last.season}, this.pw);
           }
-        } catch (e) { st.textContent = e.message; st.className = "status no"; return; }
+        } catch (e) {   // збій посеред пачки: уже додані етапи показати, поле файлів скинути (інакше той самий вибір не спрацює)
+          st.textContent = `«${files[i].name}»: ${e.message}`; st.className = "status no";
+          this.$("a-file").value = ""; this.renderList(); if (last) this.select(last.id);
+          return;
+        }
       }
       const nAdd = files.length - skipped.length;
       const added = nAdd ? this.stages.slice(-nAdd) : [], noScale = added.filter((s) => !s.gsd).length;
