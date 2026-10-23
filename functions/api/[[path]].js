@@ -253,7 +253,8 @@ function sheetSyncTick(env, ctx) {
 async function gas(env, body) {
   if (!env.SHEETS_URL) throw new HttpError("Не задано SHEETS_URL");
   // Google-скрипт інколи «висить» — не тримати запит довше 20 с (архівування й імпорт — до 60 с)
-  const ms = /archive|import|export/.test(String(body && body.action || "")) ? 60e3 : 20e3;
+  // вхід і налаштування — до 45 с: «холодний» Google-скрипт інколи думає 20+ с, а обрив тут = «Невірний пароль»
+  const ms = /archive|import|export/.test(String(body && body.action || "")) ? 60e3 : /login|settings/.test(String(body && body.action || "")) ? 45e3 : 20e3;
   const r = await fetch(env.SHEETS_URL, {method: "POST", body: JSON.stringify(body), redirect: "follow", signal: AbortSignal.timeout(ms)});
   return r.json();
 }
