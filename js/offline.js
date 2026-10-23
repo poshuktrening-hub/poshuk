@@ -69,7 +69,12 @@
       if (!s) throw new Error("Офлайн-дані не знайдено. Підключіться до інтернету й завантажте офлайн-версію ще раз.");
       const inf = this.info() || {};
       if ((action === "login" || action === "config") && inf.pw && (await sha(password || "")) !== inf.pw) {
-        const e = new Error("Невірний пароль"); e.auth = true; throw e;
+        // збережений на пристрої пароль не збігся (пароль змінили, або його зіпсувало старе автооновлення) —
+        // з інтернетом питаємо сервер; підійшов — запам'ятовуємо новий і працюємо далі офлайн
+        let role = null;
+        if (navigator.onLine && password) { try { role = (await API.callNet("login", {}, password)).role || "player"; } catch (e) { role = null; } }
+        if (!role) { const e = new Error("Невірний пароль"); e.auth = true; throw e; }
+        if (role !== "admin") LS.set(KEY, Object.assign({}, inf, {pw: await sha(password)}));
       }
       switch (action) {
         case "login": return {ok: true, role: "player"};
