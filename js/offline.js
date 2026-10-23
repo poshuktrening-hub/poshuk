@@ -55,6 +55,7 @@
   }
 
   const Offline = {
+    DEV: "\u0000offline-device",   // «пароль» входу без пароля на пристрої з офлайн-версією (на сервер не йде)
     get ready() { return !!LS.get(KEY, null); },                 // офлайн-дані завантажено на пристрій
     get on() { return this.ready && !LS.get(PAUSE, false); },    // і зараз працюємо в офлайні
     goOnline() { LS.set(PAUSE, true); },
@@ -68,7 +69,8 @@
       const s = await this.snapshot();
       if (!s) throw new Error("Офлайн-дані не знайдено. Підключіться до інтернету й завантажте офлайн-версію ще раз.");
       const inf = this.info() || {};
-      if ((action === "login" || action === "config") && inf.pw && (await sha(password || "")) !== inf.pw) {
+      // пристрій з офлайн-версією — довірений: вхід без пароля (Offline.DEV). Введений вручну пароль ще перевіряється.
+      if ((action === "login" || action === "config") && password !== Offline.DEV && inf.pw && (await sha(password || "")) !== inf.pw) {
         // збережений на пристрої пароль не збігся (пароль змінили, або його зіпсувало старе автооновлення) —
         // з інтернетом питаємо сервер; підійшов — запам'ятовуємо новий і працюємо далі офлайн
         let role = null;
@@ -135,6 +137,11 @@
        Повертає, скільки файлів змінилось (завантажено нових + прибрано застарілих). */
     async download(password, progress = () => {}, opt = {}) {
       let changed = 0;
+      if (password === this.DEV) {   // увійшли без пароля — оновлюємо ключем пристрою
+        const key = LS.get("poshuk_off_key", null);
+        if (!key) throw new Error("Щоб оновити, перейдіть в онлайн і увійдіть паролем");
+        API.useKey(key); password = "";
+      }
       if (!navigator.onLine) throw new Error("Немає інтернету. Завантаження потрібне один раз — з мережею.");
       try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) { /* ок */ }
       progress("Отримую список етапів…", 0);
@@ -210,6 +217,7 @@
       // оновлюємо ключем пристрою; немає ключа (завантажено до цієї версії) — паролем, і тоді ключ з'явиться
       const key = LS.get("poshuk_off_key", null);
       if (key) { API.useKey(key); password = ""; }
+      if (password === this.DEV) return;   // без ключа пристрою й без пароля оновлювати нічим
       if (!this.ready || (password !== "" && !password) || !navigator.onLine || this._auto) return;
       const st = LS.get("poshuk_off_auto", {}) || {}, slot = this.autoSlot();
       const last = Math.max(st.at || 0, Date.parse((this.info() || {}).at || "") || 0);

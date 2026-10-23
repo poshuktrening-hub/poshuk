@@ -39,7 +39,7 @@
     // ---------- вхід
     async boot() {
       this.password = LS.get("poshuk_pw", null);
-      $("login-form").onsubmit = (e) => { e.preventDefault(); this.login($("login-pass").value); };
+      $("login-form").onsubmit = (e) => { e.preventDefault(); const off = window.Offline && Offline.on; this.login($("login-pass").value || (off ? Offline.DEV : "")); };
       // Enter у полі «Прізвище» не запускає гру: старт — лише кнопкою в підменю «Пошук»
       $("start-form").onsubmit = (e) => { e.preventDefault(); if ($("start-form").dataset.view === "search") this.start(); };
       $("callsign").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } });
@@ -71,6 +71,8 @@
         else if (e.key === "Enter" && !$("g-next").hidden) this.goNext();
       });
       if (window.Offline && Offline.ready && !Offline.on && !navigator.onLine) Offline.goOffline();   // немає мережі — сам вмикаю офлайн
+      // офлайн-версія на пристрої — одразу в меню, без вікна пароля (усе є локально, оновлення — ключем пристрою)
+      if (!this.password && window.Offline && Offline.on) this.password = Offline.DEV;
       if (!this.password) return this.showLogin();
       // збережений пароль: перший запит після відкриття іноді не доходить (сервер «прокидається», мережа ще не піднялась) —
       // кілька тихих повторів, і лише потім показуємо вхід; помилку зв'язку не показуємо, якщо далі все вдалося
@@ -96,9 +98,14 @@
 
     showLogin(err = "") {
       show("s-login");
+      // офлайн-версія: пароль не потрібен — лише кнопка «Увійти»
+      const off = !!(window.Offline && Offline.on);
+      $("login-pass").hidden = off; $("login-pass").required = !off;
+      const lb = document.querySelector('label[for="login-pass"]'); if (lb) lb.hidden = off;
+      $("login-sub").textContent = off ? "Офлайн-версія на цьому пристрої — вхід без пароля" : "Тренування з пошуку техніки на знімках";
       $("login-err").textContent = err;
       $("login-pass").value = "";
-      $("login-pass").focus();
+      if (!off) $("login-pass").focus();
     },
 
     async login(pw) {
@@ -110,7 +117,7 @@
         // один тихий повтор, якщо перший запит не дійшов (сервер «прокидається»)
         try { await this.loadConfig(); } catch (e1) { if (!/зв'язку/.test(e1.message || "")) throw e1; await new Promise((r) => setTimeout(r, 1200)); await this.loadConfig(); }
         // пароль адміністратора в браузері не зберігаємо (спільний пристрій у класі): адмін входить щоразу
-        if (this.role !== "admin") LS.set("poshuk_pw", pw); else LS.del("poshuk_pw");
+        if (this.role !== "admin" && pw !== (window.Offline && Offline.DEV)) LS.set("poshuk_pw", pw); else if (this.role === "admin") LS.del("poshuk_pw");
         this.showStart();
       } catch (e) {
         if (window.Offline && Offline.ready && !Offline.on && /зв'язку/.test(e.message)) { Offline.goOffline(); return this.login(pw); }
