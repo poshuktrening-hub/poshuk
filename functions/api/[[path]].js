@@ -1166,7 +1166,7 @@ async function ownCallsign(env, cs, dev) {
 /* Розділ довідника «Загальні відмінності» (ворожа техніка): порівняльні схеми з media/diff/.
    Одноразово (meta diff_seed = DIFF_V): записи довідника «Відмінності…»/«Порівняння…» переносяться в цей розділ,
    нові записи додаються лише якщо їх ще немає — правки адміністратора не перезаписуються. */
-const DIFF_CAT = "Загальні відмінності", DIFF_V = "diff-2026-10-24a";
+const DIFF_CAT = "Загальні відмінності", DIFF_V = "diff-2026-10-24b";   // b — схеми з силуетами техніки
 const OWN_TEXT = "Схема-шпаргалка «Пошук техніки» (власний текст за відкритими даними)";
 const DIFF = [
   {id: "rdiff1", ord: -100, file: "bronya", credit: "Інфографіка: Texty.org.ua", name: "Відмінності БТР, БРДМ, БМП, БМД: колеса й гусениці",
@@ -1233,16 +1233,27 @@ async function applyDiffSeed(env) {
   // наявні порівняльні таблиці (напр. «Відмінності танків…» з розділу «Танки») — у новий розділ
   await env.DB.prepare("UPDATE ref_entries SET cat=?, updated=? WHERE (name LIKE 'Відмінності%' OR name LIKE 'Порівнян%') AND COALESCE(cat,'') <> ?").bind(DIFF_CAT, now, DIFF_CAT).run();
   await env.DB.prepare("UPDATE ref_entries SET ord=-95 WHERE name LIKE 'Відмінності танк%' AND COALESCE(ord,0) >= 0").run();   // танки — одразу після бронетехніки
-  for (const e of DIFF) {
-    if (await env.DB.prepare("SELECT id FROM ref_entries WHERE id=?").bind(e.id).first()) continue;
-    if (e.only && await env.DB.prepare("SELECT id FROM ref_entries WHERE name LIKE ?").bind(e.only + "%").first()) continue;   // таблиця танків уже є — лише перенесена
-    const r = await env.ASSETS.fetch(new Request(`https://assets.local/media/diff/${e.file}.jpg`));
-    if (!r.ok) throw new Error(`media/diff/${e.file}.jpg: ${r.status}`);
+  const load = async (file) => {
+    const r = await env.ASSETS.fetch(new Request(`https://assets.local/media/diff/${file}.jpg`));
+    if (!r.ok) throw new Error(`media/diff/${file}.jpg: ${r.status}`);
     const buf = new Uint8Array(await r.arrayBuffer());
     let bin = ""; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return btoa(bin);
+  };
+  for (const e of DIFF) {
     const img = e.id + "-1";
+    if (await env.DB.prepare("SELECT id FROM ref_entries WHERE id=?").bind(e.id).first()) {
+      // власні схеми, які адмін не замінював, — оновити на нову версію (з силуетами)
+      if (e.credit === OWN_TEXT && await env.DB.prepare("SELECT id FROM ref_images WHERE id=? AND credit=?").bind(img, OWN_TEXT).first()) {
+        await env.DB.batch([env.DB.prepare("UPDATE ref_images SET data=?, updated=? WHERE id=?").bind(await load(e.file), now, img),
+          env.DB.prepare("UPDATE ref_entries SET updated=? WHERE id=?").bind(now, e.id)]);
+      }
+      continue;
+    }
+    if (e.only && await env.DB.prepare("SELECT id FROM ref_entries WHERE name LIKE ?").bind(e.only + "%").first()) continue;   // таблиця танків уже є — лише перенесена
+    const data = await load(e.file);
     await env.DB.batch([
-      env.DB.prepare("INSERT OR IGNORE INTO ref_images (id, data, mime, updated, credit) VALUES (?,?,?,?,?)").bind(img, btoa(bin), "image/jpeg", now, e.credit || null),
+      env.DB.prepare("INSERT OR IGNORE INTO ref_images (id, data, mime, updated, credit) VALUES (?,?,?,?,?)").bind(img, data, "image/jpeg", now, e.credit || null),
       env.DB.prepare("INSERT OR IGNORE INTO ref_entries (id, ord, cat, name, ttx, descr, imgs, updated) VALUES (?,?,?,?,?,?,?,?)").bind(e.id, e.ord, DIFF_CAT, e.name, "", e.desc, JSON.stringify([img]), now),
     ]);
   }
