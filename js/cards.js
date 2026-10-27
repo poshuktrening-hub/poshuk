@@ -504,7 +504,7 @@
       $("c-form").hidden = true;
       const verdict = c.retry ? (r.ok ? `<p class="c-v ok">✓ Тепер вірно · повтор не зараховується</p>` : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Знову невірно: «${esc(answer)}»`} · повтор не зараховується</p>`)
         : r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +${score}</p>`
-        : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0${this.mode.retry && !this.fix ? " · повернеться через одну" : ""}</p>`;
+        : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
       $("c-choices").innerHTML = "";
       const cr = c.pic && !c.pic.own ? (c.pic.credit ? (() => { try { return decodeURIComponent(c.pic.credit); } catch (e) { return c.pic.credit; } })() : "навчальний довідник ВОС276") : (Game.cardCredits && Game.cardCredits.get(c.id)) || "";
       const weak = (window.CARD_WEAK || {})[c.id];
