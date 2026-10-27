@@ -4,6 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => UI.esc(s);
   const LS = API.LS;
+  const TESTER = /(^|[^a-zа-яіїєґ])(тест|test)/i;   // тестовий вхід: у розборі показуємо id фото
   const ROUND_SEC = 30, REVEAL_SEC = 15, ROUNDS = 10;
   /* Ігровий режим та іспит — лише основна техніка, що масово застосовується, по одному зразку на модель (без модифікацій):
      танки, БМПТ, БМП/БМД, БТР/БРДМ, МТ-ЛБ, вантажівки, інженерна (5 найпоширеніших: ІМР-2, БАТ-2, БРЕМ-1, ПЗМ-2, МТУ-72), ствольна (без мінометів) й реактивна артилерія. РЕБ/РЕР, авіація, гелікоптери,
@@ -218,7 +219,8 @@
       const r = this.refPics && this.refPics.get(id);
       if (r && r.length) r.forEach((x) => { if (!pool.some((p) => p.id === x.id)) pool.push(x); });
       else if (!pool.length && (window.CARD_REF || {})[id]) pool.push({id: window.CARD_REF[id], v: "1"});
-      return pool;
+      const skip = window.PIC_SKIP;   // фото з назвою на зображенні — не показуємо (js/ff-skip.js)
+      return skip && skip.size ? pool.filter((p) => !(p.id && skip.has(p.id)) && !(p.key && skip.has(p.key))) : pool;
     },
     pickPic(id, ff) {
       // «Свій/чужий»: без фото, де сторону видно одразу (прапор, зірки, Z/V, написи) — див. js/ff-skip.js
@@ -527,7 +529,7 @@
       // хардкор: одна можлива помилка, друга — кінець гри
       const over = this.mode.lives != null && this.results.filter((x) => !x.ok).length > this.mode.lives;
       if (over) this.rounds = this.rounds.slice(0, this.idx + 1);
-      $("c-reveal").innerHTML = `${verdict}${over ? `<p class="c-v no">💀 Друга помилка — хардкор завершено</p>` : ""}${c.concept ? `<p class="c-concept-tag">КОНЦЕПТ</p>` : ""}<h3>${UI.nameHtml(c.name)}</h3>${contrast}<p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Недоліки:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}`;
+      $("c-reveal").innerHTML = `${verdict}${over ? `<p class="c-v no">💀 Друга помилка — хардкор завершено</p>` : ""}${c.concept ? `<p class="c-concept-tag">КОНЦЕПТ</p>` : ""}<h3>${UI.nameHtml(c.name)}</h3>${contrast}<p>${esc(c.p1)}</p><p>${esc(c.p2)}</p>${weak && weak.length ? `<p class="c-weak"><b>Недоліки:</b> ${weak.map(esc).join(" ")}</p>` : ""}${cr ? `<p class="credit">Фото: ${esc(cr)}</p>` : ""}${TESTER.test(String(Game.callsign || "")) && c.pic ? `<p class="credit">id фото: ${esc(c.pic.id || c.pic.key || "own")}</p>` : ""}`;
       $("c-reveal").hidden = false; $("c-reveal").scrollTop = 0;
       this.showMarks(c);
       const last = this.idx === this.rounds.length - 1;
