@@ -5,9 +5,17 @@
   const esc = (s) => UI.esc(s);
   const LS = API.LS;
   const ROUND_SEC = 30, REVEAL_SEC = 15, ROUNDS = 10;
+  /* Ігровий режим та іспит — лише основна техніка, що масово застосовується, по одному зразку на модель (без модифікацій):
+     танки, БМПТ, БМП/БМД, БТР/БРДМ, МТ-ЛБ, вантажівки, інженерна, ствольна й реактивна артилерія. РЕБ/РЕР, авіація, гелікоптери,
+     БпЛА, ППО, РЛС тощо — лише в «Хардкорі» та довіднику. */
+  const CORE = new Set(("t55 t62m t64bv t72b3 t80bv t90m bmpt bmp1 bmp2 bmp3 bmd2 bmd4m btr70 btr80 btr82a btrd btrmdm brdm2 mtlb " +
+    "ural4320 kamaz5350 kamaz43118 gaz66 sadko zil131 kraz255 " +
+    "imr2 bat2 pts2 pmp pp91 tmm3 mtu72 ur77 gmz3 zemledelie bmr3 brem1 pzm2 mdk3 eov4421 bts4 tmk2 " +
+    "2s1 2s3 2s19 2s5 2s7 2s9 2s23 2s31 2s43 sprut koksan 2s4 2b9 2b11 2b14 d30 d20 d1 m30 ml20 msta_b giacint_b m46 mt12 2b16 " +
+    "bm21 grad1 prima bm27 uragan1m bm30 tos1a tos2 kpa240").split(" "));
   const MODES = {
-    game: {id: "game", name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника.", hint: true, choice: true, sign: true},
-    exam: {id: "exam", name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
+    game: {id: "game", core: true, name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника.", hint: true, choice: true, sign: true},
+    exam: {id: "exam", core: true, name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
     ff: {id: "ff", name: "Свій/чужий", desc: "15 с на картку: своя це техніка чи ворожа. Вірно +10, помилка −2, не встиг відповісти −1.", ff: true, sec: 15},
     reveal: {id: "reveal", name: "Проявлення", desc: "Фото спершу грубо пікселізоване й поступово проступає — як погане відео чи знімок з висоти. Що раніше вірно назвав, то більше балів: від 10 до 2. Помилка — 0. 4 варіанти, без підказок, 20 с.", choice: true, reveal: true, sec: 20},
     hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
@@ -130,12 +138,15 @@
       return (window.CARDS || []).map(([id, name, al, p1, p2, x]) => ({id, name, aliases: al.split("|").map((x) => x.trim()).filter(Boolean), p1, p2,
         concept: !!(x && x.concept), own: !!(x && x.own), noff: !!(x && x.noff), hard: ov[id] != null ? !!ov[id] : x && x.hard === 0 ? false : !!(x && x.hard) || this.HARD_TYPES.includes(name.split(" ")[0])}));
     },
+    /* Основна техніка (CORE) з фото — для ігрового режиму й іспиту. */
+    corePool() { return this.withPhoto("core"); },
     withPhoto(hard) {
       const ph = (window.Game && Game.cardPhotos) || new Map(), ref = window.CARD_REF || {};
       const cp = (window.Game && Game.cardPics) || {};
       const has = (c) => ph.has(c.id) || cp[c.id] || ref[c.id] || (this.refPics && this.refPics.has(c.id));
       // своя техніка — лише в режимі «Свій/чужий» (hard === "own"); в інших режимах — лише ворожа
       if (hard === "own") return this.deck().filter((c) => c.own && !c.noff && has(c));   // noff — схожа на російську, лише довідник
+      if (hard === "core") return this.deck().filter((c) => CORE.has(c.id) && !c.own && has(c));
       return this.deck().filter((c) => !c.own && (hard === undefined || c.hard === hard) && has(c));
     },
 
@@ -208,7 +219,8 @@
       $("pick-cmode").innerHTML = Object.values(MODES).filter((m) => !m.ff).map((m) =>
         `<button type="button" role="radio" aria-checked="${m.id === mode}" class="mode${m.id === mode ? " on" : ""}" data-cm="${m.id}"><b>${m.name}</b><span>${esc(m.desc)}</span></button>`).join("");
       $("pick-cmode").querySelectorAll("[data-cm]").forEach((b) => (b.onclick = () => { LS.set("poshuk_cmode", b.dataset.cm); SFX.click(); this.renderMenu(); }));
-      const hard = !!this.mode.hard, n = this.withPhoto(hard).length, all = this.deck().filter((c) => c.hard === hard).length;
+      const hard = !!this.mode.hard, n = (this.mode.core ? this.corePool() : this.withPhoto(hard)).length,
+        all = this.mode.core ? CORE.size : this.deck().filter((c) => c.hard === hard).length;
       if (this.mode.ff) {
         const f = this.ffPools(), ok = f.own.length >= 3 && f.foe.length >= 3;
         $("c-info").innerHTML = ok ? `Своєї техніки з фото: ${f.own.length}, ворожої (лише та, якої в ЗСУ немає): ${f.foe.length}.` : `Мало фото своєї техніки (${f.own.length}): автопошук ще підбирає. Адміністратору: адмінка → «Картки» → «🤖 Автопошук фото».`;
@@ -216,7 +228,7 @@
         $("c-start").textContent = "Почати: свій/чужий"; $("c-start").onclick = () => this.start();
         return;
       }
-      $("c-info").innerHTML = n ? `Карток у грі: ${Math.min(ROUNDS, n)} (з ${n} з фото${hard ? ` · у хардкорі всього ${all}` : ""}).` : `Фото карток ще не додано (${all} карток без фото). Адміністратору: <a href="#admin">адмінка → «Картки»</a>.`;
+      $("c-info").innerHTML = n ? `Карток у грі: ${Math.min(ROUNDS, n)} (з ${n} з фото${hard ? ` · у хардкорі всього ${all}` : this.mode.core ? ` · основна техніка, ${all} зразків` : ""}).` : `Фото карток ще не додано (${all} карток без фото). Адміністратору: <a href="#admin">адмінка → «Картки»</a>.`;
       $("c-start").disabled = !n;
       $("c-start").textContent = `Почати: ${this.mode.name.toLowerCase()}`;
       $("c-start").onclick = () => this.start();
@@ -232,7 +244,7 @@
       if (this.fix) this.mode = MODES.game;
       else if (opt && opt.mode && MODES[opt.mode]) this.mode = MODES[opt.mode];
       else { const mm = LS.get("poshuk_cmode", "game"); this.mode = MODES[mm] || MODES.game; }
-      let pool = Logic.shuffle(this.fix ? this.fix.slice() : this.withPhoto(!!this.mode.hard));
+      let pool = Logic.shuffle(this.fix ? this.fix.slice() : this.mode.core ? this.corePool() : this.withPhoto(!!this.mode.hard));
       if (this.mode.ff && !this.fix) {   // порівну своїх і чужих, перемішано
         // своїх — випадково від 3 до 7 (не завжди 5+5: інакше останні картки вгадуються підрахунком)
         const f = this.ffPools(), want = 3 + Math.floor(Math.random() * 5);
@@ -245,7 +257,8 @@
       document.body.dataset.mode = "cards";
       $("c-form").onsubmit = (e) => { e.preventDefault(); this.submit(); };
       $("c-form").classList.toggle("choice", !!this.mode.choice || !!this.mode.ff);
-      this._deck = this.fix ? this.deck() : this.deck().filter((c) => c.hard === !!this.mode.hard);   // хибні варіанти — з того ж рівня
+      // хибні варіанти — з того ж набору: в ігровому/іспиті лише основна техніка, інакше — той самий рівень
+      this._deck = this.fix ? this.deck() : this.mode.core ? this.deck().filter((c) => CORE.has(c.id)) : this.deck().filter((c) => c.hard === !!this.mode.hard);
       if (!this._keys) { this._keys = (e) => { if (!(this.mode.choice || this.mode.ff) || this.over || document.body.dataset.mode !== "cards" || $("s-cards").hidden) return; const b = $("c-choices").querySelectorAll("button")[Number(e.key) - 1]; if (b && !b.disabled) b.click(); }; addEventListener("keydown", this._keys); }
       $("c-hint-btn").onclick = () => this.hint();
       $("c-sign-btn").onclick = () => this.sign();
@@ -290,7 +303,7 @@
         $("c-choices").innerHTML = `<button type="button" class="ff-own" data-ff="own"><i>1</i><span>🟦 Свій</span></button><button type="button" class="ff-foe" data-ff="foe"><i>2</i><span>🟥 Чужий</span></button>`;
         $("c-choices").querySelectorAll("[data-ff]").forEach((b) => (b.onclick = () => this.ffAnswer(b.dataset.ff)));
       } else if (this.mode.choice) {
-        const opts = this.opts = options(c, this._deck, confWith(c.id), this.deck());
+        const opts = this.opts = options(c, this._deck, confWith(c.id), this.mode.core && !this.fix ? this._deck : this.deck());
         $("c-choices").innerHTML = opts.map((o, i) => `<button type="button" data-ci="${i}"><i>${i + 1}</i><span>${UI.nameHtml(o.name)}</span></button>`).join("");
         $("c-choices").querySelectorAll("button").forEach((b) => (b.onclick = () => this.choose(opts[+b.dataset.ci])));
       }
