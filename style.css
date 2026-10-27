@@ -1200,6 +1200,7 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .r-sidebtn small { color: var(--muted); }
 .r-side-ua { background: linear-gradient(135deg, rgba(0,87,183,.35), rgba(255,215,0,.18)); border-color: rgba(255,215,0,.35); }
 .r-side-ru { background: linear-gradient(135deg, rgba(180,40,40,.28), rgba(20,22,26,.6)); border-color: rgba(220,80,80,.35); }
+.r-side-core { background: linear-gradient(135deg, rgba(255,178,62,.28), rgba(20,22,26,.6)); border-color: rgba(255,178,62,.4); }
 .main-menu .mm-ff { --c: 120,170,255; }
 
 /* головне меню: назва по центру; на ПК — прізвище в одному рядку з назвою ліворуч, «Свій/чужий» — п'ятою квадратною плиткою */
