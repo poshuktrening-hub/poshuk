@@ -14,7 +14,7 @@
     "2s1 2s3 2s19 2s5 2s7 2s9 2s23 2s31 2s43 sprut koksan 2s4 2b9 2b11 2b14 d30 d20 d1 m30 ml20 msta_b giacint_b m46 mt12 2b16 " +
     "bm21 grad1 prima bm27 uragan1m bm30 tos1a tos2 kpa240").split(" "));
   const MODES = {
-    game: {id: "game", core: true, name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника.", hint: true, choice: true, sign: true},
+    game: {id: "game", core: true, name: "Ігровий", desc: "30 с на картку: обрати назву з 4 варіантів. Підказки: 50/50 — один раз за гру, «Ознака» й «Недолік» — з довідника. Помилкова картка повертається через одну (повтор не зараховується).", hint: true, choice: true, sign: true, retry: true},
     exam: {id: "exam", core: true, name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
     ff: {id: "ff", name: "Свій/чужий", desc: "15 с на картку: своя це техніка чи ворожа. Вірно +10, помилка −2, не встиг відповісти −1.", ff: true, sec: 15},
     reveal: {id: "reveal", name: "Проявлення", desc: "Фото спершу грубо пікселізоване й поступово проступає — як погане відео чи знімок з висоти. Що раніше вірно назвав, то більше балів: від 10 до 2. Помилка — 0. 4 варіанти, без підказок, 20 с.", choice: true, reveal: true, sec: 20},
@@ -307,7 +307,7 @@
       this.hintUsed = false; this.signUsed = false; this.weakUsed = false; this.chosen = null;
       this.over = true;   // відповіді приймаються лише коли фото вже видно
       const errs = this.results.filter((r) => !r.ok).length;
-      $("c-stage").textContent = `${this.mode.ff ? "Свій/чужий · " : this.mode.id === "exam" ? "Іспит · " : this.mode.reveal ? "Проявлення · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}Картка ${this.idx + 1}/${this.rounds.length}`;
+      $("c-stage").textContent = `${this.mode.ff ? "Свій/чужий · " : this.mode.id === "exam" ? "Іспит · " : this.mode.reveal ? "Проявлення · " : this.mode.hard ? `Хардкор · помилок ${errs}/${this.mode.lives} · ` : ""}${c.retry ? "🔁 Повтор помилки · не зараховується" : `Картка ${this.rounds.slice(0, this.idx + 1).filter((x) => !x.retry).length}/${this.rounds.filter((x) => !x.retry).length}`}`;
       if ($("c-concept")) $("c-concept").hidden = true;   // «КОНЦЕПТ» — лише після відповіді (у розборі), інакше підказує
       $("c-score").textContent = this.results.reduce((a, r) => a + r.score, 0);
       $("c-reveal").hidden = true; $("c-nextbox").hidden = true; $("c-form").hidden = false;
@@ -337,7 +337,7 @@
         if (url && img.naturalWidth) break;
         tried.add(c.pic && (c.pic.id || c.pic.key || "own"));
         const rest = this.picPool(c.id).filter((x) => !tried.has(x.id || x.key || "own") && !(this.mode.ff && x.id && (window.FF_SKIP || new Set()).has(x.id)));
-        if (!rest.length) { $("c-loading").hidden = true; this.rounds.splice(this.idx, 1); this.idx--; this.planned = Math.max(0, (this.planned || 1) - 1); return this.next(); }
+        if (!rest.length) { $("c-loading").hidden = true; this.rounds.splice(this.idx, 1); this.idx--; if (!c.retry) this.planned = Math.max(0, (this.planned || 1) - 1); return this.next(); }
         c.pic = rest[Math.floor(Math.random() * rest.length)];
       }
       $("c-loading").hidden = true;
@@ -492,13 +492,19 @@
       this.over = true; this.stop();
       this.unpixel(); $("c-img").style.visibility = "";   // «Проявлення»: після відповіді — чітке фото
       const c = this.cur, r = timeout ? {ok: false} : picked !== undefined ? {ok: picked, exact: true} : check(c, answer), score = r.ok ? (this.mode.reveal ? this.revealScore() : 10) : 0;
-      this.results.push({id: c.id, name: c.name, answer, ok: r.ok, score, hint: this.hintUsed, cat: Logic.category(c.name)});
+      if (!c.retry) this.results.push({id: c.id, name: c.name, answer, ok: r.ok, score, hint: this.hintUsed, cat: Logic.category(c.name)});   // повтор помилки — поза підсумком
+      // помилка в ігровому режимі: та сама картка (інше фото, якщо є) повертається через одну — як закріплення, без балів
+      if (!r.ok && !c.retry && this.mode.retry && !this.fix) {
+        const alt = this.picPool(c.id).filter((x) => x !== c.pic);
+        this.rounds.splice(this.idx + 2, 0, Object.assign({}, c, {retry: true, pic: alt.length ? alt[Math.floor(Math.random() * alt.length)] : c.pic}));
+      }
       $("c-score").textContent = this.results.reduce((a, x) => a + x.score, 0);
       if (r.ok) SFX.hit(); else SFX.miss();
       document.activeElement && document.activeElement.blur && document.activeElement.blur();   // сховати клавіатуру
       $("c-form").hidden = true;
-      const verdict = r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +${score}</p>`
-        : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0</p>`;
+      const verdict = c.retry ? (r.ok ? `<p class="c-v ok">✓ Тепер вірно · повтор не зараховується</p>` : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Знову невірно: «${esc(answer)}»`} · повтор не зараховується</p>`)
+        : r.ok ? `<p class="c-v ok">✓ Вірно${r.exact ? "" : " (з одруківкою)"} · +${score}</p>`
+        : `<p class="c-v no">${timeout ? "⏱ Час вийшов" : `✗ Невірно: «${esc(answer)}»`} · 0${this.mode.retry && !this.fix ? " · повернеться через одну" : ""}</p>`;
       $("c-choices").innerHTML = "";
       const cr = c.pic && !c.pic.own ? (c.pic.credit ? (() => { try { return decodeURIComponent(c.pic.credit); } catch (e) { return c.pic.credit; } })() : "навчальний довідник ВОС276") : (Game.cardCredits && Game.cardCredits.get(c.id)) || "";
       const weak = (window.CARD_WEAK || {})[c.id];
@@ -506,7 +512,7 @@
       let other = null;
       if (!r.ok && !timeout) {
         other = this.chosen && this.chosen.id !== c.id ? this.chosen : (() => { const id = check.idx && check.idx.get(norm(answer)); return id && id !== c.id ? this.deck().find((x) => x.id === id) : null; })();
-        if (other) confAdd(c.id, other.id);
+        if (other && !c.retry) confAdd(c.id, other.id);
       }
       const cap = (s) => esc(s.charAt(0).toUpperCase() + s.slice(1));
       // відмінна ознака: така, якої немає в описі іншої техніки пари (однакові ознаки нічого не пояснюють)
