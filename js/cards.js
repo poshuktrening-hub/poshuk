@@ -6,11 +6,11 @@
   const LS = API.LS;
   const ROUND_SEC = 30, REVEAL_SEC = 15, ROUNDS = 10;
   /* Ігровий режим та іспит — лише основна техніка, що масово застосовується, по одному зразку на модель (без модифікацій):
-     танки, БМПТ, БМП/БМД, БТР/БРДМ, МТ-ЛБ, вантажівки, інженерна, ствольна й реактивна артилерія. РЕБ/РЕР, авіація, гелікоптери,
+     танки, БМПТ, БМП/БМД, БТР/БРДМ, МТ-ЛБ, вантажівки, інженерна (5 найпоширеніших: ІМР-2, БАТ-2, БРЕМ-1, ПЗМ-2, МТУ-72), ствольна й реактивна артилерія. РЕБ/РЕР, авіація, гелікоптери,
      БпЛА, ППО, РЛС тощо — лише в «Хардкорі» та довіднику. */
   const CORE = new Set(("t55 t62m t64bv t72b3 t80bv t90m bmpt bmp1 bmp2 bmp3 bmd2 bmd4m btr70 btr80 btr82a btrd btrmdm brdm2 mtlb " +
     "ural4320 kamaz5350 kamaz43118 gaz66 sadko zil131 kraz255 " +
-    "imr2 bat2 pts2 pmp pp91 tmm3 mtu72 ur77 gmz3 zemledelie bmr3 brem1 pzm2 mdk3 eov4421 bts4 tmk2 " +
+    "imr2 bat2 brem1 pzm2 mtu72 " +
     "2s1 2s3 2s19 2s5 2s7 2s9 2s23 2s31 2s43 sprut koksan 2s4 2b9 2b11 2b14 d30 d20 d1 m30 ml20 msta_b giacint_b m46 mt12 2b16 " +
     "bm21 grad1 prima bm27 uragan1m bm30 tos1a tos2 kpa240").split(" "));
   const MODES = {
@@ -95,20 +95,36 @@
   const NAVY = GROUPS[GROUPS.length - 1];
   const typeOf = (c) => c.name.split(" ")[0];
   const quoted = (c) => (c.name.match(/«([^»]+)»/) || [])[1] || "";
+  /* Сімейство/марка: у 4 варіантах не має бути двох машин одного сімейства (КамАЗ-5350 і КамАЗ-43118, Т-72Б3 і Т-72Б3М, БТР-80 і БТР-82А) —
+     інакше відповідь вгадується за маркою, а не за ознаками. Вантажівки — за маркою (КамАЗ, Урал, ГАЗ…), решта — за індексом до першої цифри-групи. */
+  const BRAND = /^(камаз|урал|газ|зил|зіл|краз|маз|баз|уаз|тигр)/;
+  function fam(c) {
+    const rest = c.name.split(" ").slice(1).join(" ").replace(/\(.*?\)/g, " ").replace(/«[^»]*»/g, " ").trim() || c.name;
+    const toks = rest.split(/\s+/);
+    const tok = (toks.find((x) => /\d/.test(x)) || toks[0] || "").toLowerCase();
+    const b = tok.match(BRAND); if (b) return b[1] === "зіл" ? "зил" : b[1];
+    const m = tok.match(/^[^\d]*\d+/);
+    return m ? m[0] : tok;
+  }
   function options(card, deck, must, all) {
     const t = typeOf(card), g = GROUPS.find((x) => x.includes(t)) || [t], q = quoted(card);
     // своя техніка — лише серед своїх, ворожа — серед ворожих (інакше Leopard/MaxxPro серед варіантів відкидаються одразу);
     // концепти — серед концептів, якщо їх досить (значок «КОНЦЕПТ» не підказує відповідь)
     const fit = (c) => c.id !== card.id && !!c.own === !!card.own && !(q && quoted(c) === q);
     const pool = deck.filter(fit), wide = (all || deck).filter((c) => fit(c) && !c.own);
-    const pick = [], add = (list) => { for (const c of Logic.shuffle(list)) { if (pick.length >= 3) break; if (!pick.some((x) => x.id === c.id)) pick.push(c); } };
-    // те, з чим цю техніку плутають (пара або власні помилки), — серед варіантів обов'язково
+    const pick = [], used = new Set([fam(card)]);
+    const ok = (c, strict) => !pick.some((x) => x.id === c.id) && (!strict || !used.has(fam(c)));
+    const put = (c, strict) => { if (pick.length >= 3 || !ok(c, strict)) return; pick.push(c); used.add(fam(c)); };
+    const add = (list, strict = true) => { for (const c of Logic.shuffle(list)) put(c, strict); };
+    // те, з чим цю техніку плутають (пара або власні помилки), — серед варіантів обов'язково (якщо не те саме сімейство)
     const navy = NAVY.includes(t);
-    for (const id of must || []) { const c = pool.find((x) => x.id === id); if (c && pick.length < 2 && !pick.includes(c) && (!navy || NAVY.includes(typeOf(c)))) pick.push(c); }
+    for (const id of must || []) { const c = pool.find((x) => x.id === id); if (c && pick.length < 2 && (!navy || NAVY.includes(typeOf(c)))) put(c, true); }
     if (card.concept) add(pool.filter((c) => c.concept && g.includes(typeOf(c))));
     add(pool.filter((c) => typeOf(c) === t)); add(pool.filter((c) => g.includes(typeOf(c))));
     add(wide.filter((c) => g.includes(typeOf(c))));   // своєї групи замало на цьому рівні — беремо з усієї техніки тієї ж групи
     if (!navy) add(pool);
+    if (pick.length < 3) { add(wide.filter((c) => g.includes(typeOf(c)))); if (!navy) add(wide); }   // розширюємо пошук на всю техніку
+    if (pick.length < 3) { add(pool, false); }   // крайній випадок: сімейств замало — дозволяємо повтор
     return Logic.shuffle([card, ...pick]);
   }
 
