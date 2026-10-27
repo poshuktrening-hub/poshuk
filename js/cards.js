@@ -18,7 +18,7 @@
     exam: {id: "exam", core: true, name: "Іспит", desc: "30 с на картку: вписати назву самому, без підказок. Прохідний бал 80%.", hint: false, pass: 80},
     ff: {id: "ff", name: "Свій/чужий", desc: "15 с на картку: своя це техніка чи ворожа. Вірно +10, помилка −2, не встиг відповісти −1.", ff: true, sec: 15},
     reveal: {id: "reveal", name: "Проявлення", desc: "Фото спершу грубо пікселізоване й поступово проступає — як погане відео чи знімок з висоти. Що раніше вірно назвав, то більше балів: від 10 до 2. Помилка — 0. 4 варіанти, без підказок, 20 с.", choice: true, reveal: true, sec: 20},
-    hard: {id: "hard", name: "Хардкор", desc: "Рідкісні модифікації, РЛС, РЕБ і РЕР, ППО, авіація, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
+    hard: {id: "hard", name: "Хардкор", desc: "Уся техніка поза ігровим режимом: модифікації, бронеавтомобілі, ППО, РЛС, РЕБ і РЕР, БпЛА, авіація, гелікоптери, ракети, флот, концепти. Лише одна можлива помилка — друга завершує гру. 4 варіанти, без підказки.", hint: false, choice: true, hard: true, lives: 1},
   };
 
   /* ---------- нормалізація відповіді: регістр, латиниця-«двійники», і/и/ы, лапки, дефіси, пробіли */
@@ -147,6 +147,7 @@
       // своя техніка — лише в режимі «Свій/чужий» (hard === "own"); в інших режимах — лише ворожа
       if (hard === "own") return this.deck().filter((c) => c.own && !c.noff && has(c));   // noff — схожа на російську, лише довідник
       if (hard === "core") return this.deck().filter((c) => CORE.has(c.id) && !c.own && has(c));
+      if (hard === true) return this.deck().filter((c) => !CORE.has(c.id) && !c.own && has(c));   // хардкор — уся ворожа техніка поза основним набором
       return this.deck().filter((c) => !c.own && (hard === undefined || c.hard === hard) && has(c));
     },
 
@@ -220,7 +221,7 @@
         `<button type="button" role="radio" aria-checked="${m.id === mode}" class="mode${m.id === mode ? " on" : ""}" data-cm="${m.id}"><b>${m.name}</b><span>${esc(m.desc)}</span></button>`).join("");
       $("pick-cmode").querySelectorAll("[data-cm]").forEach((b) => (b.onclick = () => { LS.set("poshuk_cmode", b.dataset.cm); SFX.click(); this.renderMenu(); }));
       const hard = !!this.mode.hard, n = (this.mode.core ? this.corePool() : this.withPhoto(hard)).length,
-        all = this.mode.core ? CORE.size : this.deck().filter((c) => c.hard === hard).length;
+        all = this.mode.core ? CORE.size : hard ? this.deck().filter((c) => !CORE.has(c.id) && !c.own).length : this.deck().filter((c) => !c.hard).length;
       if (this.mode.ff) {
         const f = this.ffPools(), ok = f.own.length >= 3 && f.foe.length >= 3;
         $("c-info").innerHTML = ok ? `Своєї техніки з фото: ${f.own.length}, ворожої (лише та, якої в ЗСУ немає): ${f.foe.length}.` : `Мало фото своєї техніки (${f.own.length}): автопошук ще підбирає. Адміністратору: адмінка → «Картки» → «🤖 Автопошук фото».`;
@@ -258,7 +259,8 @@
       $("c-form").onsubmit = (e) => { e.preventDefault(); this.submit(); };
       $("c-form").classList.toggle("choice", !!this.mode.choice || !!this.mode.ff);
       // хибні варіанти — з того ж набору: в ігровому/іспиті лише основна техніка, інакше — той самий рівень
-      this._deck = this.fix ? this.deck() : this.mode.core ? this.deck().filter((c) => CORE.has(c.id)) : this.deck().filter((c) => c.hard === !!this.mode.hard);
+      this._deck = this.fix ? this.deck() : this.mode.core ? this.deck().filter((c) => CORE.has(c.id))
+        : this.mode.hard ? this.deck().filter((c) => !CORE.has(c.id) && !c.own) : this.deck().filter((c) => c.hard === !!this.mode.hard);
       if (!this._keys) { this._keys = (e) => { if (!(this.mode.choice || this.mode.ff) || this.over || document.body.dataset.mode !== "cards" || $("s-cards").hidden) return; const b = $("c-choices").querySelectorAll("button")[Number(e.key) - 1]; if (b && !b.disabled) b.click(); }; addEventListener("keydown", this._keys); }
       $("c-hint-btn").onclick = () => this.hint();
       $("c-sign-btn").onclick = () => this.sign();
