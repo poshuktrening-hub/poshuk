@@ -98,13 +98,18 @@
   /* Сімейство/марка: у 4 варіантах не має бути двох машин одного сімейства (КамАЗ-5350 і КамАЗ-43118, Т-72Б3 і Т-72Б3М, БТР-80 і БТР-82А) —
      інакше відповідь вгадується за маркою, а не за ознаками. Вантажівки — за маркою (КамАЗ, Урал, ГАЗ…), решта — за індексом до першої цифри-групи. */
   const BRAND = /^(камаз|урал|газ|зил|зіл|краз|маз|баз|уаз|тигр)/;
+  const ROOT = {"торнадо": "град"};   // «Торнадо-Г» — той самий «Град»
   function fam(c) {
     const rest = c.name.split(" ").slice(1).join(" ").replace(/\(.*?\)/g, " ").replace(/«[^»]*»/g, " ").trim() || c.name;
     const toks = rest.split(/\s+/);
     const tok = (toks.find((x) => /\d/.test(x)) || toks[0] || "").toLowerCase();
-    const b = tok.match(BRAND); if (b) return b[1] === "зіл" ? "зил" : b[1];
-    const m = tok.match(/^[^\d]*\d+/);
-    return m ? m[0] : tok;
+    const out = [], b = tok.match(BRAND);
+    if (b) out.push(b[1] === "зіл" ? "зил" : b[1]);
+    else { const m = tok.match(/^[^\d]*\d+/); out.push(m ? m[0] : tok); }
+    // власна назва в лапках: «Град», «Град-1», «Торнадо-Г» — одне сімейство «град»; «Мста-С» і «Мста-Б» — «мста»
+    const q = quoted(c).toLowerCase().split(/[\s\-]/)[0];
+    if (q.length >= 3) out.push(ROOT[q] || q);
+    return out;
   }
   function options(card, deck, must, all) {
     const t = typeOf(card), g = GROUPS.find((x) => x.includes(t)) || [t], q = quoted(card);
@@ -112,9 +117,9 @@
     // концепти — серед концептів, якщо їх досить (значок «КОНЦЕПТ» не підказує відповідь)
     const fit = (c) => c.id !== card.id && !!c.own === !!card.own && !(q && quoted(c) === q);
     const pool = deck.filter(fit), wide = (all || deck).filter((c) => fit(c) && !c.own);
-    const pick = [], used = new Set([fam(card)]);
-    const ok = (c, strict) => !pick.some((x) => x.id === c.id) && (!strict || !used.has(fam(c)));
-    const put = (c, strict) => { if (pick.length >= 3 || !ok(c, strict)) return; pick.push(c); used.add(fam(c)); };
+    const pick = [], used = new Set(fam(card));
+    const ok = (c, strict) => !pick.some((x) => x.id === c.id) && (!strict || !fam(c).some((k) => used.has(k)));
+    const put = (c, strict) => { if (pick.length >= 3 || !ok(c, strict)) return; pick.push(c); fam(c).forEach((k) => used.add(k)); };
     const add = (list, strict = true) => { for (const c of Logic.shuffle(list)) put(c, strict); };
     // те, з чим цю техніку плутають (пара або власні помилки), — серед варіантів обов'язково (якщо не те саме сімейство)
     const navy = NAVY.includes(t);
