@@ -244,7 +244,7 @@
         if (onStep) onStep(`ціль ${i + 1}/${targets.length}: шукаю, як стояла…`);
         const spr = await ReStage.sprite(o);
         const size = Math.max(3, Math.min(160, t.r > 8 ? t.r / 0.6 : gsd > 0 ? Logic.lengthOf(o) / gsd : 16));
-        const slen = gsd > 0 ? Math.min(40, Math.max(2, 2.2 / gsd)) : Math.max(2, size * 0.3);
+        const slen = window.Sun ? Sun.shadowLen(Sun.heightOf(o.name, Logic.lengthOf(o)), Sun.forPreset(mode === "winter" ? "Зима" : (s.season || "Літо"), "День").elev, gsd > 0 ? gsd : Logic.lengthOf(o) / size) : (gsd > 0 ? Math.min(40, Math.max(2, 2.2 / gsd)) : Math.max(2, size * 0.3));
         const r = await ReStage.redo(work, clean, spr, t, size, slen, sun, {removeOnly: true});
         if (r) items.push({t, o, spr, size: r.size, angle: r.angle, hide: r.hide, slen, sun});
         await new Promise((res) => setTimeout(res, 0));
