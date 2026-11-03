@@ -90,7 +90,6 @@ Object.assign(window.CARD_COMMONS = window.CARD_COMMONS || {}, {
   zil131: ["ZIL-131 military truck"],
   uaz469: ["UAZ-469"],
   uaz452: ["UAZ-452 military"],
-  kraz255: ["KrAZ-255B"],
   atz: ["military fuel tanker truck Ural ATZ"],
   imr2: ["IMR-2 engineering vehicle"],
   bat2: ["BAT-2 engineering vehicle", "UA_BAT-2_01.jpg", "UA_BAT-2_02.jpg"],
