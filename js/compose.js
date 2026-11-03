@@ -244,7 +244,7 @@
 
   /* Обʼєм: світлотінь за сонцем знімка. Висота — розмита маска силуету (борти нижче, дах вище) + трохи яскравості
      (панелі, люки); нормаль → освітлення з боку сонця, протилежний бік у півтіні. Плюс легка нерівномірність фарби/пилу. */
-  function relief(cv, angRad, shadowDir, seed) {
+  function relief(cv, angRad, shadowDir, seed, elevDeg) {
     const w = cv.width, h = cv.height, x = cv.getContext("2d"), id = x.getImageData(0, 0, w, h), d = id.data, N = w * h;
     const A = new Float32Array(N), Lm = new Float32Array(N);
     for (let i = 0; i < N; i++) { A[i] = d[i * 4 + 3] / 255; Lm[i] = lum(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]) / 255 * A[i]; }
@@ -253,7 +253,7 @@
     const [sx, sy] = compass(shadowDir);
     const vx = -sx, vy = -sy;   // напрям на сонце в координатах знімка
     const lx = vx * Math.cos(angRad) + vy * Math.sin(angRad), ly = -vx * Math.sin(angRad) + vy * Math.cos(angRad);
-    const el = 45 * Math.PI / 180, Lx = lx * Math.cos(el), Ly = ly * Math.cos(el), Lz = Math.sin(el);
+    const el = Math.max(10, Math.min(80, elevDeg || 45)) * Math.PI / 180, Lx = lx * Math.cos(el), Ly = ly * Math.cos(el), Lz = Math.sin(el);
     const k = sg * 2.2, km = sg * 0.9;
     const R = rng(seed || 1), cells = Math.max(4, Math.round(Math.max(w, h) / Math.max(6, sg * 1.5)));
     const nz = canvas(cells, Math.max(2, Math.round(cells * h / w))), nx = nz.getContext("2d"), nd = nx.createImageData(nz.width, nz.height);
@@ -322,7 +322,10 @@
     const op = Math.max(0.4, Math.min(0.72, (1 - sc.dark) * 0.95)) * (p.shadowK === undefined ? 1 : p.shadowK);
     const tl = lum(...sc.shadowT) || 0.5;
     const T = sc.shadowT.map((t) => Math.max(0.15, Math.min(0.98, (1 - op) * t / tl)));
-    return {lo, hi, mt: (mt - lo) * 255 / (hi - lo), smean: sp.mean, gain, sat, cast: sc.cast, env: sc.env,
+    // час доби: низьке сонце — тепліше світло й м'якший контраст на техніці (p.warm −1…1; знімок уже такий, модель підганяємо)
+    const warm = Math.max(-1, Math.min(1, p.warm || 0));
+    const cast = [sc.cast[0] - warm * 6, sc.cast[1] + warm * 7];
+    return {lo, hi, mt: (mt - lo) * 255 / (hi - lo), smean: sp.mean, gain: gain * (1 - Math.abs(warm) * 0.12), sat, cast, env: sc.env,
       // знімки зазвичай уже підшарплені — розмиваємо лише на різницю, мʼякше за «фізичну» оцінку
       blur: Math.max(0, Math.min(1.6, (sc.psf - 0.55) * 0.75)), noise: sc.noise, op, T};   // blur — запасне; основне підбирає matchBlur
   }
@@ -339,6 +342,26 @@
       const cb = (b - l) * g.sat + cb0, cr = (r - l) * g.sat + cr0;
       const R = Lo + cr, B = Lo + cb, G = (Lo - 0.299 * R - 0.114 * B) / 0.587;
       d[i] = R; d[i + 1] = G; d[i + 2] = B;
+    }
+    x.putImageData(id, 0, 0);
+    return c;
+  }
+
+  /* Пил і бруд на техніці (осінь, бездоріжжя): плямами по корпусу, більше на ходовій (краях силуету); k 0…1. */
+  function dust(src, k, seed) {
+    k = Math.max(0, Math.min(1, k || 0)); if (!k) return src;
+    const w = src.width, h = src.height, c = canvas(w, h), x = c.getContext("2d");
+    x.drawImage(src, 0, 0);
+    const id = x.getImageData(0, 0, w, h), d = id.data, N = w * h, A = new Float32Array(N);
+    for (let i = 0; i < N; i++) A[i] = d[i * 4 + 3] / 255;
+    const inner = gaussBlur(A, w, h, Math.max(1.5, Math.max(w, h) * 0.04));
+    const R = rng(seed || 5), nb = new Float32Array(N); for (let i = 0; i < N; i++) nb[i] = R();
+    const n1 = gaussBlur(nb, w, h, Math.max(1.5, Math.max(w, h) * 0.025));
+    for (let i = 0; i < N; i++) {
+      if (!d[i * 4 + 3]) continue;
+      const j = i * 4, edge = 1 - Math.max(0, Math.min(1, (inner[i] - 0.55) * 2.5));   // край силуету — ходова, забрудненіша
+      const m = Math.max(0, Math.min(1, (n1[i] - 0.47) * 6)) * k * (0.35 + edge * 0.45);
+      d[j] += (118 - d[j]) * m; d[j + 1] += (98 - d[j + 1]) * m; d[j + 2] += (72 - d[j + 2]) * m;
     }
     x.putImageData(id, 0, 0);
     return c;
@@ -366,7 +389,8 @@
 
   /* Малює обʼєкт у dst (canvas того ж розміру, що й base). Повертає змінений прямокутник {x,y,w,h,hidden,auto}.
      Усе, крім геометрії, підбирається саме з ділянки знімка (harmonize).
-     p: size (пкс), angle, hideTarget (0…0.95) або hide, shadow_dir, shadow_len (пкс), shade, bright (−0.5…0.5), shadowK (0…1.5), seed */
+     p: size (пкс), angle, hideTarget (0…0.95) або hide, shadow_dir, shadow_len (пкс), shade, bright (−0.5…0.5), shadowK (0…1.5), seed,
+        sun_elev (висота сонця, ° — світлотінь корпусу), warm (−1…1 — ранкове/вечірнє світло), dust (0…1 — пил і бруд на техніці) */
   function compose(base, dst, sprite, cx, cy, p) {
     const SSd = Math.max(2, Math.min(8, Math.round(160 / Math.max(4, p.size))));
     const sw = sprite.width, sh = sprite.height;
@@ -387,7 +411,7 @@
     // модель: якісне зменшення → підбір тону/кольору → малювання в SSd× роздільності з розмиттям під PSF знімка
     // p.raw — спрайт уже «готовий» (напр. тепловізійний): без підгонки кольору, світлотіні й тіні
     if (p.raw) g.op = 0;
-    const lvl = p.raw ? fitSprite(sprite, Math.max(dw, dh)) : relief(grade(fitSprite(sprite, Math.max(dw, dh)), g), ang, p.shadow_dir || 135, (p.seed || 0) + Math.round(cx * 7 + cy * 13));
+    const lvl = p.raw ? fitSprite(sprite, Math.max(dw, dh)) : relief(dust(grade(fitSprite(sprite, Math.max(dw, dh)), g), p.dust, (p.seed || 0) + Math.round(cx * 3 + cy * 5)), ang, p.shadow_dir || 135, (p.seed || 0) + Math.round(cx * 7 + cy * 13), p.sun_elev);
     if (p.blurFix !== undefined) g.blur = p.blurFix;   // напр. тепловізор: шум знімка заважає оцінці різкості
     else try { g.blur = matchBlur(lvl, sc, p.size); } catch (e) { /* лишається оцінка з PSF */ }
     const sctx0 = canvas(Wp, Hp), sctx = sctx0.getContext("2d");
@@ -460,7 +484,14 @@
           const v = Av[(y - oy) * Wp + (x - ox)]; if (v > sh0[y * Wp + x]) sh0[y * Wp + x] = v;
         }
       }
-      S = gaussBlur(sh0, Wp, Hp, SSd * (0.45 + g.blur * 0.8));
+      // півтінь: біля корпусу тінь чітка, далі від нього — м'якша (сонце не точка; на знімках так і виглядає)
+      const near = gaussBlur(sh0, Wp, Hp, SSd * (0.4 + g.blur * 0.8)), far = gaussBlur(sh0, Wp, Hp, SSd * (0.4 + g.blur * 0.8 + Math.min(2.5, sl * 0.12)));
+      const nx = sdx, ny = sdy, cxp = Wp / 2, cyp = Hp / 2, L = Math.max(1, sl * SSd);
+      S = new Float32Array(Wp * Hp);
+      for (let y = 0; y < Hp; y++) for (let x = 0; x < Wp; x++) {
+        const i = y * Wp + x, t = Math.max(0, Math.min(1, ((x - cxp) * nx + (y - cyp) * ny) / L));
+        S[i] = near[i] * (1 - t) + far[i] * t;
+      }
     }
     const AO = gaussBlur(Av, Wp, Hp, SSd * Math.max(0.7, Math.min(3, p.size * 0.06)));
     const IN = gaussBlur(Av, Wp, Hp, SSd * 0.7);   // «внутрішність» силуету — для мʼякого краю (light wrap)
@@ -603,5 +634,5 @@
     return best;
   }
 
-  window.Compose = {compose, analyze, harmonize, alongEdge, normalizeModel, fitSprite, prepareObject, addCage, catapultSprite, canvas, SS, tracks, shadowDir, smooth};
+  window.Compose = {compose, analyze, harmonize, alongEdge, normalizeModel, fitSprite, prepareObject, addCage, catapultSprite, canvas, SS, tracks, shadowDir, smooth, dust, gaussBlur, rng};
 })();

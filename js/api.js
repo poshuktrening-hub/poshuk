@@ -270,7 +270,7 @@
      після входу у фоні, а розділ, якому вони потрібні, чекає на них (API.need). Так вхід з'являється в рази швидше. */
   const LAZY = {
     data: ["cards-data", "cards-data3", "cards-weak", "cards-data2", "cards-own", "ff-skip"],
-    models: ["compose", "models", "models2"],
+    models: ["sun", "compose", "models", "models2"],
     extra: ["marks", "ref", "markexport", "print"],
     viewer3d: ["model-viewer"],   // переглядач 3D-моделей (~1 МБ) — лише коли відкрили 3D
     duel: ["duel"],

@@ -94,6 +94,8 @@
       const out = Compose.canvas(oldCv.width, oldCv.height); out.getContext("2d").drawImage(oldCv, 0, 0);
       const gsd = s.gsd || map.gsd || 0;
       let sun = 135; try { sun = Compose.shadowDir(clean); } catch (e) { /* типовий */ }
+      // висота сонця — за порою року етапу (час доби — день): від неї довжина тіні кожної машини за її висотою
+      const sp = window.Sun ? Sun.forPreset(s.season || map.season || "Літо", "День") : {elev: 45};
       const targets = s.targets.map((t) => Object.assign({}, t)), dirty = [], pairs = [];
       for (let i = 0; i < targets.length; i++) {
         const t = targets[i], o = t.obj && this.obj(t.obj);
@@ -101,8 +103,8 @@
         if (onStep) onStep(i + 1, targets.length);
         const spr = await this.sprite(o);
         const size = Math.max(3, Math.min(160, t.r > 8 ? t.r / 0.6 : gsd > 0 ? Logic.lengthOf(o) / gsd : 16));
-        const slen = gsd > 0 ? Math.min(40, Math.max(2, 2.2 / gsd)) : Math.max(2, size * 0.3);
-        const r = await this.redo(out, clean, spr, t, size, slen, sun);
+        const slen = window.Sun ? Sun.shadowLen(Sun.heightOf(o.name, Logic.lengthOf(o)), sp.elev, gsd > 0 ? gsd : Logic.lengthOf(o) / size) : (gsd > 0 ? Math.min(40, Math.max(2, 2.2 / gsd)) : Math.max(2, size * 0.3));
+        const r = await this.redo(out, clean, spr, t, size, slen, sun, {elev: sp.elev, dust: /осінь|весна/i.test(s.season || "") ? 0.5 : 0.15});
         if (!r) continue;
         dirty.push(r.rect);
         if (r.hidden > 0.6) t.hidden = Math.round(r.hidden * 100) / 100; else delete t.hidden;
@@ -197,7 +199,7 @@
       const before = Compose.canvas(w, h); before.getContext("2d").drawImage(ol, 0, 0);
       // лише прибрати стару техніку (для зимових/тепловізійних варіантів — нову ставить Variants)
       if (opt.removeOnly) { out.getContext("2d").drawImage(rp, x0, y0); return {rect: {x: x0, y: y0, w, h}, angle, hide: hb[1], size}; }
-      const res = Compose.compose(rp, rp, spr, cx, cy, {size, angle, hideTarget: hb[1], shade: 0.25, shadow_dir: sun, shadow_len: slen});
+      const res = Compose.compose(rp, rp, spr, cx, cy, {size, angle, hideTarget: hb[1], shade: 0.25, shadow_dir: sun, shadow_len: slen, sun_elev: opt.elev, dust: opt.dust});
       out.getContext("2d").drawImage(rp, x0, y0);
       return {rect: {x: x0, y: y0, w, h}, hidden: res ? res.hidden : 0, angle, hide: hb[1], pair: [before, rp, `${t.type || "ціль"} · кут ${angle}° · сховано ≈${Math.round((res ? res.hidden : 0) * 100)}%`]};
     },

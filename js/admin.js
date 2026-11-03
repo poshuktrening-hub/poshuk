@@ -53,6 +53,7 @@
         <div class="adm-actions">
           <button type="button" id="a-add" title="Знімки без техніки: масштаб, напрямок і пора року визначаються самі">＋ Карти</button>
           <button type="button" class="primary" id="a-gen" title="Поставити техніку вручну">✎ Генератор</button>
+          <button type="button" id="a-auto" title="Автоматично розставити вибрані моделі на карті: тіні за сонцем, масштаб, пора року й час доби">🤖 Автонакладання</button>
           <button type="button" id="a-variants" title="Зимові й нічні тепловізійні варіанти етапів">❄ Зима / 🌡 ТПВ</button>
           <button type="button" id="a-restage" title="Перемалювати техніку на вже створених етапах новою обробкою (з бекапом)">♻ Оновити етапи</button>
           <button type="button" id="a-cards" title="Фото для режиму «Картки»">🃏 Картки</button>
@@ -149,6 +150,7 @@
       $("a-stats").onclick = () => Analytics.open(this);
       $("a-ref").onclick = () => RefAdmin.open(this);
       $("a-variants").onclick = () => { this.heatOn = false; Variants.open(this); };
+      $("a-auto").onclick = async () => { await this.flushSave(); this.heatOn = false; AutoPlace.open(this); };
       $("a-restage").onclick = () => { this.heatOn = false; ReStage.open(this); };
       $("a-gen").onclick = async () => { await this.flushSave(); this.heatOn = false; Gen.open(this); };
       $("a-settings-btn").onclick = () => this.settings();

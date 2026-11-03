@@ -1251,3 +1251,11 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .r-3dbox model-viewer { width: 100%; flex: 1; min-height: 0; background: radial-gradient(ellipse at 50% 60%, #2a3139 0%, #0d1115 80%); border-radius: 12px; --poster-color: transparent; }
 .re-3d { padding: 8px 0; border-top: 1px dashed var(--line); }
 .r-zoom.m3d { background: #0d1115; }
+/* автонакладання */
+.ap-card { width: min(960px, 100%); }
+.ap-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px 12px; margin: 10px 0; }
+.ap-grid label { display: flex; flex-direction: column; gap: 3px; font-size: .85rem; color: var(--muted, #9aa); }
+.ap-grid label:first-child { grid-column: 1 / -1; }
+.ap-grid select { width: 100%; }
+.ap-grid .ap-chk { flex-direction: row; align-items: center; align-self: end; color: inherit; }
+.ap-models { max-height: 240px; overflow: auto; }
