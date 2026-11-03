@@ -1264,7 +1264,7 @@ async function applyDiffSeed(env) {
 
 function b64bytes(s) { try { const bin = atob(String(s || "")), out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; } catch (e) { return null; } }
 async function getCardPhoto(env, ctx, request, id, t, v) {
-  if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
+  if (!await checkToken(env, t, "offline")) return new Response("Потрібен вхід", {status: 403});
   const cache = caches.default, key = new Request(new URL(`/api/card/${id}?v=${encodeURIComponent(v || "")}`, request.url).toString());
   let res = await cache.match(key);
   if (!res) {
@@ -1284,7 +1284,7 @@ async function getCardPhoto(env, ctx, request, id, t, v) {
 }
 
 async function getRefImage(env, ctx, request, id, t, v) {
-  if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
+  if (!await checkToken(env, t, "offline")) return new Response("Потрібен вхід", {status: 403});
   const cache = caches.default, key = new Request(new URL(`/api/ref/${id}?v=${encodeURIComponent(v || "")}`, request.url).toString());
   let res = await cache.match(key);
   if (!res) {
@@ -1300,7 +1300,7 @@ async function getRefImage(env, ctx, request, id, t, v) {
 }
 
 async function getObject(env, ctx, request, id, t, v) {
-  if (!await checkToken(env, t, "player")) return new Response("Потрібен вхід", {status: 403});
+  if (!await checkToken(env, t, "offline")) return new Response("Потрібен вхід", {status: 403});
   // версія (дата заміни моделі) — у ключі кешу: замінена модель одразу має нову адресу в усіх дата-центрах
   const cache = caches.default, key = new Request(new URL(`/api/obj/${id}?v=${encodeURIComponent(String(v || "").slice(0, 40))}`, request.url).toString());
   let res = await cache.match(key);
