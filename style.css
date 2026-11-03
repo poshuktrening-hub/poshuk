@@ -1242,3 +1242,4 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .splash[hidden] { display: none; }
 @keyframes splash-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .splash svg { animation: none; } }
+.sg-ph { padding: 0; cursor: zoom-in; }
