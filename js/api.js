@@ -79,6 +79,16 @@
     return tokens[password];
   }
 
+  /* Токен для адрес фото. Вхід без пароля на офлайн-пристрої: пароля немає — беремо ключ пристрою
+     (раніше намагались увійти «паролем пристрою» → сервер: «Невірний пароль», а фото не вантажились). */
+  async function imgToken(password) {
+    if (window.Offline && password === Offline.DEV) {
+      if (!tokens[""]) useKey(LS.get("poshuk_off_key", null));
+      if (tokens[""]) return tokens[""];
+    }
+    return token(password);
+  }
+
   const imgCache = new Map();
   function loadImage(id, password) {
     if (imgCache.has(id)) return imgCache.get(id);
@@ -207,21 +217,21 @@
   const objVer = {};
   function noteObjects(list) { for (const o of list || []) if (o && o.id) objVer[o.id] = o.created || ""; }
   async function objUrl(id, password) {
-    if (id && off()) return Offline.url("obj", id);
+    if (id && off()) { const u = await Offline.url("obj", id); if (u || !navigator.onLine) return u; }
     if (!isCF || !id) return null;
-    return `${url}/obj/${encodeURIComponent(id)}?v=${encodeURIComponent(objVer[id] || "1")}${tq(await token(password))}`;
+    return `${url}/obj/${encodeURIComponent(id)}?v=${encodeURIComponent(objVer[id] || "1")}${tq(await imgToken(password))}`;
   }
 
   async function cardUrl(id, ver, password) {
-    if (id && off()) return Offline.url("card", id);
+    if (id && off()) { const u = await Offline.url("card", id); if (u || !navigator.onLine) return u; }   // нове фото, якого ще немає на пристрої, — з мережі
     if (!isCF || !id) return null;
-    return `${url}/card/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}${tq(await token(password))}`;
+    return `${url}/card/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}${tq(await imgToken(password))}`;
   }
 
   async function refUrl(id, ver, password) {
-    if (id && off()) return Offline.url("ref", id);
+    if (id && off()) { const u = await Offline.url("ref", id); if (u || !navigator.onLine) return u; }   // нове фото, якого ще немає на пристрої, — з мережі
     if (!isCF || !id) return null;
-    return `${url}/ref/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}${tq(await token(password))}`;
+    return `${url}/ref/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}${tq(await imgToken(password))}`;
   }
 
   /* Список довідника — один запит на сеанс для гри й довідника (раніше качався двічі); оновлюється раз на 10 хв
