@@ -228,6 +228,29 @@
     return `${url}/card/${encodeURIComponent(id)}?v=${encodeURIComponent(ver || "")}${tq(await imgToken(password))}`;
   }
 
+  /* 3D-модель картки (.glb): офлайн — з пристрою; інакше — з сервера (кешується тиждень за версією). */
+  async function modelUrl(card, ver, password, net) {
+    if (card && off() && !net) { const u = await Offline.url("m3d", card); if (u || !navigator.onLine) return u; }
+    if (!isCF || !card) return null;
+    return `${url}/m3d/${encodeURIComponent(card)}?v=${encodeURIComponent(ver || "")}${tq(await imgToken(password))}`;
+  }
+  /* Вивантаження 3D-моделі (адмінка): частинами по CHUNK, як знімки етапів. */
+  async function uploadModel(card, file, password, onProgress) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const b = await call("m3d_begin", {card, size: bytes.byteLength}, password);
+    for (let i = 0; i < b.chunks; i++) {
+      if (onProgress) onProgress(`Вивантажую ${i + 1}/${b.chunks}…`);
+      const part = bytes.subarray(i * b.chunk, Math.min(bytes.byteLength, (i + 1) * b.chunk));
+      let ok = false, err = null;
+      for (let k = 0; k < 3 && !ok; k++) {
+        try { const r = await fetch(`${url}/blob/${b.id}/${i}`, {method: "PUT", headers: {"X-Token": b.token}, body: part}); const j = await r.json(); ok = j.ok; err = j.error; }
+        catch (e) { err = "Немає зв'язку з сервером"; }
+      }
+      if (!ok) throw new Error(err || "Не вдалось вивантажити модель");
+    }
+    return call("m3d_end", {card}, password);
+  }
+
   async function refUrl(id, ver, password) {
     if (id && off()) { const u = await Offline.url("ref", id); if (u || !navigator.onLine) return u; }   // нове фото, якого ще немає на пристрої, — з мережі
     if (!isCF || !id) return null;
@@ -249,6 +272,7 @@
     data: ["cards-data", "cards-data3", "cards-weak", "cards-data2", "cards-own", "ff-skip"],
     models: ["compose", "models", "models2"],
     extra: ["marks", "ref", "markexport", "print"],
+    viewer3d: ["model-viewer"],   // переглядач 3D-моделей (~1 МБ) — лише коли відкрили 3D
     duel: ["duel"],
   };
   const LAZY_DEPS = {extra: ["data"], duel: ["models"]};
@@ -274,5 +298,5 @@
   const ready = (...groups) => groups.every((g) => lazyDone[g]);
   const lazyFiles = () => Object.values(LAZY).flat().map(lazySrc);
 
-  window.API = {noteObjects, need, ready, lazyFiles, lazySrc, refList, refReset, useKey, call, callNet, fetchPack, token, noteStages, loadImage, trimImages, uploadStage, objUrl, cardUrl, refUrl, url, isCF, LS, SS, imgCache};
+  window.API = {noteObjects, need, ready, lazyFiles, lazySrc, refList, refReset, useKey, call, callNet, fetchPack, token, noteStages, loadImage, trimImages, uploadStage, objUrl, cardUrl, refUrl, modelUrl, uploadModel, script, url, isCF, LS, SS, imgCache};
 })();

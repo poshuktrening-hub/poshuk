@@ -45,7 +45,8 @@
   async function cacheShell() {
     if (!window.caches) return;
     const list = new Set(["./", "index.html", "manifest.webmanifest", "media/icon-192.png", "media/icon-512.png", "media/bg.jpg",
-      "media/help-search.svg", "media/help-cards.svg", "media/help-ref.svg", "media/help-duel.svg"]);
+      "media/help-search.svg", "media/help-cards.svg", "media/help-ref.svg", "media/help-duel.svg",
+      "media/draco/draco_decoder.js", "media/draco/draco_wasm_wrapper.js", "media/draco/draco_decoder.wasm"]);
     document.querySelectorAll("script[src]").forEach((s) => list.add(s.getAttribute("src")));
     API.lazyFiles().forEach((u) => list.add(u));   // модулі, що вантажаться пізніше, — теж у кеш (офлайн без них не працює)
     document.querySelectorAll("link[rel=stylesheet][href]").forEach((l) => list.add(l.getAttribute("href")));
@@ -82,7 +83,7 @@
         case "login": return {ok: true, role: "player"};
         case "config": return Object.assign({ok: true}, s.config);
         case "round": { const st = (s.config.stages || []).find((x) => x.id === data.id); return {ok: true, targets: st ? st.targets : []}; }
-        case "ref_list": return {ok: true, entries: s.ref || []};
+        case "ref_list": return {ok: true, entries: s.ref || [], models: s.models || []};
         case "top": return {ok: true, top: {search: [], cards: [], duel: []}};
         case "submit": {
           const all = LS.get(RES, []);
@@ -148,7 +149,7 @@
       // ключем офлайн-пристрою (password === "") — з позначкою off; паролем — як завжди
       const off = password === "" ? {off: 1} : {};
       const cfg = await API.callNet("config", Object.assign({full: 1}, off), password);   // офлайн — з координатами цілей
-      const ref = (await API.callNet("ref_list", off, password)).entries || [];
+      const rl = await API.callNet("ref_list", off, password), ref = rl.entries || [], models = rl.models || [];
       const stages = (cfg.stages || []).filter((s) => s.targets && s.targets.some((t) => !t.decoy));
       const keep = new Set(["snap"]);
       let bytes = 0;
@@ -185,10 +186,21 @@
         done += sentMissing;   // на сервері вже немає — пропускаємо
         todo = (j.rest || []).concat(todo.slice(120));
       }
+      // 3D-моделі техніки (.glb) — по одній, своїм запитом (великі); незмінена версія не перекачується
+      const oldMv = (this.info() || {}).mv || {}, mv = {};
+      for (let i = 0; i < models.length; i++) {
+        const [card, v, size] = models[i], k = "m3d:" + card;
+        keep.add(k); mv[card] = v || "";
+        if (have.has(k) && oldMv[card] === mv[card]) continue;
+        progress(`3D-моделі: ${i + 1} з ${models.length}…`, 0.95);
+        const u = await API.modelUrl(card, v, password === "" ? Offline.DEV : password, true);
+        if (!u) continue;
+        try { const r = await fetch(u); if (!r.ok) throw new Error(); const b = await r.blob(); await put(k, b); bytes += b.size; changed++; } catch (e) { delete mv[card]; }
+      }
       progress("Зберігаю…", 0.96);
       const config = Object.assign({}, cfg); delete config.token; delete config.ok;
       config.stages = stages;
-      await put("snap", {config, ref});
+      await put("snap", {config, ref, models: models.filter(([c]) => c in mv)});
       for (const k of await keys()) if (!keep.has(k)) { await del(k); changed++; }
       const prev = this.info() || {};
       if (prev.stages !== stages.length || prev.ref !== ref.length) changed++;
@@ -197,7 +209,7 @@
       await cacheShell();
       LS.set(KEY, {at: new Date().toISOString(), stages: stages.length, cards: (cfg.cardPhotos || []).length, ref: ref.length, bytes,
         pw: password === "" ? (prev.pw || "") : await sha(password),   // автооновлення ключем пристрою не стирає пароль входу
-        ver: Object.fromEntries(stages.map((s) => [s.id, s.v || ""])), cv});
+        ver: Object.fromEntries(stages.map((s) => [s.id, s.v || ""])), cv, mv});
       LS.del("poshuk_off_part");
       if (!opt.auto) LS.del(PAUSE);   // після завантаження вручну — одразу в офлайн
       // ключ пристрою для автооновлень (не залежить від зміни паролів); з кожним оновленням продовжується
