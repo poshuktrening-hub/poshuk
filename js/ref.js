@@ -343,7 +343,9 @@
     clearMarks() { if (window.Marks) $("r-detail").querySelectorAll(".mk-layer").forEach((l) => Marks.clear(l.parentElement)); },
     zoom(src) {
       if (!src) return;
-      const z = $("r-zoom"); z.innerHTML = `<img alt="" src="${esc(src)}"><button type="button" class="r-zx" aria-label="Закрити">✕</button>`;
+      const z = $("r-zoom");
+      if (z.parentElement !== document.body) document.body.appendChild(z);   // працює й поза довідником (адмінка, пропозиції)
+      z.innerHTML = `<img alt="" src="${esc(src)}"><button type="button" class="r-zx" aria-label="Закрити">✕</button>`;
       z.hidden = false; z.classList.remove("full");
       z.querySelector("img").onclick = (ev) => { ev.stopPropagation(); z.classList.toggle("full"); };
       z.onclick = () => (z.hidden = true);
@@ -597,7 +599,7 @@
             <p><b>${s.kind === "photos" ? `📷 Фото до «${esc(t ? Logic.dispName(t.name) : s.target)}»` : `＋ Новий запис: ${esc(s.name)}`}</b><br><small class="muted">${esc(s.callsign || "курсант")} · ${esc(new Date(s.ts).toLocaleString("uk-UA", {dateStyle: "short", timeStyle: "short"}))}${s.kind !== "photos" ? ` · розділ «${esc(s.cat)}»${s.card ? " · картка: " + esc(((window.Cards ? Cards.deck() : []).find((c) => c.id === s.card) || {}).name || s.card) : ""}` : ""}</small></p>
             ${s.note ? `<p class="small">💬 ${esc(s.note)}</p>` : ""}
             ${s.kind !== "photos" && (s.ttx || s.desc) ? `<details class="small"><summary>Текст</summary><div class="r-txt">${s.ttx ? `<b>ТТХ:</b> ${safe(s.ttx)}<br>` : ""}${safe(s.desc || "")}</div></details>` : ""}
-            <div class="re-photos">${s.imgs.map((x) => `<div class="re-ph"><img alt="" data-img="${esc(x)}" data-v="${esc(s.ts)}"></div>`).join("")}</div>
+            <div class="re-photos">${s.imgs.map((x) => `<button type="button" class="re-ph sg-ph" title="Відкрити на весь екран"><img alt="" data-img="${esc(x)}" data-v="${esc(s.ts)}"></button>`).join("")}</div>
             <div class="row"><button type="button" class="primary" data-ok="${esc(s.id)}">✓ Схвалити</button><button type="button" data-no="${esc(s.id)}">✕ Відхилити</button></div></div>`; }).join("")
           : `<p class="muted">Нових пропозицій немає.</p>`}</div>`;
       $("sg-back").onclick = () => this.renderList();
@@ -607,6 +609,7 @@
         try { await API.call("ref_suggest_decide", {id, approve: approve ? 1 : 0}, this.pw); await this.load(); this.suggestions(); this.say(approve ? "Схвалено ✓" : "Відхилено", approve ? "ok" : ""); }
         catch (e) { this.say(e.message, "no"); }
       };
+      box.querySelectorAll(".sg-ph").forEach((b) => (b.onclick = () => Ref.zoom(b.querySelector("img").src)));
       box.querySelectorAll("[data-ok]").forEach((b) => (b.onclick = () => decide(b.dataset.ok, true)));
       box.querySelectorAll("[data-no]").forEach((b) => (b.onclick = () => decide(b.dataset.no, false)));
     },
