@@ -61,7 +61,7 @@
       this.closeDetail();
       if (!this.entries) {
         $("r-list").innerHTML = `<p class="muted r-empty">Завантажую довідник…</p>`;
-        try { const j = await API.refList(Game.password); if (j.marks) Game.marks = Object.assign(Game.marks || {}, j.marks); this.entries = this.withCards(sortRef(j.entries || [])); }
+        try { const j = await API.refList(Game.password); if (j.marks) Game.marks = Object.assign(Game.marks || {}, j.marks); this.models = new Map((j.models || []).map(([c, v]) => [c, v || ""])); this.entries = this.withCards(sortRef(j.entries || [])); }
         catch (e) { $("r-list").innerHTML = `<p class="err r-empty">${esc(e.message)}</p>`; return; }
       }
       this.renderCats(); this.renderList();
@@ -224,7 +224,7 @@
       for (const e of list) {
         if (q) { const h = e._txt ? "Згадується в описі" : "Назва"; if (h !== last) { html += `<h3 class="r-h">${h}</h3>`; last = h; } }
         else if (!this.cat && e.cat !== last) { html += `<h3 class="r-h">${esc(e.cat)}</h3>`; last = e.cat; }
-        html += `<button type="button" class="r-item" data-id="${esc(e.id)}"><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : e.card ? `<img loading="lazy" alt="" data-card="${esc(e.card)}">` : ""}${e.concept ? `<em class="r-cpt">КОНЦЕПТ</em>` : ""}</span>
+        html += `<button type="button" class="r-item" data-id="${esc(e.id)}"><span class="r-th">${e.imgs[0] ? `<img loading="lazy" alt="" data-img="${esc(e.imgs[0])}" data-v="${esc(e.v)}">` : e.card ? `<img loading="lazy" alt="" data-card="${esc(e.card)}">` : ""}${e.concept ? `<em class="r-cpt">КОНЦЕПТ</em>` : ""}${e.card && this.models && this.models.has(e.card) ? `<em class="r-3dtag" title="Є 3D-модель">3D</em>` : ""}</span>
           <span class="r-nm"><b>${!this.side ? (e.side === "ua" ? "🇺🇦 " : "") : ""}${UI.nameHtml(e.name)}</b><small>${esc(plain(e.desc || e.ttx).slice(0, 90))}</small></span></button>`;
       }
       $("r-list").innerHTML = html;
@@ -257,7 +257,7 @@
       const box = $("r-detail");
       this.clearMarks();   // розмітка попереднього запису: зняти слухачі (інакше накопичуються з кожним ‹ ›)
       box.innerHTML = `<header class="bar top r-dh"><button type="button" class="link" id="rd-back">← До списку</button><div class="r-pn">
-          ${window.Offline && Offline.on ? "" : `<button type="button" id="rd-sugg" title="Запропонувати фото до цього запису" aria-label="Запропонувати фото">📷</button>`}<button type="button" id="rd-print" title="Друк / PDF цього запису" aria-label="Друк">🖨</button><button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
+          ${window.Offline && Offline.on ? "" : `<button type="button" id="rd-sugg" title="Запропонувати фото до цього запису" aria-label="Запропонувати фото">📷</button>`}${e.card && this.models && this.models.has(e.card) ? `<button type="button" id="rd-3d" class="r-3d" title="3D-модель: обертайте пальцем або мишею">🧊 3D</button>` : ""}<button type="button" id="rd-print" title="Друк / PDF цього запису" aria-label="Друк">🖨</button><button type="button" id="rd-prev" ${prev ? "" : "disabled"} aria-label="Попередня">‹</button><button type="button" id="rd-next" ${next ? "" : "disabled"} aria-label="Наступна">›</button></div></header>
         <div class="r-body">
           ${e.concept ? `<p class="r-concept">КОНЦЕПТ</p>` : ""}<p class="r-cat">${e.side === "ua" ? "🇺🇦 Українська техніка" : "Ворожа техніка"} · ${esc(e.cat)}</p><h2>${UI.nameHtml(e.name)}</h2>
           ${e.card && window.Game && Game.cardPhotos && Game.cardPhotos.has(e.card) ? `<div class="r-gal r-gal-card"><button type="button" class="r-ph" data-zoom="1"><img alt="" data-cardown="${esc(e.card)}"></button></div>${e.imgs.length ? `<p class="muted small r-hint">Фото з картки цілей</p>` : ""}` : ""}
@@ -273,6 +273,7 @@
       $("rd-back").onclick = () => this.closeDetail();
       if ($("rd-sugg")) $("rd-sugg").onclick = () => this.suggest(e);
       $("rd-print").onclick = () => window.Print && Print.entries([e], Logic.dispName(e.name), Game.password);
+      if ($("rd-3d")) $("rd-3d").onclick = () => this.view3d(e);
       if (prev) $("rd-prev").onclick = () => this.show(prev.id);
       if (next) $("rd-next").onclick = () => this.show(next.id);
       box.querySelectorAll("[data-zoom]").forEach((b) => (b.onclick = () => this.zoom(b.querySelector("img").src)));
@@ -340,6 +341,27 @@
       draw();
     },
     closeDetail() { this.clearMarks(); $("r-detail").hidden = true; $("r-zoom").hidden = true; this.cur = null; },
+    /* 3D-модель (.glb) на весь екран: переглядач <model-viewer> вантажиться лише тут (~1 МБ, потім у кеші). */
+    async view3d(e) {
+      const z = $("r-zoom");
+      if (z.parentElement !== document.body) document.body.appendChild(z);
+      z.innerHTML = `<div class="r-3dbox"><p class="status">Завантажую 3D-модель…</p></div><button type="button" class="r-zx" aria-label="Закрити">✕</button>`;
+      z.hidden = false; z.classList.remove("full"); z.classList.add("m3d"); z.onclick = null;
+      z.querySelector(".r-zx").onclick = () => { z.hidden = true; z.innerHTML = ""; z.classList.remove("m3d"); };
+      try {
+        const [src] = await Promise.all([API.modelUrl(e.card, this.models.get(e.card), Game.password), API.need("viewer3d")]);
+        if (window.ModelViewerElement) ModelViewerElement.dracoDecoderLocation = new URL("media/draco/", location.href).href;   // декодер Draco — свій (CSP, офлайн)
+        if (!src) throw new Error("Модель недоступна без інтернету — завантажте офлайн-версію заново");
+        if (z.hidden) return;
+        const mv = document.createElement("model-viewer");
+        mv.setAttribute("src", src); mv.setAttribute("alt", Logic.dispName(e.name));
+        mv.setAttribute("camera-controls", ""); mv.setAttribute("auto-rotate", ""); mv.setAttribute("touch-action", "pan-y");
+        mv.setAttribute("shadow-intensity", "1"); mv.setAttribute("exposure", "1.1"); mv.setAttribute("interaction-prompt", "auto");
+        mv.addEventListener("error", () => { z.querySelector(".r-3dbox").innerHTML = `<p class="status no">Не вдалось показати модель (пошкоджений файл або не підтримується пристроєм)</p>`; });
+        const box = z.querySelector(".r-3dbox"); box.innerHTML = `<h3>${UI.nameHtml(e.name)}</h3>`; box.appendChild(mv);
+        box.insertAdjacentHTML("beforeend", `<p class="muted small">Обертайте пальцем або мишею · двома пальцями / коліщатком — масштаб</p>`);
+      } catch (err) { z.querySelector(".r-3dbox").innerHTML = `<p class="status no">${esc(err.message)}</p>`; }
+    },
     clearMarks() { if (window.Marks) $("r-detail").querySelectorAll(".mk-layer").forEach((l) => Marks.clear(l.parentElement)); },
     zoom(src) {
       if (!src) return;
@@ -383,7 +405,7 @@
     },
     async load() {
       API.call("ref_suggestions", {}, this.pw).then((j) => { const n = (j.list || []).length; if (n !== this.nSugg) { this.nSugg = n; if ($("ra-sugg") && !this.busy && document.querySelector("#ra .ra-list")) this.renderList(); } }).catch(() => {});
-      try { const j = await API.call("ref_list", {}, this.pw); if (j.marks && window.Game) Game.marks = Object.assign(Game.marks || {}, j.marks); this.entries = sortRef(j.entries || []); } catch (e) { this.entries = []; this.err = e.message; }
+      try { const j = await API.call("ref_list", {}, this.pw); if (j.marks && window.Game) Game.marks = Object.assign(Game.marks || {}, j.marks); this.models = new Map((j.models || []).map(([c, v, n]) => [c, {v: v || "", size: n || 0}])); this.entries = sortRef(j.entries || []); } catch (e) { this.entries = []; this.err = e.message; }
       // записи-оболонки карток (c_…): розділ і назва — з картки; порожні тексти — теж з картки
       const deck = window.Cards ? Cards.deck() : [], byId = new Map(deck.map((c) => [c.id, c]));
       const catOf = (c) => (c.own ? "Своя техніка" : c.concept ? "Концепти й новітні розробки" : Logic.category(c.name));
@@ -498,12 +520,15 @@
           <div class="re-photos" id="re-photos"></div>
           <div class="row"><button type="button" id="re-add">＋ Додати фото…</button></div>
           <input type="file" id="re-files" accept="image/*" multiple hidden>
+          <div class="re-3d" id="re-3d"></div>
+          <input type="file" id="re-glb" accept=".glb,model/gltf-binary" hidden>
           <div class="row"><button type="button" class="primary" id="re-save">Зберегти</button><button type="button" id="re-cancel">Скасувати</button></div>
           <p class="status" id="ra-st"></p>
         </div></div>`;
       const back = () => this.renderList();
       $("re-back").onclick = back; $("re-cancel").onclick = back;
       $("re-cat").onchange = (ev) => { $("re-newcat-l").hidden = ev.target.value !== "__new"; if (ev.target.value === "__new") $("re-newcat").focus(); };
+      $("re-card").onchange = () => this.render3d();
       $("re-add").onclick = () => $("re-files").click();
       $("re-files").onchange = async (ev) => {
         for (const f of [...ev.target.files]) {
@@ -513,8 +538,38 @@
         ev.target.value = ""; this.renderPhotos();
       };
       $("re-save").onclick = () => this.save(e);
+      this.render3d();
       this.renderPhotos();
       $("re-name").focus();
+    },
+    /* 3D-модель (.glb) прив'язаної картки: завантажити / замінити / прибрати. Файл — до 30 МБ, (Draco — можна,
+       декодер свій у media/draco). Зберігається одразу, окремо від кнопки «Зберегти». */
+    render3d() {
+      const box = $("re-3d"); if (!box) return;
+      const card = $("re-card").value, m = card && this.models ? this.models.get(card) : null;
+      const mb = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + " МБ" : Math.round(n / 1e3) + " КБ");
+      box.innerHTML = !card ? `<p class="muted small">🧊 3D-модель: спершу прив'яжіть запис до картки цілей.</p>`
+        : `<p class="small">🧊 3D-модель: ${m ? `<b>є</b> (${mb(m.size)}, ${esc(new Date(m.v).toLocaleDateString("uk-UA"))})` : "немає"}</p>
+          <div class="row"><button type="button" id="re-3d-add">${m ? "Замінити .glb…" : "＋ Завантажити .glb…"}</button>${m ? `<button type="button" id="re-3d-del">Прибрати 3D</button>` : ""}</div>
+          <p class="muted small">Формат .glb (glTF Binary), до 30 МБ; стиснення Draco підтримується. Кнопка «3D» з'явиться у записах, прив'язаних до цієї картки.</p>`;
+      if (!card) return;
+      $("re-3d-add").onclick = () => $("re-glb").click();
+      $("re-glb").onchange = async (ev) => {
+        const f = ev.target.files[0]; ev.target.value = ""; if (!f) return;
+        if (!/\.glb$/i.test(f.name)) return this.say("Потрібен файл .glb", "no");
+        if (f.size > 30e6) return this.say("Модель завелика (понад 30 МБ) — спростіть її, напр. у Blender", "no");
+        const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+        if (String.fromCharCode(...head) !== "glTF") return this.say("Це не glTF Binary (.glb)", "no");
+        this.busy = true;
+        try { const r = await API.uploadModel(card, f, this.pw, (t) => this.say(`3D: ${t}`)); this.models.set(card, {v: r.v || new Date().toISOString(), size: f.size}); Ref.entries = null; API.refReset(); this.say("3D-модель збережено ✓", "ok"); }
+        catch (err) { this.say(err.message, "no"); }
+        this.busy = false; this.render3d();
+      };
+      if ($("re-3d-del")) $("re-3d-del").onclick = async () => {
+        if (!confirm("Прибрати 3D-модель цієї картки?")) return;
+        try { await API.call("m3d_delete", {card}, this.pw); this.models.delete(card); Ref.entries = null; API.refReset(); this.say("3D-модель прибрано", "ok"); } catch (err) { this.say(err.message, "no"); }
+        this.render3d();
+      };
     },
     renderPhotos() {
       const box = $("re-photos");

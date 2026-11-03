@@ -17,6 +17,7 @@ const GLOBAL_FAILS = 150;                             // невдалі вход
 const RATE = {api: [300, 60e3], img: [900, 60e3], login: [60, 60e3], heavy: [40, 60e3], suggest: [6, 60e3], ip: [4000, 60e3]};   // запитів з однієї адреси за вікно (мс)
 const SUGGEST_MAX = 60, SUGGEST_BYTES = 60e6;         // пропозицій курсантів, що чекають перевірки, і їхніх фото разом — щоб не заповнити базу
 const DUEL_PACK_MAX = 25e6, DUEL_CHUNKS_MAX = 120;    // знімок дуелі одного гравця; частин дуелей у базі разом (≈180 МБ)
+const M3D_MAX = 30e6;                                 // байт в одній 3D-моделі (.glb)
 const MAX_BODY = 30e6;                                // байт у POST-запиті (імпорт довідника, фото)
 const CHUNK = 1_500_000; // < 2 МБ — ліміт рядка D1
 const TOKEN_HOURS = 12;
@@ -52,6 +53,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS ref_marks (img TEXT PRIMARY KEY, marks TEXT, updated TEXT)`,
   // id надісланих результатів: повтор того самого (відповідь сервера загубилась, клієнт надіслав ще раз) не дублюється
   `CREATE TABLE IF NOT EXISTS submits (cid TEXT PRIMARY KEY, ts INTEGER)`,
+  // 3D-моделі техніки (.glb) для довідника: id = id картки; файл — частинами в blobs під id "m3d_<картка>"
+  `CREATE TABLE IF NOT EXISTS models3d (id TEXT PRIMARY KEY, size INTEGER, chunks INTEGER, ready INTEGER, updated TEXT)`,
 ];
 
 /* Умова «не в архіві» для results/answers/clicks: старий прапорець archived + межа rowid з останнього архівування
@@ -131,7 +134,7 @@ const json = (obj, status = 200, extra = {}) => new Response(JSON.stringify(obj)
 const FILE_HEADERS = {"X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'; sandbox", "Content-Disposition": "inline"};
 
 // ------------------------------------------------------------------ база
-const SCHEMA_V = "2026-10-21a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
+const SCHEMA_V = "2026-11-03a";   // змінюйте, коли додаєте таблиці/колонки/індекси — тоді міграція виконається ще раз
 let schemaReady = false;
 async function db(env) {
   if (!env.DB) throw new HttpError("База D1 не підключена (Settings → Functions → D1 binding: DB)");
@@ -557,7 +560,9 @@ async function action(env, ctx, req, origin) {
       if (!diffSeeded) { try { await applyDiffSeed(env); diffSeeded = true; } catch (e) { console.error("diff seed:", e.message); } }
       await auth(env, req, req.off ? "offline" : "player");
       const {results} = await env.DB.prepare("SELECT id, ord, cat, name, ttx, descr, imgs, updated, card FROM ref_entries ORDER BY ord").all();
-      return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated, card: r.card || ""})), marks: await marksAll(env)};
+      const {results: m3d} = await env.DB.prepare("SELECT id, updated, size FROM models3d WHERE ready=1").all();
+      return {ok: true, entries: results.map((r) => ({id: r.id, ord: r.ord, cat: r.cat, name: r.name, ttx: r.ttx, desc: r.descr, imgs: JSON.parse(r.imgs || "[]"), v: r.updated, card: r.card || ""})), marks: await marksAll(env),
+        models: m3d.map((r) => [r.id, r.updated, r.size])};
     }
     case "top": {
       await auth(env, req, "player");
@@ -662,6 +667,30 @@ async function action(env, ctx, req, origin) {
         .bind(id, String(req.title || "Етап").slice(0, 120), Number(req.w) || 0, Number(req.h) || 0,
           JSON.stringify(Array.isArray(req.targets) ? req.targets : []), new Date().toISOString(), size, chunks).run();
       return {ok: true, id, chunk: CHUNK, chunks, token: await makeToken(env, "admin")};
+    }
+    case "m3d_begin": {   // 3D-модель картки (.glb): починаємо вивантаження частинами (PUT /api/blob/m3d_<картка>/<n>)
+      const card = String(req.card || ""), size = Number(req.size) || 0;
+      if (!/^[a-z0-9_]+$/.test(card)) throw new HttpError("Невірний id картки");
+      if (!size || size > M3D_MAX) throw new HttpError(`Модель завелика (понад ${Math.round(M3D_MAX / 1e6)} МБ)`);
+      const chunks = Math.ceil(size / CHUNK);
+      await env.DB.batch([env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("m3d_" + card),
+        env.DB.prepare("INSERT OR REPLACE INTO models3d (id,size,chunks,ready,updated) VALUES (?,?,?,0,?)").bind(card, size, chunks, new Date().toISOString())]);
+      return {ok: true, id: "m3d_" + card, chunk: CHUNK, chunks, token: await makeToken(env, "admin")};
+    }
+    case "m3d_end": {
+      const card = String(req.card || "");
+      const m = await env.DB.prepare("SELECT chunks FROM models3d WHERE id=?").bind(card).first();
+      if (!m) throw new HttpError("Модель не знайдено");
+      const c = await env.DB.prepare("SELECT COUNT(*) AS n FROM blobs WHERE id=?").bind("m3d_" + card).first();
+      if (c.n !== m.chunks) throw new HttpError(`Завантажено ${c.n} з ${m.chunks} частин — спробуйте ще раз`);
+      const up = new Date().toISOString();
+      await env.DB.prepare("UPDATE models3d SET ready=1, updated=? WHERE id=?").bind(up, card).run();
+      return {ok: true, v: up};
+    }
+    case "m3d_delete": {
+      const card = String(req.card || "");
+      await env.DB.batch([env.DB.prepare("DELETE FROM blobs WHERE id=?").bind("m3d_" + card), env.DB.prepare("DELETE FROM models3d WHERE id=?").bind(card)]);
+      return {ok: true};
     }
     case "stage_end": {
       const st = await env.DB.prepare("SELECT chunks FROM stages WHERE id=?").bind(String(req.id)).first();
@@ -1299,6 +1328,29 @@ async function getRefImage(env, ctx, request, id, t, v) {
   return out;
 }
 
+/* 3D-модель (.glb) картки: частини з blobs одним файлом; у кеші краю за версією (датою завантаження). */
+async function getModel3d(env, ctx, request, card, t, v) {
+  if (!await checkToken(env, t, "offline")) return new Response("Потрібен вхід", {status: 403});
+  if (!/^[a-z0-9_]+$/.test(card)) return new Response("Не знайдено", {status: 404});
+  const cache = caches.default, key = new Request(new URL(`/api/m3d/${card}?v=${encodeURIComponent(String(v || "").slice(0, 40))}`, request.url).toString());
+  let res = await cache.match(key);
+  if (!res) {
+    const m = await env.DB.prepare("SELECT chunks FROM models3d WHERE id=? AND ready=1").bind(card).first();
+    if (!m) return new Response("Не знайдено", {status: 404});
+    const parts = [];
+    for (let i = 0; i < m.chunks; i++) {   // по частині (одним запитом D1 може не віддати великий результат)
+      const r = await env.DB.prepare("SELECT data FROM blobs WHERE id=? AND part=?").bind("m3d_" + card, i).first();
+      if (!r) return new Response("Модель пошкоджено", {status: 500});
+      parts.push(new Uint8Array(r.data));
+    }
+    res = new Response(new Blob(parts), {headers: Object.assign({"Content-Type": "model/gltf-binary", "Cache-Control": "public, max-age=604800"}, FILE_HEADERS)});
+    ctx.waitUntil(cache.put(key, res.clone()).catch(() => {}));
+  }
+  const out = new Response(res.body, res);
+  out.headers.set("Cache-Control", "private, max-age=604800");
+  return out;
+}
+
 async function getObject(env, ctx, request, id, t, v) {
   if (!await checkToken(env, t, "offline")) return new Response("Потрібен вхід", {status: 403});
   // версія (дата заміни моделі) — у ключі кешу: замінена модель одразу має нову адресу в усіх дата-центрах
@@ -1344,6 +1396,7 @@ async function putBlob(env, request, id, part) {
   if (!await checkToken(env, request.headers.get("X-Token"), "admin")) return json({ok: false, error: "Потрібен вхід адміністратора"}, 403);
   let st;
   if (id.startsWith("new_")) { try { st = JSON.parse(await metaGet(env, "reimg_" + id.slice(4)) || "null"); } catch (e) { st = null; } }
+  else if (id.startsWith("m3d_")) st = await env.DB.prepare("SELECT chunks FROM models3d WHERE id=?").bind(id.slice(4)).first();
   else st = await env.DB.prepare("SELECT chunks FROM stages WHERE id=?").bind(id).first();
   if (!st || !(part >= 0 && part < st.chunks)) return json({ok: false, error: "Невірна частина"}, 400);
   const buf = await request.arrayBuffer();
@@ -1573,6 +1626,7 @@ export async function onRequest(context) {
     if (request.method === "GET" && path[0] === "obj" && path[1]) return await getObject(env, context, request, path[1], t, url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "card" && path[1]) return await getCardPhoto(env, context, request, path[1], t, url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "ref" && path[1]) return await getRefImage(env, context, request, path[1], t, url.searchParams.get("v"));
+    if (request.method === "GET" && path[0] === "m3d" && path[1]) return await getModel3d(env, context, request, path[1], t, url.searchParams.get("v"));
     if (request.method === "GET" && path[0] === "duel" && path[1] && path[2]) return await getDuelImage(env, path[1], Number(path[2]), url.searchParams.get("t"), url.searchParams.get("s"));
     if (request.method === "PUT" && path[0] === "blob" && path[1]) return await putBlob(env, request, path[1], Number(path[2]));
     if (request.method === "GET") return json({ok: true, app: "poshuk", version: VERSION});
