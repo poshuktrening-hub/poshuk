@@ -16,7 +16,7 @@
     }
   }
   /* Адмінка — окремі модулі (~200 КБ), які курсантові не потрібні: вантажаться лише за адресою #admin. */
-  const ADMIN_JS = ["cards-commons", "cards-admin", "analytics", "scale", "crop", "generator", "compose-legacy", "restage", "variants", "autoplace", "admin"];
+  const ADMIN_JS = ["cards-commons", "cards-admin", "ocr", "analytics", "scale", "crop", "generator", "compose-legacy", "restage", "variants", "autoplace", "admin"];
   function loadAdmin() {
     if (window.Admin) return Promise.resolve();
     return API.need("data", "models", "extra", "duel").then(loadAdminJs);

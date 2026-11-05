@@ -1259,3 +1259,4 @@ td.t-ok { color: var(--hit); } td.t-no { color: var(--miss); }
 .ap-grid select { width: 100%; }
 .ap-grid .ap-chk { flex-direction: row; align-items: center; align-self: end; color: inherit; }
 .ap-models { max-height: 240px; overflow: auto; }
+.co-list { max-height: 55vh; overflow: auto; }

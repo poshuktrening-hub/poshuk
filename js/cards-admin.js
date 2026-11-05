@@ -48,6 +48,7 @@
         <p class="muted small">Фото карток зберігаються в «Довіднику» (у записі цієї техніки) — там же можна додати кілька ракурсів.</p>
         <p class="muted small">У грі беруть участь лише картки з фото: зараз ${n} з ${deck.length}. Виберіть одразу багато фото — кожне прив'яжеться до картки за назвою файлу (напр. «Т-72Б3.jpg», «Град.png», «2С19 Мста-С.jpg»).</p>
         <div class="row"><button type="button" class="primary" id="ca-auto" title="Знайти вільні фото для всіх карток без фото: Вікісховище, Openverse (Flickr), АрміяInform; якщо фото немає — креслення чи модель">${this.running ? "⏸ Зупинити автопошук" : "🤖 Автопошук фото"}</button></div>
+        <div class="row"><button type="button" id="ca-ocr" title="Розпізнати текст на фото карток: назва чи індекс техніки на знімку — це підказка. Знайдені можна замінити іншим вільним фото">🔤 Перевірити фото на написи</button></div>
         <div class="row"><button type="button" id="ca-bulk">＋ Свої фото (кілька файлів)…</button><button type="button" id="ca-names">Список назв файлів</button></div>
         <input type="file" id="ca-files" accept="image/*" multiple hidden><input type="file" id="ca-one" accept="image/*" hidden>
         <p class="status" id="ca-st"></p>
@@ -72,6 +73,7 @@
       </div>`;
       $("ca-x").onclick = () => ($("ca").hidden = true);
       $("ca-auto").onclick = () => (this.running ? (this.running = false) : this.autoAll());
+      $("ca-ocr").onclick = () => this.ocrOpen();
       $("ca").querySelectorAll("[data-wiki]").forEach((b) => (b.onclick = () => this.wikiOne(b.dataset.wiki)));
       $("ca").querySelectorAll("[data-hard]").forEach((cb) => (cb.onchange = async () => {
         try { const j = await API.call("set_card_hard", {id: cb.dataset.hard, hard: cb.checked ? 1 : 0}, this.pw); Game.cardHard = j.cardHard || {}; }
@@ -112,6 +114,82 @@
       this.say(`Шукаю фото…`);
       try { const ok = await this.wikiPut(id, this.skip[id]); this.render(); this.say(ok ? "Фото оновлено ✓ (ще раз 🔎 — інше)" : "Нічого вільного не знайдено — додайте своє фото.", ok ? "ok" : "no"); }
       catch (e) { this.say(e.message, "no"); }
+    },
+    /* ---- 🔤 Перевірка фото на написи ---- */
+    ocrCache() { try { return JSON.parse(localStorage.getItem("poshuk_ocr") || "{}"); } catch (e) { return {}; } },
+    ocrSave(c) { try { localStorage.setItem("poshuk_ocr", JSON.stringify(c)); } catch (e) { /* ок */ } },
+    async ocrOpen() {
+      let box = $("co");
+      if (!box) { box = document.createElement("div"); box.id = "co"; box.className = "modal"; document.body.appendChild(box); }
+      box.hidden = false; this.ocrStop = false; this.ocrRes = this.ocrRes || {};
+      box.onclick = (e) => { if (e.target === box && !this.ocrBusy) box.hidden = true; };
+      this.ocrRender();
+    },
+    ocrRender() {
+      const deck = Cards.deck(), withPh = deck.filter((c) => this.photos.has(c.id)), cache = this.ocrCache();
+      const rows = withPh.map((c) => ({c, r: this.ocrRes[c.id] || (cache[c.id] && cache[c.id][0] === this.photos.get(c.id) ? {level: cache[c.id][1], hits: cache[c.id][2]} : null)}));
+      const done = rows.filter((x) => x.r).length, bad = rows.filter((x) => x.r && x.r.level !== "clean" && !(cache[x.c.id] && cache[x.c.id][3] === this.photos.get(x.c.id)));
+      const red = bad.filter((x) => x.r.level === "name");
+      $("co").innerHTML = `<div class="m-card">
+        <div class="m-head"><h2>🔤 Написи на фото</h2><button type="button" class="link" id="co-x">Закрити</button></div>
+        <p class="muted small">Розпізнає текст на фото карток (у вашому браузері, нічого нікуди не йде). <b style="color:#ff7a59">Червоні</b> — на фото є назва чи індекс самої техніки (підказка), <b style="color:#ffb23e">жовті</b> — інший впевнений напис (підпис, водяний знак). Номери на бортах не рахуються. Перший запуск вантажить модуль ~12 МБ.</p>
+        <div class="row"><button type="button" class="primary" id="co-go">${this.ocrBusy ? "⏹ Зупинити" : done ? "▶ Продовжити перевірку" : "▶ Перевірити всі фото"}</button>${red.length ? `<button type="button" id="co-fixall"${this.ocrBusy ? " disabled" : ""}>Замінити всі червоні (${red.length})</button>` : ""}</div>
+        <p class="status" id="co-st">Перевірено ${done} з ${withPh.length}. Знайдено з написами: ${bad.length} (з назвою — ${red.length}).</p>
+        <ul class="ca-list co-list">${bad.sort((a, b) => (a.r.level === "name" ? 0 : 1) - (b.r.level === "name" ? 0 : 1)).map(({c, r}) => `<li>
+          <img class="th" loading="lazy" alt="" data-cth="${c.id}"><span class="nm">${esc(Logic.dispName(c.name))}<small>${r.hits.map((h) => `<b style="color:${h.kind === "name" ? "#ff7a59" : "#ffb23e"}">${esc(h.t)}</b>`).join(" · ")}</small></span>
+          <button type="button" data-cfix="${c.id}"${this.ocrBusy ? " disabled" : ""} title="Знайти інше вільне фото й перевірити його">Замінити</button><button type="button" data-cok="${c.id}" title="Залишити це фото (написи не заважають)">Залишити</button></li>`).join("") || `<li class="muted">${done ? "Фото з написами не знайдено ✓" : "Ще не перевіряли."}</li>`}</ul>
+      </div>`;
+      $("co-x").onclick = () => { this.ocrStop = true; $("co").hidden = true; this.render(); };
+      $("co-go").onclick = () => (this.ocrBusy ? (this.ocrStop = true) : this.ocrRun());
+      if ($("co-fixall")) $("co-fixall").onclick = () => this.ocrFix(red.map((x) => x.c.id));
+      $("co").querySelectorAll("[data-cth]").forEach(async (im) => { im.src = await API.cardUrl(im.dataset.cth, this.photos.get(im.dataset.cth), this.pw).catch(() => ""); });
+      $("co").querySelectorAll("[data-cfix]").forEach((b) => (b.onclick = () => this.ocrFix([b.dataset.cfix])));
+      $("co").querySelectorAll("[data-cok]").forEach((b) => (b.onclick = () => { const k = this.ocrCache(), id = b.dataset.cok; if (k[id]) k[id][3] = this.photos.get(id); this.ocrSave(k); this.ocrRender(); }));
+    },
+    cosay(t, cls = "") { const e = $("co-st"); if (e) { e.textContent = t; e.className = "status " + cls; } },
+    async ocrOne(c) {
+      const url = await API.cardUrl(c.id, this.photos.get(c.id), this.pw);
+      const r = await Ocr.check(url, c, (m) => this.cosay(m));
+      this.ocrRes[c.id] = r;
+      const k = this.ocrCache(); k[c.id] = [this.photos.get(c.id), r.level, r.hits.slice(0, 8)]; this.ocrSave(k);
+      return r;
+    },
+    async ocrRun() {
+      this.ocrBusy = true; this.ocrStop = false; this.ocrRender();
+      try {
+        const cache = this.ocrCache(), todo = Cards.deck().filter((c) => this.photos.has(c.id) && !(cache[c.id] && cache[c.id][0] === this.photos.get(c.id)));
+        let n = 0;
+        for (const c of todo) {
+          if (this.ocrStop || $("co").hidden) break;
+          this.cosay(`Перевіряю ${++n} з ${todo.length}: ${Logic.dispName(c.name)}…`);
+          try { await this.ocrOne(c); } catch (e) { if (/модуль|media\/ocr/i.test(e.message)) throw e; }
+          if (n % 10 === 0) this.ocrRender();
+        }
+      } catch (e) { this.ocrBusy = false; this.ocrRender(); this.cosay(e.message, "no"); return; }
+      this.ocrBusy = false; this.ocrRender();
+    },
+    /* Замінити: наступний вільний кандидат з автопошуку → одразу перевірити → поки на новому фото є назва (до 6 спроб). */
+    async ocrFix(ids) {
+      this.ocrBusy = true; this.ocrStop = false; this.ocrRender();
+      this.skip = this.skip || {}; let ok = 0, fail = [];
+      try {
+        for (let i = 0; i < ids.length; i++) {
+          const c = Cards.deck().find((x) => x.id === ids[i]); if (!c || this.ocrStop) break;
+          let good = false;
+          for (let t = 0; t < 6 && !good && !this.ocrStop; t++) {
+            this.skip[c.id] = (this.skip[c.id] || 0) + 1;
+            this.cosay(`${i + 1}/${ids.length} ${Logic.dispName(c.name)}: шукаю інше фото (спроба ${t + 1})…`);
+            let put = false; try { put = await this.wikiPut(c.id, this.skip[c.id]); } catch (e) { this.cosay(e.message, "no"); }
+            if (!put) break;
+            this.cosay(`${i + 1}/${ids.length} ${Logic.dispName(c.name)}: перевіряю нове фото…`);
+            const r = await this.ocrOne(c);
+            good = r.level === "clean" || (r.level === "text" && t >= 2);
+          }
+          if (good) ok++; else fail.push(Logic.dispName(c.name));
+        }
+      } catch (e) { this.cosay(e.message, "no"); }
+      this.ocrBusy = false; this.ocrRender();
+      this.cosay(`Замінено: ${ok}${fail.length ? `. Не вдалось знайти чисте фото: ${fail.join(", ")} — додайте своє (кнопка «Замінити» в списку карток).` : ""}`, fail.length ? "no" : "ok");
     },
     /* «Автопошук фото»: прохід по всіх картках без фото одразу (той самий, що сервер робить у фоні раз на тиждень). */
     async autoAll() {
