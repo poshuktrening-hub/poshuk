@@ -9,7 +9,7 @@
  * налаштування й паролі з Google-таблиці.
  */
 import {fillTick, fillState, fillReset, fillInfo, fillOne} from "./photofill.js";
-import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg, rememberReject, markAdmin, imgMime, isB64} from "./cardref.js";
+import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg, rememberReject, markAdmin, adminImgs, CP, imgMime, isB64} from "./cardref.js";
 const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
 const LOCK_FAILS = 20, LOCK_SECONDS = 15 * 60;       // невдалі входи з однієї адреси за 15 хв → ця адреса чекає 15 хв (клас за одним Wi-Fi — одна адреса, тому не менше)
@@ -968,8 +968,9 @@ async function action(env, ctx, req, origin) {
     case "card_photos": {   // для адмінки «Картки»: у яких карток є фото (довідник + ще не перенесені старі) і звідки перше
       const {results} = await env.DB.prepare("SELECT id,updated,credit FROM card_photos").all();
       const photos = new Map(results.map((r) => [r.id, r.updated])), credits = new Map(results.filter((r) => r.credit).map((r) => [r.id, r.credit]));
-      for (const [card, list] of Object.entries(await cardPics(env))) { if (!photos.has(card)) photos.set(card, list[0][1]); if (list[0][2] && !credits.has(card)) credits.set(card, list[0][2]); }
-      return {ok: true, photos: [...photos], credits: [...credits], fill: fillInfo(await fillState(env, metaGet))};
+      const own = [], keepA = await adminImgs(env);   // own — фото, додані адміном чи курсантами (не автопідбір): їх OCR-перевірка не чіпає
+      for (const [card, list] of Object.entries(await cardPics(env))) { if (!photos.has(card)) photos.set(card, list[0][1]); if (list[0][2] && !credits.has(card)) credits.set(card, list[0][2]); if (!String(list[0][0]).startsWith(CP) || keepA.has(String(list[0][0]))) own.push(card); }
+      return {ok: true, photos: [...photos], credits: [...credits], own, fill: fillInfo(await fillState(env, metaGet))};
     }
     case "ref_link": {   // прив'язки «запис довідника → картка» + перенесення старих фото карток у довідник (порція)
       const merged = req.links ? await setLinks(env, req.links) : 0;

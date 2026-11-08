@@ -37,7 +37,7 @@
       const wire = () => box.querySelectorAll("[data-close]").forEach((b) => (b.onclick = () => (box.hidden = true)));
       const fail = (e) => { box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status no">${esc(e && e.message || e)}</p><p class="muted small">Оновіть сторінку й спробуйте ще раз. Якщо повторюється — напишіть у підтримку цей текст.</p></div>`; wire(); };
       box.innerHTML = `<div class="m-card"><div class="m-head"><h2>Картки</h2><button type="button" class="link" data-close>Закрити</button></div><p class="status">Завантажую список фото…</p></div>`; wire();
-      try { const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); this.fill = j.fill || null; } catch (e) { return fail(e); }
+      try { const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); this.own = new Set(j.own || []); this.fill = j.fill || null; } catch (e) { return fail(e); }
       try { this.render(); } catch (e) { console.error(e); fail(e); }
     },
     render() {
@@ -93,7 +93,7 @@
       $("ca").querySelectorAll("[data-del]").forEach((b) => (b.onclick = async () => {
         if (!confirm("Видалити фото цієї картки?")) return;
         try { await API.call("card_photo_delete", {id: b.dataset.del}, this.pw); } catch (e) { this.say(e.message, "no"); return; }
-        const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); this.render();
+        const j = await API.call("card_photos", {}, this.pw); this.photos = new Map(j.photos); this.credits = new Map(j.credits || []); this.own = new Set(j.own || []); this.render();
       }));
     },
     say(t, cls = "") { const s = $("ca-st"); if (s) { s.textContent = t; s.className = "status " + cls; } },
@@ -116,6 +116,7 @@
       catch (e) { this.say(e.message, "no"); }
     },
     /* ---- 🔤 Перевірка фото на написи ---- */
+    isOwn(id) { return !!(this.own && this.own.has(id)); },
     ocrCache() { try { return JSON.parse(localStorage.getItem("poshuk_ocr") || "{}"); } catch (e) { return {}; } },
     ocrSave(c) { try { localStorage.setItem("poshuk_ocr", JSON.stringify(c)); } catch (e) { /* ок */ } },
     async ocrOpen() {
@@ -126,7 +127,7 @@
       this.ocrRender();
     },
     ocrRender() {
-      const deck = Cards.deck(), withPh = deck.filter((c) => this.photos.has(c.id)), cache = this.ocrCache();
+      const deck = Cards.deck(), withPh = deck.filter((c) => this.photos.has(c.id) && !this.isOwn(c.id)), cache = this.ocrCache();
       const rows = withPh.map((c) => ({c, r: this.ocrRes[c.id] || (cache[c.id] && cache[c.id][0] === this.photos.get(c.id) ? {level: cache[c.id][1], hits: cache[c.id][2]} : null)}));
       const done = rows.filter((x) => x.r).length, bad = rows.filter((x) => x.r && x.r.level !== "clean" && !(cache[x.c.id] && cache[x.c.id][3] === this.photos.get(x.c.id)));
       const red = bad.filter((x) => x.r.level === "name");
@@ -157,7 +158,7 @@
     async ocrRun() {
       this.ocrBusy = true; this.ocrStop = false; this.ocrRender();
       try {
-        const cache = this.ocrCache(), todo = Cards.deck().filter((c) => this.photos.has(c.id) && !(cache[c.id] && cache[c.id][0] === this.photos.get(c.id)));
+        const cache = this.ocrCache(), todo = Cards.deck().filter((c) => this.photos.has(c.id) && !this.isOwn(c.id) && !(cache[c.id] && cache[c.id][0] === this.photos.get(c.id)));
         let n = 0;
         for (const c of todo) {
           if (this.ocrStop || $("co").hidden) break;
