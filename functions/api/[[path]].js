@@ -8,7 +8,7 @@
  * куди дублювати результати (Google-скрипт таблиці). Перший вхід адміна сам переносить
  * налаштування й паролі з Google-таблиці.
  */
-import {fillTick, fillState, fillReset, fillInfo, fillOne} from "./photofill.js";
+import {fillTick, fillState, fillReset, fillInfo, fillOne, fillTop} from "./photofill.js";
 import {cardPics, linked, putCardImg, delCardImg, setLinks, migrateLegacy, isGameImg, rememberReject, markAdmin, adminImgs, CP, imgMime, isB64} from "./cardref.js";
 const VERSION = "cf-1.0";
 const MAX_ROUNDS = 10;
@@ -992,6 +992,13 @@ async function action(env, ctx, req, origin) {
       const r = await fillOne(env, id, Math.max(0, Number(req.skip) || 0));
       if (r.ok && r.img) await markAdmin(env, r.img);   // вибране адміністратором 🔎 — під захистом
       return {ok: true, put: !!r.ok, found: r.found || 0, credit: r.credit || "", updated: r.updated || ""};
+    }
+    case "photo_fill_top": {   // вид зверху для однієї картки (кнопка «🛩 Вид зверху» в адмінці): стає обкладинкою
+      const id = String(req.id || "");
+      if (!/^[a-z0-9_]+$/.test(id)) throw new HttpError("Невірний id картки");
+      const r = await fillTop(env, id, Math.max(0, Number(req.skip) || 0));
+      if (r.ok && r.img) await markAdmin(env, r.img);
+      return {ok: true, put: !!r.ok, found: r.found || 0, credit: r.credit || "", updated: r.updated || "", title: r.title || ""};
     }
     case "card_photo_upload": {
       const id = String(req.id || "").slice(0, 40);

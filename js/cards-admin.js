@@ -48,6 +48,7 @@
         <p class="muted small">Фото карток зберігаються в «Довіднику» (у записі цієї техніки) — там же можна додати кілька ракурсів.</p>
         <p class="muted small">У грі беруть участь лише картки з фото: зараз ${n} з ${deck.length}. Виберіть одразу багато фото — кожне прив'яжеться до картки за назвою файлу (напр. «Т-72Б3.jpg», «Град.png», «2С19 Мста-С.jpg»).</p>
         <div class="row"><button type="button" class="primary" id="ca-auto" title="Знайти вільні фото для всіх карток без фото: Вікісховище, Openverse (Flickr), АрміяInform; якщо фото немає — креслення чи модель">${this.running ? "⏸ Зупинити автопошук" : "🤖 Автопошук фото"}</button></div>
+        <div class="row"><button type="button" id="ca-top" title="Знайти для кожної картки вільне фото з виду зверху (aerial, top view, з дрона) у Вікісховищі й Openverse і поставити його обкладинкою картки; наявні фото лишаються далі в записі довідника">${this.topRun ? "⏸ Зупинити «вид зверху»" : "🛩 Вид зверху для всіх"}</button>${Object.values(this.topState()).includes("miss") && !this.topRun ? `<button type="button" id="ca-topreset" title="Забути, для яких карток вид зверху не знайшовся, і шукати для них знову">↺</button>` : ""}</div>
         <div class="row"><button type="button" id="ca-ocr" title="Розпізнати текст на фото карток: назва чи індекс техніки на знімку — це підказка. Знайдені можна замінити іншим вільним фото">🔤 Перевірити фото на написи</button></div>
         <div class="row"><button type="button" id="ca-bulk">＋ Свої фото (кілька файлів)…</button><button type="button" id="ca-names">Список назв файлів</button></div>
         <input type="file" id="ca-files" accept="image/*" multiple hidden><input type="file" id="ca-one" accept="image/*" hidden>
@@ -74,6 +75,8 @@
       $("ca-x").onclick = () => ($("ca").hidden = true);
       $("ca-auto").onclick = () => (this.running ? (this.running = false) : this.autoAll());
       $("ca-ocr").onclick = () => this.ocrOpen();
+      $("ca-top").onclick = () => (this.topRun ? (this.topRun = false) : this.topAll());
+      if ($("ca-topreset")) $("ca-topreset").onclick = () => { try { localStorage.removeItem("poshuk_top"); } catch (e) { /* ок */ } this.render(); };
       $("ca").querySelectorAll("[data-wiki]").forEach((b) => (b.onclick = () => this.wikiOne(b.dataset.wiki)));
       $("ca").querySelectorAll("[data-hard]").forEach((cb) => (cb.onchange = async () => {
         try { const j = await API.call("set_card_hard", {id: cb.dataset.hard, hard: cb.checked ? 1 : 0}, this.pw); Game.cardHard = j.cardHard || {}; }
@@ -208,6 +211,28 @@
       const done = this.fill && this.fill.done;
       this.running = false;
       if (document.getElementById("ca-auto")) { this.render(); this.say(done ? `Готово ✓ Знайдено: ${this.fill.ok}, не знайдено: ${this.fill.miss.length}. Невдале фото міняється кнопкою 🔎.` : "Автопошук зупинено.", done ? "ok" : ""); }
+    },
+    /* 🛩 Вид зверху для всіх карток: по одній на запит, прогрес і підсумок зберігаються (localStorage), щоб продовжити після перерви. */
+    topState() { try { return JSON.parse(localStorage.getItem("poshuk_top") || "{}"); } catch (e) { return {}; } },
+    async topAll() {
+      this.topRun = true; this.render();
+      const st = this.topState(), deck = Cards.deck();
+      const isTop = (id) => /^Вид зверху/.test(decodeURIComponent(this.credits.get(id) || ""));
+      const todo = deck.filter((c) => !isTop(c.id) && !(st[c.id] && st[c.id] === "miss"));
+      let ok = 0, miss = 0, n = 0;
+      for (const c of todo) {
+        if (!this.topRun || !document.getElementById("ca-top")) break;
+        n++; this.say(`Вид зверху: ${n} з ${todo.length} — ${Logic.dispName(c.name)}…`);
+        try {
+          const j = await API.call("photo_fill_top", {id: c.id}, this.pw);
+          if (j.put) { ok++; st[c.id] = "ok"; this.photos.set(c.id, j.updated); if (j.credit) this.credits.set(c.id, j.credit); }
+          else { miss++; st[c.id] = "miss"; }
+        } catch (e) { if (/пароль|доступ/i.test(e.message)) { this.say(e.message, "no"); break; } miss++; }
+        try { localStorage.setItem("poshuk_top", JSON.stringify(st)); } catch (e) { /* ок */ }
+      }
+      const stopped = this.topRun === false || n < todo.length;
+      this.topRun = false;
+      if (document.getElementById("ca-top")) { this.render(); this.say(`${stopped ? "Зупинено." : "Готово ✓"} Вид зверху знайдено: ${ok}, не знайдено: ${miss}. Усього карток з видом зверху: ${deck.filter((c) => isTop(c.id)).length}. Не знайдені наступного разу пропускаються (↺ — шукати для них знову).`, stopped ? "" : "ok"); }
     },
     async bulk(files) {
       if (!files.length) return;

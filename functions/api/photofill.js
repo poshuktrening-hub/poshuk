@@ -301,6 +301,64 @@ export async function fillOne(env, id, skip = 0) {
   return {ok: false, found: list.length};
 }
 
+/* ---------- Вид зверху (кнопка «🛩 Вид зверху» в адмінці «Картки»).
+   Ті самі джерела й правила, але в назві/тегах має бути ознака ракурсу: aerial, top view, from above, overhead, drone, вид зверху/сверху…
+   Знайдене стає ПЕРШИМ фото запису (обкладинкою картки); попередні фото лишаються далі в довіднику. */
+const TOP = /aerial|top[ -]?view|from above|from the top|overhead|bird'?s[ -]eye|drone (view|shot|photo|footage)|top[ -]?down|plan view|satellite|luftbild|von oben|вид (зверху|згори|сверху)|з висоти|с высоты|аэрофото|аерофото|згори|зверху|сверху/i;
+const TOP_Q = ["aerial", "\"top view\"", "\"from above\"", "overhead", "drone"];
+async function topCandidates(env, id) {
+  const spec = QUERIES[id] || [], queries = [spec[0], ...(VARIANTS[id] || [])].filter(Boolean).slice(0, 3);
+  const ii = {prop: "imageinfo", iiprop: "url|size|extmetadata|mime", iiurlwidth: "1280", iiextmetadatafilter: "LicenseShortName|Artist"};
+  const out = [], seen = new Set();
+  for (const q of queries) {
+    if (!needOf(q).length) continue;
+    const j = await api(env, Object.assign({action: "query", generator: "search", gsrsearch: `${q} (${TOP_Q.join(" OR ")}) filetype:bitmap`, gsrnamespace: "6", gsrlimit: "20"}, ii)).catch(() => null);
+    for (const p of (j && j.query && j.query.pages) || []) {
+      const i = p.imageinfo && p.imageinfo[0]; if (!i || seen.has(p.title)) continue;
+      const m = i.extmetadata || {}, lic = (m.LicenseShortName && m.LicenseShortName.value) || "";
+      if (!/^image\/(jpeg|png|webp)/.test(i.mime || "") || (i.width || 0) < 600 || !FREE(lic)) continue;
+      if (!TOP.test(p.title) || BAD_STRICT.test(p.title) || OFF_TOPIC.test(p.title) || !queryOk(q, p.title, id) || !cardOk(id, p.title)) continue;
+      seen.add(p.title);
+      out.push({title: p.title, url: i.thumburl || i.url, page: i.descriptionurl, license: lic, author: strip(m.Artist && m.Artist.value).slice(0, 120)});
+    }
+    if (out.length) return out;
+  }
+  if (env.OPENVERSE === "0") return out;
+  const base = env.OPENVERSE_API || "https://api.openverse.org/v1";
+  for (const q of queries.filter((x) => !/[а-яіїєґ]/i.test(x)).slice(0, 2)) {
+    if (!needOf(q).length) continue;
+    const r = await fetch(`${base}/images/?q=${encodeURIComponent(q + " aerial")}&license=by,by-sa,cc0,pdm&page_size=20`, {headers: {"User-Agent": UA, "Accept": "application/json"}}).catch(() => null);
+    if (!r || !r.ok) continue;
+    const j = await r.json();
+    for (const x of j.results || []) {
+      const text = [x.title, ...(x.tags || []).map((t) => t.name)].join(" ");
+      if (!x.url || seen.has(x.url) || (x.width && x.width < 600) || !TOP.test(text) || BAD_STRICT.test(text) || OFF_TOPIC.test(text)) continue;
+      if (!queryOk(q, text, id) || !cardOk(id, text)) continue;
+      seen.add(x.url);
+      const url = /staticflickr\.com/.test(x.url) ? x.url.replace(/(_[a-z])?\.(jpg|jpeg|png)$/i, "_b.$2") : x.url;
+      const lic = x.license === "pdm" ? "Public domain" : x.license === "cc0" ? "CC0" : `CC ${String(x.license).toUpperCase()} ${x.license_version || ""}`.trim();
+      out.push({title: x.title || "", url, alt: x.thumbnail, page: x.foreign_landing_url || x.url, license: lic, author: String(x.creator || "автор невідомий").slice(0, 120), provider: x.source || x.provider || "Openverse", src: "openverse"});
+    }
+    if (out.length) return out;
+  }
+  return out;
+}
+/* Вид зверху для однієї картки: skip — інший кандидат. Фото стає обкладинкою (першим), решта лишається. */
+export async function fillTop(env, id, skip = 0) {
+  if (!QUERIES[id] && !NAMES[id]) return {ok: false, error: "Невідома картка"};
+  const list = fresh(await topCandidates(env, id), await rejected(env));
+  if (!list.length) return {ok: false, found: 0};
+  for (let k = 0; k < list.length; k++) {
+    const c = list[(skip + k) % list.length];
+    try {
+      const t = await fetchThumb(c.url).catch((e) => { if (c.alt) return fetchThumb(c.alt); throw e; });
+      const r = await putCardImg(env, id, {data: t.data, mime: t.mime, credit: "Вид зверху. " + creditOf(c), front: true});
+      return {ok: true, found: list.length, credit: "Вид зверху. " + creditOf(c), updated: r.updated, img: r.img, title: c.title};
+    } catch (e) { /* наступний */ }
+  }
+  return {ok: false, found: list.length};
+}
+
 let lastTick = 0;
 /* Один крок автопідбору: до PER_TICK карток без фото. Викликається з ctx.waitUntil. */
 export async function fillTick(env, metaGet, metaSet, force) {
